@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# LintGate runtime
+.lintgate/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project caches (stored in ~/.cache, not here)

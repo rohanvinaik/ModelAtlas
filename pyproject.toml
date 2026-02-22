@@ -1,0 +1,22 @@
+[project]
+name = "hf-model-search"
+version = "0.2.0"
+description = "MCP server exposing a navigable semantic network of ML models"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "huggingface-hub>=0.20.0",
+    "rapidfuzz>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+hf-model-search = "hf_model_search.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
