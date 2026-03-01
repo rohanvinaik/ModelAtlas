@@ -56,6 +56,7 @@ def format_network_results(network_results: list) -> list[dict]:
             "score_breakdown": {
                 "bank_proximity": round(r.bank_score, 4),
                 "anchor_overlap": round(r.anchor_score, 4),
+                "spreading": round(r.spread_score, 4),
                 "fuzzy": round(r.fuzzy_score, 4),
             },
             "positions": r.positions,

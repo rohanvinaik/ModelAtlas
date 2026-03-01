@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 
 from mcp.server.fastmcp import FastMCP
 
@@ -196,11 +197,12 @@ def hf_compare_models(model_ids: list[str]) -> str:
 def hf_build_index(
     category: str,
     task: str | None = None,
+    source: str = "huggingface",
     limit: int = DEFAULT_INDEX_SIZE,
     min_likes: int = 5,
     force: bool = False,
 ) -> str:
-    """Fetch models from HuggingFace and add them to the semantic network.
+    """Fetch models and add them to the semantic network.
 
     Runs the full extraction pipeline: fetches models, extracts bank positions,
     anchor links, and metadata, then stores everything in the network database.
@@ -209,10 +211,47 @@ def hf_build_index(
     Args:
         category: Category label for this batch (e.g. "text-generation", "code")
         task: HuggingFace task filter to scope models. If None, uses category.
+        source: Source to index from — 'huggingface' (default), 'ollama', or 'all'
         limit: Max models to fetch (default 2000)
-        min_likes: Minimum likes threshold (default 5)
+        min_likes: Minimum likes threshold (default 5, only for huggingface)
         force: Currently unused; network is always additive
     """
+    conn = db.get_connection()
+    try:
+        db.init_db(conn)
+
+        if source == "ollama":
+            return _build_index_ollama(conn, category, limit)
+        elif source == "all":
+            # Index from all available sources
+            hf_result = _build_index_huggingface(
+                conn, category, task, limit, min_likes
+            )
+            ollama_result = _build_index_ollama(conn, category, limit)
+            stats = db.network_stats(conn)
+            return json.dumps(
+                {
+                    "status": "indexed",
+                    "category": category,
+                    "sources": {"huggingface": hf_result, "ollama": ollama_result},
+                    "network_total": stats["total_models"],
+                    "network_anchors": stats["total_anchors"],
+                }
+            )
+        else:
+            return _build_index_huggingface(conn, category, task, limit, min_likes)
+    finally:
+        conn.close()
+
+
+def _build_index_huggingface(
+    conn: sqlite3.Connection,
+    category: str,
+    task: str | None,
+    limit: int,
+    min_likes: int,
+) -> str:
+    """Index models from HuggingFace."""
     search_task = task or category
     logger.info(
         "Fetching up to %d models for '%s' (task=%s)", limit, category, search_task
@@ -227,28 +266,93 @@ def hf_build_index(
     if not candidates:
         return json.dumps({"error": f"No models found for task '{search_task}'"})
 
-    # Build model dicts for batch extraction
     model_dicts = candidates_to_dicts(candidates)
+    count = extract_batch(conn, model_dicts)
+    conn.commit()
+    stats = db.network_stats(conn)
 
-    conn = db.get_connection()
-    try:
-        db.init_db(conn)
-        count = extract_batch(conn, model_dicts)
-        conn.commit()
-        stats = db.network_stats(conn)
+    # Identify models needing vibes
+    vibes_needed = _find_models_without_vibes(conn, [m["model_id"] for m in model_dicts])
 
-        return json.dumps(
-            {
-                "status": "indexed",
-                "category": category,
-                "models_fetched": len(candidates),
-                "models_indexed": count,
-                "network_total": stats["total_models"],
-                "network_anchors": stats["total_anchors"],
-            }
+    result = {
+        "status": "indexed",
+        "category": category,
+        "source": "huggingface",
+        "models_fetched": len(candidates),
+        "models_indexed": count,
+        "network_total": stats["total_models"],
+        "network_anchors": stats["total_anchors"],
+    }
+    if vibes_needed:
+        result["vibes_needed"] = vibes_needed[:20]
+        result["vibes_hint"] = (
+            "These models lack vibe summaries. Use set_model_vibe to add them."
         )
-    finally:
-        conn.close()
+    return json.dumps(result)
+
+
+def _build_index_ollama(
+    conn: sqlite3.Connection,
+    category: str,
+    limit: int,
+) -> str:
+    """Index models from local Ollama instance."""
+    from .sources import get_source
+
+    try:
+        adapter = get_source("ollama")
+    except KeyError:
+        return json.dumps({"error": "Ollama source not available"})
+
+    try:
+        results = adapter.search("", limit=limit)
+    except Exception as e:
+        return json.dumps({"error": f"Ollama not reachable: {e}"})
+
+    if not results:
+        return json.dumps({"status": "no_models", "source": "ollama"})
+
+    count = 0
+    for r in results:
+        try:
+            inp = adapter.get_detail(r.model_id)
+            from .extraction.pipeline import extract_and_store
+
+            extract_and_store(conn, inp)
+            count += 1
+        except Exception:
+            logger.warning("Failed to index Ollama model: %s", r.model_id, exc_info=True)
+
+    conn.commit()
+    stats = db.network_stats(conn)
+
+    return json.dumps(
+        {
+            "status": "indexed",
+            "category": category,
+            "source": "ollama",
+            "models_fetched": len(results),
+            "models_indexed": count,
+            "network_total": stats["total_models"],
+            "network_anchors": stats["total_anchors"],
+        }
+    )
+
+
+def _find_models_without_vibes(
+    conn: sqlite3.Connection, model_ids: list[str]
+) -> list[str]:
+    """Find model IDs that lack a vibe_summary in metadata."""
+    if not model_ids:
+        return []
+    placeholders = ",".join("?" for _ in model_ids)
+    rows = conn.execute(
+        f"""SELECT model_id FROM model_metadata
+           WHERE key = 'vibe_summary' AND model_id IN ({placeholders})""",
+        model_ids,
+    ).fetchall()
+    have_vibes = {r[0] for r in rows}
+    return [mid for mid in model_ids if mid not in have_vibes]
 
 
 @mcp.tool()
@@ -353,6 +457,61 @@ def search_models(
         ],
     }
     return json.dumps(output, indent=2)
+
+
+@mcp.tool()
+def set_model_vibe(
+    model_id: str,
+    vibe_summary: str,
+    extra_anchors: list[str] | None = None,
+) -> str:
+    """Set the vibe summary and optional extra anchors for a model.
+
+    Called by the LLM after reading a model card or understanding a model's
+    characteristics. The LLM IS the NLP extraction tier — delegate vibes
+    extraction to the calling model rather than building NLP in Python.
+
+    Args:
+        model_id: Full model ID (e.g. "meta-llama/Llama-3.1-8B-Instruct")
+        vibe_summary: One sentence capturing the model's distinctive feel
+        extra_anchors: Optional anchor labels to add (e.g. ["tool-calling", "reasoning"])
+    """
+    conn = db.get_connection()
+    try:
+        # Verify model exists
+        model_data = db.get_model(conn, model_id)
+        if not model_data:
+            return json.dumps({"error": f"Model '{model_id}' not found in network"})
+
+        # Store vibe summary
+        db.set_metadata(conn, model_id, "vibe_summary", vibe_summary, "str")
+
+        # Add extra anchors with vibes provenance
+        anchors_added = []
+        if extra_anchors:
+            for label in extra_anchors:
+                # Infer bank from existing anchor vocabulary, default to CAPABILITY
+                existing = conn.execute(
+                    "SELECT bank FROM anchors WHERE label = ?", (label,)
+                ).fetchone()
+                bank = existing["bank"] if existing else "CAPABILITY"
+                anchor_id = db.get_or_create_anchor(
+                    conn, label, bank, source="vibes"
+                )
+                db.link_anchor(conn, model_id, anchor_id, confidence=0.5)
+                anchors_added.append(label)
+
+        conn.commit()
+        return json.dumps(
+            {
+                "status": "updated",
+                "model_id": model_id,
+                "vibe_summary": vibe_summary,
+                "anchors_added": anchors_added,
+            }
+        )
+    finally:
+        conn.close()
 
 
 @mcp.tool()

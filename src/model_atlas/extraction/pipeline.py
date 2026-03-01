@@ -63,8 +63,15 @@ def extract_and_store(
     # Write bank positions (merge deterministic + pattern results)
     _store_positions(conn, inp.model_id, det, pat)
 
-    # Write anchors (deduplicated from both tiers)
-    _store_anchors(conn, inp.model_id, det.anchors + pat.anchors)
+    # Write anchors (deduplicated from both tiers, with provenance)
+    _store_anchors(
+        conn, inp.model_id, det.anchors,
+        source="deterministic", confidence=1.0,
+    )
+    _store_anchors(
+        conn, inp.model_id, pat.anchors,
+        source="pattern", confidence=0.8,
+    )
 
     # Write metadata (deterministic + pattern)
     for key, (value, value_type) in det.metadata.items():
@@ -114,15 +121,19 @@ def _store_anchors(
     conn: sqlite3.Connection,
     model_id: str,
     anchors: list[tuple[str, str]],
+    source: str = "deterministic",
+    confidence: float = 1.0,
 ) -> None:
-    """Deduplicate and write anchor links."""
+    """Deduplicate and write anchor links with provenance."""
     seen: set[str] = set()
     for label, bank_name in anchors:
         if label in seen:
             continue
         seen.add(label)
-        anchor_id = db.get_or_create_anchor(conn, label, bank_name)
-        db.link_anchor(conn, model_id, anchor_id)
+        anchor_id = db.get_or_create_anchor(
+            conn, label, bank_name, source=source,
+        )
+        db.link_anchor(conn, model_id, anchor_id, confidence=confidence)
 
 
 def extract_batch(conn: sqlite3.Connection, models: list[dict]) -> int:

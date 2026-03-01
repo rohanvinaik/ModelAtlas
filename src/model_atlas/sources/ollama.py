@@ -114,16 +114,29 @@ class OllamaAdapter(SourceAdapter):
         param_size = details.get("parameter_size", "")
         quant_level = details.get("quantization_level", "")
 
+        if quant_level:
+            tags.append(quant_level.lower())
+            tags.append("quantized")
+
         # Build a synthetic config-like dict for extraction
         config: dict = {}
         if family:
             config["model_type"] = family
 
+        # Wire parameter count from Ollama's parameter_size field
+        if param_size:
+            param_b = _parse_param_size(param_size)
+            if param_b is not None:
+                config["_parameter_count_b"] = param_b
+
+        # Derive anchors from model details
+        anchors = self._get_anchors_for_model(details)
+
         # Construct model input
         inp = ModelInput(
             model_id=model_id,
             author="",
-            tags=tags,
+            tags=tags + anchors,
             config=config if config else None,
         )
 

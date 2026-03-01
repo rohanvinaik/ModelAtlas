@@ -67,13 +67,15 @@ CREATE TABLE IF NOT EXISTS anchors (
     anchor_id   INTEGER PRIMARY KEY AUTOINCREMENT,
     label       TEXT UNIQUE,
     bank        TEXT,
-    category    TEXT
+    category    TEXT,
+    source      TEXT DEFAULT 'bootstrap'
 );
 
 CREATE TABLE IF NOT EXISTS model_anchors (
     model_id    TEXT REFERENCES models(model_id),
     anchor_id   INTEGER REFERENCES anchors(anchor_id),
     weight      REAL DEFAULT 1.0,
+    confidence  REAL DEFAULT 1.0,
     PRIMARY KEY (model_id, anchor_id)
 );
 
@@ -246,14 +248,32 @@ def transaction(conn: sqlite3.Connection | None = None) -> Iterator[sqlite3.Conn
             c.close()
 
 
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after initial schema (safe to re-run)."""
+    # anchors.source (added for anchor provenance)
+    try:
+        conn.execute("SELECT source FROM anchors LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE anchors ADD COLUMN source TEXT DEFAULT 'bootstrap'")
+
+    # model_anchors.confidence (added for confidence-weighted scoring)
+    try:
+        conn.execute("SELECT confidence FROM model_anchors LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.execute(
+            "ALTER TABLE model_anchors ADD COLUMN confidence REAL DEFAULT 1.0"
+        )
+
+
 def init_db(conn: sqlite3.Connection | None = None) -> None:
     """Create tables and bootstrap anchor dictionary."""
     with transaction(conn) as c:
         c.executescript(_SCHEMA)
+        _migrate_schema(c)
         # Bootstrap anchors (skip duplicates)
         for label, bank, category in _BOOTSTRAP_ANCHORS:
             c.execute(
-                "INSERT OR IGNORE INTO anchors (label, bank, category) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO anchors (label, bank, category, source) VALUES (?, ?, ?, 'bootstrap')",
                 (label, bank, category),
             )
 
@@ -323,17 +343,34 @@ def add_link(
 
 
 def get_or_create_anchor(
-    conn: sqlite3.Connection, label: str, bank: str, category: str = ""
+    conn: sqlite3.Connection,
+    label: str,
+    bank: str,
+    category: str = "",
+    source: str = "bootstrap",
 ) -> int:
-    """Get an anchor's ID, creating it if it doesn't exist."""
+    """Get an anchor's ID, creating it if it doesn't exist.
+
+    If the anchor exists with a different bank, logs a warning and keeps
+    the original bank assignment to avoid semantic drift.
+    """
     row = conn.execute(
-        "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
+        "SELECT anchor_id, bank FROM anchors WHERE label = ?", (label,)
     ).fetchone()
     if row:
+        if row["bank"] != bank:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Anchor '%s' already assigned to bank '%s', ignoring reassignment to '%s'",
+                label,
+                row["bank"],
+                bank,
+            )
         return row["anchor_id"]
     cursor = conn.execute(
-        "INSERT INTO anchors (label, bank, category) VALUES (?, ?, ?)",
-        (label, bank, category),
+        "INSERT INTO anchors (label, bank, category, source) VALUES (?, ?, ?, ?)",
+        (label, bank, category, source),
     )
     return int(cursor.lastrowid)  # always set after INSERT
 
@@ -343,12 +380,13 @@ def link_anchor(
     model_id: str,
     anchor_id: int,
     weight: float = 1.0,
+    confidence: float = 1.0,
 ) -> None:
-    """Link a model to an anchor."""
+    """Link a model to an anchor with optional confidence score."""
     conn.execute(
-        """INSERT OR REPLACE INTO model_anchors (model_id, anchor_id, weight)
-           VALUES (?, ?, ?)""",
-        (model_id, anchor_id, weight),
+        """INSERT OR REPLACE INTO model_anchors (model_id, anchor_id, weight, confidence)
+           VALUES (?, ?, ?, ?)""",
+        (model_id, anchor_id, weight, confidence),
     )
 
 
@@ -396,7 +434,7 @@ def get_model(conn: sqlite3.Connection, model_id: str) -> dict | None:
 
     # Anchors
     anchors = conn.execute(
-        """SELECT a.label, a.bank, a.category, ma.weight
+        """SELECT a.label, a.bank, a.category, ma.weight, ma.confidence
            FROM model_anchors ma JOIN anchors a ON ma.anchor_id = a.anchor_id
            WHERE ma.model_id = ?""",
         (model_id,),
@@ -407,6 +445,7 @@ def get_model(conn: sqlite3.Connection, model_id: str) -> dict | None:
             "bank": a["bank"],
             "category": a["category"],
             "weight": a["weight"],
+            "confidence": a["confidence"],
         }
         for a in anchors
     ]

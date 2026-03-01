@@ -21,6 +21,23 @@ MAX_CARD_TEXT_LENGTH = 2000
 DEFAULT_INDEX_SIZE = 2000  # Models per batch when building index
 
 # Query scoring weights
-WEIGHT_BANK_PROXIMITY = 0.35  # How close in bank-position space
-WEIGHT_ANCHOR_OVERLAP = 0.45  # Jaccard similarity on anchor sets
+WEIGHT_BANK = 0.30  # How close in bank-position space
+WEIGHT_ANCHOR = 0.35  # Jaccard similarity on anchor sets
+WEIGHT_SPREAD = 0.15  # Spreading activation from seed models
 WEIGHT_FUZZY = 0.20  # Fuzzy name-resolution score
+
+# Spreading activation constants
+SPREAD_DECAY = 0.8
+SPREAD_MAX_DEPTH = 3
+NEIGHBOR_SLICE = 20  # Max link neighbors per node
+ANCHOR_SLICE = 15  # Max anchor co-occurrences per node
+
+# Relation-specific link weights for spreading
+LINK_WEIGHTS: dict[str, float] = {
+    "fine_tuned_from": 0.9,
+    "quantized_from": 0.85,
+    "variant_of": 0.8,
+    "same_family": 0.7,
+    "predecessor": 0.6,
+    "successor": 0.6,
+}

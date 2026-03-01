@@ -298,23 +298,25 @@ class TestNewPatterns:
 
 
 class TestVibes:
-    def test_from_card_text(self):
+    def test_stub_returns_empty(self):
+        """Vibes are now delegated to the LLM via set_model_vibe tool."""
         card = """# Model Card
 
 This is a state-of-the-art language model for code generation. It excels at Python.
 """
         vibe = extract_vibe_summary("test/Model", card_text=card)
-        assert "code generation" in vibe.lower()
+        assert vibe == ""
 
-    def test_fallback_from_signals(self):
+    def test_stub_with_signals(self):
+        """Vibes stub returns empty even with structured signals."""
         vibe = extract_vibe_summary(
             "meta-llama/Llama-3.1-8B-Instruct",
             pipeline_tag="text-generation",
             author="meta-llama",
         )
-        assert "Llama" in vibe
-        assert "instruction-tuned" in vibe.lower()
+        assert vibe == ""
 
-    def test_empty_card(self):
+    def test_stub_empty_card(self):
+        """Vibes stub returns empty for empty input."""
         vibe = extract_vibe_summary("test/Model", card_text="")
-        assert len(vibe) > 0  # should fall back to signal synthesis
+        assert vibe == ""

@@ -3,6 +3,9 @@
 Translates natural language queries into bank-position constraints and
 anchor-similarity scores. Queries are navigational — exploring semantic
 space, not running WHERE clauses.
+
+Supports compound multi-bank queries, gradient proximity scoring,
+and spreading activation from seed models.
 """
 
 from __future__ import annotations
@@ -12,7 +15,31 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from . import db
-from .config import WEIGHT_ANCHOR_OVERLAP, WEIGHT_BANK_PROXIMITY, WEIGHT_FUZZY
+from .config import WEIGHT_ANCHOR, WEIGHT_BANK, WEIGHT_FUZZY, WEIGHT_SPREAD
+from .spreading import spread
+
+
+@dataclass
+class BankConstraint:
+    """A constraint on a single semantic bank."""
+
+    bank: str
+    direction: int | None = None  # +1 or -1, None = any
+    target_position: int | None = None  # specific signed position to be near
+    min_signed: int | None = None
+    max_signed: int | None = None
+    weight: float = 1.0
+
+
+@dataclass
+class ParsedQuery:
+    """Structured representation of a parsed natural language query."""
+
+    bank_constraints: list[BankConstraint]
+    anchor_targets: list[str]  # desired anchor labels
+    seed_model_ids: list[str]  # "models like X" seeds
+    direction_vectors: dict[str, int]  # bank -> desired direction (+1/-1)
+    raw_tokens: list[str]  # for fuzzy fallback
 
 
 @dataclass
@@ -23,6 +50,7 @@ class SearchResult:
     score: float
     bank_score: float = 0.0
     anchor_score: float = 0.0
+    spread_score: float = 0.0
     fuzzy_score: float = 0.0
     positions: dict[str, dict] = field(default_factory=dict)
     anchor_labels: list[str] = field(default_factory=list)
@@ -41,23 +69,23 @@ class ComparisonResult:
     bank_deltas: dict[str, dict]
 
 
-# Query signal keywords mapped to bank constraints and anchor hints
-_BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None]]] = {
-    # keyword -> [(bank, min_signed, max_signed), ...]
-    "small": [("EFFICIENCY", None, -1)],
-    "tiny": [("EFFICIENCY", None, -2)],
-    "large": [("EFFICIENCY", 1, None)],
-    "huge": [("EFFICIENCY", 2, None)],
-    "frontier": [("EFFICIENCY", 3, None)],
-    "base": [("LINEAGE", -1, 0)],
-    "fine-tune": [("LINEAGE", 1, None)],
-    "finetune": [("LINEAGE", 1, None)],
-    "derivative": [("LINEAGE", 2, None)],
-    "trending": [("QUALITY", 1, None)],
-    "popular": [("QUALITY", 1, None)],
-    "novel": [("ARCHITECTURE", 1, None)],
-    "specialized": [("DOMAIN", 1, None)],
-    "general": [("DOMAIN", -1, 0)],
+# Query signal keywords mapped to bank constraints
+_BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None, int]]] = {
+    # keyword -> [(bank, min_signed, max_signed, direction), ...]
+    "small": [("EFFICIENCY", None, -1, -1)],
+    "tiny": [("EFFICIENCY", None, -2, -1)],
+    "large": [("EFFICIENCY", 1, None, 1)],
+    "huge": [("EFFICIENCY", 2, None, 1)],
+    "frontier": [("EFFICIENCY", 3, None, 1)],
+    "base": [("LINEAGE", -1, 0, -1)],
+    "fine-tune": [("LINEAGE", 1, None, 1)],
+    "finetune": [("LINEAGE", 1, None, 1)],
+    "derivative": [("LINEAGE", 2, None, 1)],
+    "trending": [("QUALITY", 1, None, 1)],
+    "popular": [("QUALITY", 1, None, 1)],
+    "novel": [("ARCHITECTURE", 1, None, 1)],
+    "specialized": [("DOMAIN", 1, None, 1)],
+    "general": [("DOMAIN", -1, 0, -1)],
 }
 
 _ANCHOR_KEYWORDS: dict[str, str] = {
@@ -88,45 +116,108 @@ _ANCHOR_KEYWORDS: dict[str, str] = {
     "science": "science-domain",
 }
 
+# Pattern for "models like X" seed extraction
+_LIKE_PATTERN = re.compile(
+    r"(?:like|similar\s+to|related\s+to)\s+([a-zA-Z0-9/_.-]+)", re.IGNORECASE
+)
 
-def _parse_query(
-    query: str,
-) -> tuple[list[tuple[str, int | None, int | None]], list[str]]:
-    """Parse a natural language query into bank constraints and anchor hints."""
+
+def _parse_query(query: str) -> ParsedQuery:
+    """Parse a natural language query into structured components."""
     tokens = re.findall(r"[a-zA-Z0-9_.-]+", query.lower())
-    constraints: list[tuple[str, int | None, int | None]] = []
-    anchor_hints: list[str] = []
+    constraints: list[BankConstraint] = []
+    anchor_targets: list[str] = []
+    direction_vectors: dict[str, int] = {}
 
     for token in tokens:
         if token in _BANK_KEYWORDS:
-            constraints.extend(_BANK_KEYWORDS[token])
+            for bank, min_s, max_s, direction in _BANK_KEYWORDS[token]:
+                constraints.append(
+                    BankConstraint(
+                        bank=bank,
+                        direction=direction,
+                        min_signed=min_s,
+                        max_signed=max_s,
+                    )
+                )
+                direction_vectors[bank] = direction
         if token in _ANCHOR_KEYWORDS:
-            anchor_hints.append(_ANCHOR_KEYWORDS[token])
+            anchor_targets.append(_ANCHOR_KEYWORDS[token])
 
-    return constraints, anchor_hints
+    # Seed model extraction ("models like meta-llama/Llama-3.1-8B")
+    seed_ids: list[str] = []
+    for match in _LIKE_PATTERN.finditer(query):
+        seed_ids.append(match.group(1))
+
+    return ParsedQuery(
+        bank_constraints=constraints,
+        anchor_targets=anchor_targets,
+        seed_model_ids=seed_ids,
+        direction_vectors=direction_vectors,
+        raw_tokens=tokens,
+    )
 
 
 def _bank_proximity_score(
     model_positions: dict[str, dict],
-    constraints: list[tuple[str, int | None, int | None]],
+    constraints: list[BankConstraint],
 ) -> float:
-    """Score how well a model's bank positions match query constraints."""
+    """Score how well a model's bank positions match query constraints.
+
+    Uses gradient proximity instead of binary match:
+    - For range constraints: 1.0 / (1.0 + distance_from_range)
+    - For directional queries: full score on desired side, decaying on wrong side
+    """
     if not constraints:
         return 0.5  # neutral when no constraints
 
     scores: list[float] = []
-    for bank, min_s, max_s in constraints:
-        pos = model_positions.get(bank)
+    for c in constraints:
+        pos = model_positions.get(c.bank)
         if not pos:
             scores.append(0.0)
             continue
+
         signed = pos["sign"] * pos["depth"]
-        in_range = True
-        if min_s is not None and signed < min_s:
-            in_range = False
-        if max_s is not None and signed > max_s:
-            in_range = False
-        scores.append(1.0 if in_range else 0.0)
+
+        # Gradient scoring: closer to target range = higher score
+        if c.min_signed is not None and c.max_signed is not None:
+            # Both bounds: score by proximity to the range
+            if c.min_signed <= signed <= c.max_signed:
+                scores.append(1.0)
+            else:
+                dist = min(
+                    abs(signed - c.min_signed),
+                    abs(signed - c.max_signed),
+                )
+                scores.append(1.0 / (1.0 + dist))
+        elif c.min_signed is not None:
+            # Lower bound only: gradient above, decay below
+            if signed >= c.min_signed:
+                scores.append(1.0)
+            else:
+                dist = c.min_signed - signed
+                scores.append(1.0 / (1.0 + dist))
+        elif c.max_signed is not None:
+            # Upper bound only: gradient below, decay above
+            if signed <= c.max_signed:
+                scores.append(1.0)
+            else:
+                dist = signed - c.max_signed
+                scores.append(1.0 / (1.0 + dist))
+        elif c.direction is not None:
+            # Direction only: full score on desired side
+            if c.direction > 0 and signed > 0:
+                scores.append(1.0)
+            elif c.direction < 0 and signed < 0:
+                scores.append(1.0)
+            elif signed == 0:
+                scores.append(0.5)
+            else:
+                dist = abs(signed)
+                scores.append(1.0 / (1.0 + dist))
+        else:
+            scores.append(0.5)
 
     return sum(scores) / len(scores) if scores else 0.5
 
@@ -140,24 +231,66 @@ def _jaccard(set_a: set[str], set_b: set[str]) -> float:
     return intersection / union if union else 0.0
 
 
+def _confidence_weighted_jaccard(
+    target_labels: set[str],
+    model_anchors: list[dict],
+) -> float:
+    """Jaccard similarity weighted by anchor confidence.
+
+    When model_anchors have 'confidence' values, weights each anchor
+    by its confidence. Falls back to standard Jaccard for unweighted anchors.
+    """
+    if not target_labels and not model_anchors:
+        return 0.0
+
+    model_labels = {a["label"] for a in model_anchors}
+    shared = target_labels & model_labels
+    union = target_labels | model_labels
+
+    if not union:
+        return 0.0
+
+    # Check if any anchors have confidence values
+    conf_map = {a["label"]: a.get("confidence", 1.0) for a in model_anchors}
+    # Target anchors get confidence 1.0 (they're what the user asked for)
+
+    shared_weight = sum(conf_map.get(label, 1.0) for label in shared)
+    union_weight = sum(conf_map.get(label, 1.0) for label in union)
+
+    return shared_weight / union_weight if union_weight else 0.0
+
+
 def search(
     conn: sqlite3.Connection,
     query: str,
     limit: int = 20,
     fuzzy_scores: dict[str, float] | None = None,
 ) -> list[SearchResult]:
-    """Navigational search across the semantic network.
+    """Compound navigational search across the semantic network.
 
-    Combines bank-position constraints with anchor-similarity scoring.
-    Optionally incorporates fuzzy name-matching scores from Layer 2.
+    Combines:
+    1. Bank constraints (gradient scoring per bank, multiplied across banks)
+    2. Anchor overlap (confidence-weighted Jaccard on target anchors)
+    3. Spreading activation from seed models
+    4. Fuzzy name-matching scores from Layer 2
+
+    Score = WEIGHT_BANK * bank + WEIGHT_ANCHOR * anchor
+          + WEIGHT_SPREAD * spread + WEIGHT_FUZZY * fuzzy
     """
-    constraints, anchor_hints = _parse_query(query)
-    hint_set = set(anchor_hints)
+    parsed = _parse_query(query)
+    hint_set = set(parsed.anchor_targets)
 
-    # Get all models (for now; can optimize with bank-based pre-filtering)
+    # Get all models
     all_models = conn.execute("SELECT model_id, author FROM models").fetchall()
     if not all_models:
         return []
+
+    # Run spreading activation if we have seed models
+    spread_scores: dict[str, float] = {}
+    if parsed.seed_model_ids:
+        # Scope spreading to the banks referenced in the query
+        spread_banks = list(parsed.direction_vectors.keys()) or None
+        spread_scores = spread(conn, parsed.seed_model_ids, banks=spread_banks)
 
     results: list[SearchResult] = []
     for row in all_models:
@@ -167,25 +300,30 @@ def search(
             continue
 
         positions = model_data.get("positions", {})
-        model_anchors = {a["label"] for a in model_data.get("anchors", [])}
+        model_anchor_list = model_data.get("anchors", [])
+        model_anchor_labels = {a["label"] for a in model_anchor_list}
 
-        # Bank proximity score
-        bank_score = _bank_proximity_score(positions, constraints)
+        # Bank proximity score (gradient)
+        bank_score = _bank_proximity_score(positions, parsed.bank_constraints)
 
-        # Anchor overlap score
+        # Anchor overlap score (confidence-weighted)
         if hint_set:
-            anchor_score = _jaccard(hint_set, model_anchors)
+            anchor_score = _confidence_weighted_jaccard(hint_set, model_anchor_list)
         else:
-            anchor_score = len(model_anchors) / 50.0  # normalize by typical max
+            anchor_score = len(model_anchor_labels) / 50.0
             anchor_score = min(anchor_score, 1.0)
+
+        # Spreading activation score
+        s_score = spread_scores.get(mid, 0.0)
 
         # Fuzzy score (from external Layer 2)
         f_score = (fuzzy_scores or {}).get(mid, 0.0)
 
         # Combined score
         combined = (
-            WEIGHT_BANK_PROXIMITY * bank_score
-            + WEIGHT_ANCHOR_OVERLAP * anchor_score
+            WEIGHT_BANK * bank_score
+            + WEIGHT_ANCHOR * anchor_score
+            + WEIGHT_SPREAD * s_score
             + WEIGHT_FUZZY * f_score
         )
 
@@ -199,9 +337,10 @@ def search(
                 score=combined,
                 bank_score=bank_score,
                 anchor_score=anchor_score,
+                spread_score=s_score,
                 fuzzy_score=f_score,
                 positions=positions,
-                anchor_labels=sorted(model_anchors),
+                anchor_labels=sorted(model_anchor_labels),
                 vibe_summary=vibe_text,
                 author=row["author"] or "",
             )
@@ -293,7 +432,11 @@ def compare(conn: sqlite3.Connection, model_ids: list[str]) -> ComparisonResult:
 
 
 def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
-    """Traverse lineage relationships for a model."""
+    """Traverse lineage relationships for a model.
+
+    Results are ordered by signed LINEAGE position:
+    predecessors (-N) first, base (0) in middle, derivatives (+N) at end.
+    """
     model_data = db.get_model(conn, model_id)
     if not model_data:
         return {"model_id": model_id, "error": "not found in network"}
@@ -301,22 +444,54 @@ def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
     links = model_data.get("links", {})
     lineage_pos = model_data.get("positions", {}).get("LINEAGE", {})
 
+    derived_from = [
+        link
+        for link in links.get("outgoing", [])
+        if link["relation"] in ("fine_tuned_from", "quantized_from", "variant_of")
+    ]
+    derivatives = [
+        link
+        for link in links.get("incoming", [])
+        if link["relation"] in ("fine_tuned_from", "quantized_from", "variant_of")
+    ]
+    family = [
+        link
+        for link in links.get("outgoing", []) + links.get("incoming", [])
+        if link["relation"] == "same_family"
+    ]
+
+    # Enrich with LINEAGE positions and sort
+    def _get_lineage_signed(mid: str) -> int:
+        pos = conn.execute(
+            "SELECT path_sign, path_depth FROM model_positions WHERE model_id = ? AND bank = 'LINEAGE'",
+            (mid,),
+        ).fetchone()
+        if pos:
+            return pos[0] * pos[1]
+        return 0
+
+    def _enrich_link(link: dict) -> dict:
+        # Determine which ID is the "other" model
+        other_id = link.get("target_id") or link.get("source_id", "")
+        return {**link, "lineage_signed": _get_lineage_signed(other_id)}
+
+    derived_from = sorted(
+        [_enrich_link(lnk) for lnk in derived_from],
+        key=lambda x: x["lineage_signed"],
+    )
+    derivatives = sorted(
+        [_enrich_link(lnk) for lnk in derivatives],
+        key=lambda x: x["lineage_signed"],
+    )
+    family = sorted(
+        [_enrich_link(lnk) for lnk in family],
+        key=lambda x: x["lineage_signed"],
+    )
+
     return {
         "model_id": model_id,
         "lineage_position": lineage_pos,
-        "derived_from": [
-            link
-            for link in links.get("outgoing", [])
-            if link["relation"] in ("fine_tuned_from", "quantized_from", "variant_of")
-        ],
-        "derivatives": [
-            link
-            for link in links.get("incoming", [])
-            if link["relation"] in ("fine_tuned_from", "quantized_from", "variant_of")
-        ],
-        "family": [
-            link
-            for link in links.get("outgoing", []) + links.get("incoming", [])
-            if link["relation"] == "same_family"
-        ],
+        "derived_from": derived_from,
+        "derivatives": derivatives,
+        "family": family,
     }
