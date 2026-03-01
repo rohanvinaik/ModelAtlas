@@ -1,153 +1,98 @@
 # ModelAtlas
 
-MCP server that builds a **navigable semantic network** of ML models. Models are positioned across orthogonal semantic banks (architecture, capability, efficiency, compatibility, lineage, domain, quality) and connected through a shared anchor vocabulary. Queries are navigational — find models by exploring semantic space, not just filtering columns.
+You want to find "a small code model with tool-calling that runs on Apple Silicon." HuggingFace gives you a search bar and 10 filterable columns. You get 50,000 results, or zero, and no way to navigate between those extremes.
+
+ModelAtlas fixes this. It's an MCP server that positions ML models in a **navigable semantic space** — so an LLM can explore what exists, not just filter what matches.
+
+## The Problem
+
+HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and uses the `transformers` library. It does not know that this model is an instruction-tuned derivative of a base model in the Llama family, that it supports tool-calling, that it's in the mainstream efficiency range, or that it has 47 quantized variants on the Hub. That information is trapped in model cards, naming conventions, config files, and community knowledge.
+
+This means you can't ask questions like:
+- "Most general Llama base model that supports tool-calling and fits on consumer GPU"
+- "Models architecturally similar to Mamba but with instruction tuning"
+- "What distinguishes these two models? What do they share?"
+- "Navigate from this model toward smaller and more code-focused"
+
+These aren't filter queries. They're **navigation** — moving through a space of related models, understanding what's near what and why.
+
+## How It Works
+
+Start with a single idea: every model has a **position** along several independent dimensions.
+
+Take efficiency. A 7B model is the mainstream sweet spot — most people searching for models land here. So 7B is **zero**. Smaller models (3B, 1B) go negative. Larger models (30B, 70B) go positive. Now any query about model size is just arithmetic: "small" means "negative in EFFICIENCY."
+
+Apply this to seven dimensions:
+
+```
+ARCHITECTURE    zero = transformer decoder          the overwhelming default
+CAPABILITY      zero = general language model       before specialization
+EFFICIENCY      zero = ~7B parameters               the mainstream sweet spot
+COMPATIBILITY   zero = PyTorch + transformers        universal baseline
+LINEAGE         zero = base/foundational model      before fine-tuning
+DOMAIN          zero = general knowledge             before domain narrowing
+QUALITY         zero = established, mainstream       known and stable
+```
+
+Negative means simpler, earlier, more general. Positive means more specialized, derived, novel. Zero is always the **most common thing people look for** — so most queries resolve near the origin.
+
+This is the first layer: **structured coordinates in model space.**
+
+The second layer is the **anchor dictionary** — a shared vocabulary of characteristics. "instruction-following", "tool-calling", "GGUF-available", "Apple-Silicon-native", "Llama-family." Models link to anchors. Two models sharing 15 anchors are similar, without anyone wiring up an explicit edge between them. Similarity is **emergent**.
+
+Because anchors are sets, you get set operations for free:
+- **Intersection** of two models' anchors = what they share
+- **Symmetric difference** = what makes them different
+- **Jaccard similarity** = overall semantic overlap
+
+Every similarity score traces back to specific shared anchors and bank positions. Nothing is an opaque embedding.
+
+The third layer is **spreading activation**: given a seed model, activation propagates through explicit links (fine-tuned-from, same-family) and shared anchors, decaying with distance. "Models like X" finds both direct relatives and structurally similar models from other families.
+
+## What This Is Not
+
+- **Not a vector store.** No embeddings. Similarity comes from shared structure, not cosine distance in a latent space.
+- **Not a SQL database with 65 columns.** The seven banks and anchor dictionary replace flat attributes with navigable dimensions.
+- **Not a HuggingFace API wrapper.** HF is one data source. The value is the extracted structure HF doesn't provide.
+- **Not a ranking system.** There's no "best model" score. There's "what's near this point in model space, and what path leads toward what you need."
 
 ## Quick Start
 
 ```bash
-# Install and run (uv required)
-cd /Users/rohanvinaik/tools/infrastructure/hf-model-search  # local directory name unchanged
 uv sync
-
-# Already registered as global MCP server in ~/.claude.json
-# Available in every Claude Code session automatically
+uv run model-atlas   # starts MCP server
 ```
 
-## Why This Exists
-
-HuggingFace exposes ~10 structured fields per model. This tool extracts and encodes **relational and hierarchical information** — architecture type, capability profiles, model lineage, efficiency characteristics, domain specialization — into a structured semantic space that supports queries HF can't:
-
-- "Most general Llama base model that supports tool-calling and runs on consumer GPU"
-- "Models architecturally similar to Mamba but with instruction tuning"
-- "What's the fine-tune lineage of this model? What siblings does it have?"
-- "Navigate from this model toward smaller and more code-focused"
-
-The point isn't to rank models by some objective "usefulness" metric. It's to see **what exists** that can be worked into your projects — finding the best model, or the most general version of some capability to fine-tune.
-
-## Architecture
-
-### The Semantic Network (Primary Storage)
-
-Models live in a 7-bank semantic space, inspired by the [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding) architecture. Each bank is an orthogonal dimension with a meaningful zero state:
-
-```
-ARCHITECTURE    zero: standard transformer decoder
-                -N ← simpler/older          +N → novel/specialized (Mamba, SSM, MoE)
-                ~95% of filtering happens in this bank alone
-
-CAPABILITY      zero: general language model
-                -N ← narrow/single-task     +N → rich (code, reasoning, tool-calling, NER)
-
-EFFICIENCY      zero: ~7B mainstream
-                -N ← tiny (1B, 0.5B)        +N → massive (30B, 70B, frontier)
-
-COMPATIBILITY   zero: standard transformers + PyTorch
-                                             +N → specific format/framework/hardware
-
-LINEAGE         zero: base/foundational model of a family
-                -N ← predecessors/ancestors  +N → fine-tunes, quantizations, derivatives
-
-DOMAIN          zero: general knowledge
-                                             +N → increasingly specialized (code → Python → DSL)
-
-QUALITY         zero: established, mainstream
-                -N ← legacy/abandoned        +N → trending, high momentum
-```
-
-### Anchor Dictionary (Emergent Similarity)
-
-A shared vocabulary of characteristics ("instruction-following", "Apple-Silicon-native", "RLHF-tuned", "tool-calling") that models link to. Models sharing anchors cluster together without explicit edges. Anchor sets support set operations:
-
-- **Intersection**: what two models have in common
-- **Symmetric difference**: what distinguishes them
-- **Jaccard similarity**: overall semantic overlap
-
-### SQL Overflow Table (Sidecar)
-
-Flat metadata that doesn't decompose into the network: SHA hashes, exact dates, specific benchmark scores, download count snapshots, license strings. In a perfect design this table would be empty — in practice it catches the non-relational overflow.
-
-### Full Architecture Diagram
-
-```
-Source Adapters (HF, Ollama, Replicate, CivitAI)
-    │
-    ▼
-Extraction Pipeline
-    │  reads model cards, configs, API metadata, file lists
-    │  produces: bank positions, anchor links, model relationships, overflow metadata
-    │
-    ▼
-┌─────────────────────────────────────────────────────┐
-│              Semantic Network (SQLite)                │
-│                                                       │
-│  models ─── model_positions (7 banks, signed)         │
-│         ─── model_anchors ─── anchors (dictionary)    │
-│         ─── model_links (lineage, family, variants)   │
-│         ─── model_metadata (overflow sidecar)         │
-│                                                       │
-│  Query: navigational (bank-aware similarity,          │
-│         anchor set operations, lineage traversal)     │
-└─────────────────────────────────────────────────────┘
-    │
-    ▼
-MCP Server (tools for search, navigate, compare, index)
-```
+Registered as a global MCP server — available in every Claude Code session automatically.
 
 ## Tools
 
-### `hf_search_models`
+**`hf_search_models`** — Compound navigational search. Parses natural language into bank constraints + anchor targets, scores via four channels (bank proximity, anchor Jaccard, spreading activation, fuzzy matching).
 
-Primary navigational search. Combines bank-position constraints with anchor similarity.
+```
+"small code model with tool-calling"
+ → EFFICIENCY < 0, anchors: code-generation + tool-calling
+```
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `query` | str | *required* | Natural language search query |
-| `task` | str \| None | None | Pipeline tag filter (maps to ARCHITECTURE/CAPABILITY banks) |
-| `author` | str \| None | None | Filter by org |
-| `library` | str \| None | None | Filter by library (maps to COMPATIBILITY bank) |
-| `min_likes` | int | 0 | Minimum likes (QUALITY bank signal) |
-| `limit` | int | 20 | Results to return |
+**`hf_build_index`** — Fetch models from a source (HuggingFace, Ollama, or both), extract bank positions and anchors, add to the network. Additive — each call enriches the same graph.
 
-### `hf_build_index`
+**`hf_get_model_detail`** — Full semantic profile: all 7 bank positions, complete anchor set, lineage links, overflow metadata.
 
-Fetch models from a source, run through extraction pipeline, add to the semantic network. Additive — multiple calls enrich the same network.
+**`hf_compare_models`** — Anchor set operations between models. Shared characteristics, distinguishing features, per-bank position deltas.
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `task` | str \| None | None | Scope what gets fetched from source API |
-| `author` | str \| None | None | Scope by author/org |
-| `limit` | int | 2000 | Max models to fetch |
-| `min_likes` | int | 5 | Noise filter |
-| `force` | bool | False | If true, clear and rebuild from scratch |
+**`set_model_vibe`** — The calling LLM writes a one-sentence vibe summary and optional anchors after reading a model card. The LLM *is* the NLP extraction tier.
 
-### `hf_get_model_detail`
-
-Deep dive on one model. Returns full network position (all 7 banks), anchor set, lineage links, and overflow metadata.
-
-### `hf_compare_models`
-
-Compare models via anchor set operations. Shows shared anchors (intersection), distinguishing features (symmetric difference), and per-bank position comparison.
-
-### `hf_index_status`
-
-Network stats: total models, breakdown by bank positions, anchor dictionary size, source coverage.
+**`hf_index_status`** — Network stats: model count, anchor dictionary size, per-bank coverage.
 
 ## Storage
 
 | Path | Contents |
 |------|----------|
-| `~/.cache/model-atlas/network.db` | The semantic network (SQLite) |
-| `~/.cache/model-atlas/extraction_cache/` | Cached raw API responses (for re-extraction) |
-
-## Dependencies
-
-- `mcp[cli]` — MCP server framework
-- `huggingface-hub` — HF API client
-- `sentence-transformers` — Small local model for NLP extraction tasks
-- `rapidfuzz` — Fuzzy string matching (name resolution layer)
-- `sqlite3` — Standard library, primary storage
+| `~/.cache/model-atlas/network.db` | Semantic network (SQLite) |
+| `~/.cache/model-atlas/extraction_cache/` | Cached raw API responses |
 
 ## Design Reference
 
-Full system design: `.claude/CLAUDE.md`
-Theoretical foundation: `/Users/rohanvinaik/sparse-wiki-grounding/reports/ARCHITECTURE_DEEP_DIVE.md`
+Full system design document: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+
+Theoretical foundation (signed hierarchies, anchor dictionaries, spreading activation): [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
