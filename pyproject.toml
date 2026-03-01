@@ -1,5 +1,5 @@
 [project]
-name = "hf-model-search"
+name = "model-atlas"
 version = "0.2.0"
 description = "MCP server exposing a navigable semantic network of ML models"
 requires-python = ">=3.10"
@@ -15,7 +15,7 @@ dev = [
 ]
 
 [project.scripts]
-hf-model-search = "hf_model_search.server:main"
+model-atlas = "model_atlas.server:main"
 
 [build-system]
 requires = ["hatchling"]

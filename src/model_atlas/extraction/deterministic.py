@@ -193,7 +193,52 @@ def _extract_quality(
     return BankPosition(sign=-1, depth=2), anchors
 
 
-def _collect_metadata(inp: ModelInput, param_b: float | None) -> dict[str, tuple[str, str]]:
+def _extract_from_config(config: dict | None) -> tuple[int | None, int | None]:
+    """Extract context_length and vocab_size from config.json fields."""
+    if not config:
+        return None, None
+
+    # Context length: try multiple keys in priority order
+    context_length = None
+    for key in (
+        "max_position_embeddings",
+        "max_seq_len",
+        "n_positions",
+        "max_sequence_length",
+        "sliding_window",
+    ):
+        val = config.get(key)
+        if isinstance(val, int) and val > 0:
+            context_length = val
+            break
+
+    vocab_size = config.get("vocab_size")
+    if not isinstance(vocab_size, int) or vocab_size <= 0:
+        vocab_size = None
+
+    return context_length, vocab_size
+
+
+def _context_length_anchors(context_length: int | None) -> list[str]:
+    """Generate context-length tier anchors."""
+    if context_length is None:
+        return []
+    anchors = []
+    if context_length >= 32_768:
+        anchors.append("long-context-32k")
+    if context_length >= 131_072:
+        anchors.append("long-context-128k")
+    if context_length >= 1_000_000:
+        anchors.append("long-context-1m")
+    return anchors
+
+
+def _collect_metadata(
+    inp: ModelInput,
+    param_b: float | None,
+    context_length: int | None = None,
+    vocab_size: int | None = None,
+) -> dict[str, tuple[str, str]]:
     """Collect overflow metadata fields."""
     meta: dict[str, tuple[str, str]] = {}
     if param_b:
@@ -210,6 +255,10 @@ def _collect_metadata(inp: ModelInput, param_b: float | None) -> dict[str, tuple
         meta["pipeline_tag"] = (inp.pipeline_tag, "str")
     if inp.library_name:
         meta["library_name"] = (inp.library_name, "str")
+    if context_length is not None:
+        meta["context_length"] = (str(context_length), "int")
+    if vocab_size is not None:
+        meta["vocab_size"] = (str(vocab_size), "int")
     return meta
 
 
@@ -218,6 +267,10 @@ def extract(inp: ModelInput) -> DeterministicResult:
     # Architecture
     arch = _extract_architecture(inp.config)
     arch_anchors = [(n, "ARCHITECTURE") for n in arch.nodes]
+
+    # Config-based signals
+    context_length, vocab_size = _extract_from_config(inp.config)
+    ctx_anchors = _context_length_anchors(context_length)
 
     # Efficiency
     param_b = _estimate_params_billions(inp.model_id, inp.tags, inp.safetensors_info)
@@ -229,12 +282,13 @@ def extract(inp: ModelInput) -> DeterministicResult:
     # Combine anchors
     all_anchors = arch_anchors
     all_anchors.extend((a, "EFFICIENCY") for a in eff_anchors)
+    all_anchors.extend((a, "EFFICIENCY") for a in ctx_anchors)
     all_anchors.extend((a, "QUALITY") for a in qual_anchors)
 
     return DeterministicResult(
         architecture=arch,
         efficiency=efficiency,
         quality=quality,
-        metadata=_collect_metadata(inp, param_b),
+        metadata=_collect_metadata(inp, param_b, context_length, vocab_size),
         anchors=all_anchors,
     )

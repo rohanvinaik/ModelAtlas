@@ -13,15 +13,20 @@ from .. import db
 from .deterministic import (
     DeterministicResult,
     ModelInput,
+)
+from .deterministic import (
     extract as extract_deterministic,
 )
-from .patterns import PatternResult, extract as extract_patterns
+from .patterns import PatternResult
+from .patterns import extract as extract_patterns
 from .vibes import extract_vibe_summary
 
 logger = logging.getLogger(__name__)
 
 
-def extract_and_store(conn: sqlite3.Connection, inp: ModelInput, card_text: str = "") -> None:
+def extract_and_store(
+    conn: sqlite3.Connection, inp: ModelInput, card_text: str = ""
+) -> None:
     """Run full extraction pipeline and store results in the network.
 
     This is the main entry point for indexing a single model. It:
@@ -61,8 +66,10 @@ def extract_and_store(conn: sqlite3.Connection, inp: ModelInput, card_text: str 
     # Write anchors (deduplicated from both tiers)
     _store_anchors(conn, inp.model_id, det.anchors + pat.anchors)
 
-    # Write metadata
+    # Write metadata (deterministic + pattern)
     for key, (value, value_type) in det.metadata.items():
+        db.set_metadata(conn, inp.model_id, key, value, value_type)
+    for key, (value, value_type) in pat.metadata.items():
         db.set_metadata(conn, inp.model_id, key, value, value_type)
 
     # Store vibe summary
@@ -82,13 +89,23 @@ def _store_positions(
 ) -> None:
     """Write all 7 bank positions to the database."""
     db.set_position(
-        conn, model_id, "ARCHITECTURE",
-        det.architecture.sign, det.architecture.depth, det.architecture.nodes,
+        conn,
+        model_id,
+        "ARCHITECTURE",
+        det.architecture.sign,
+        det.architecture.depth,
+        det.architecture.nodes,
     )
-    db.set_position(conn, model_id, "EFFICIENCY", det.efficiency.sign, det.efficiency.depth)
+    db.set_position(
+        conn, model_id, "EFFICIENCY", det.efficiency.sign, det.efficiency.depth
+    )
     db.set_position(conn, model_id, "QUALITY", det.quality.sign, det.quality.depth)
-    db.set_position(conn, model_id, "CAPABILITY", pat.capability.sign, pat.capability.depth)
-    db.set_position(conn, model_id, "COMPATIBILITY", pat.compatibility.sign, pat.compatibility.depth)
+    db.set_position(
+        conn, model_id, "CAPABILITY", pat.capability.sign, pat.capability.depth
+    )
+    db.set_position(
+        conn, model_id, "COMPATIBILITY", pat.compatibility.sign, pat.compatibility.depth
+    )
     db.set_position(conn, model_id, "LINEAGE", pat.lineage.sign, pat.lineage.depth)
     db.set_position(conn, model_id, "DOMAIN", pat.domain.sign, pat.domain.depth)
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hf_model_search import db
+from model_atlas import db
 
 
 def test_init_creates_tables(conn):

@@ -1,5 +1,5 @@
 ---
-name: hf-model-search
+name: model-atlas
 description: Navigate a semantic network of ML models — find models by architecture, capability, efficiency, lineage, and domain specialization
 ---
 

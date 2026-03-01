@@ -1,7 +1,7 @@
-"""HuggingFace Model Search MCP Server.
+"""ModelAtlas MCP Server.
 
 Navigational search across a semantic network of ML models.
-Run with: uv run hf-model-search
+Run with: uv run model-atlas
 """
 
 from __future__ import annotations
@@ -12,6 +12,13 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from . import db
+from ._formatting import (
+    candidates_to_dicts,
+    fetch_from_hf_api,
+    format_fuzzy_results,
+    format_network_results,
+    structured_to_dict,
+)
 from .config import DEFAULT_CANDIDATE_LIMIT, DEFAULT_INDEX_SIZE, DEFAULT_RESULT_LIMIT
 from .extraction.pipeline import extract_batch
 from .query import compare, search
@@ -21,7 +28,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 mcp = FastMCP(
-    "hf-model-search",
+    "model-atlas",
     instructions=(
         "Fuzzy and semantic search across HuggingFace Hub models. "
         "WORKFLOW: Always start with hf_search_models \u2014 it works immediately with structured+fuzzy layers. "
@@ -90,7 +97,7 @@ def hf_search_models(
             min_likes=min_likes,
             min_downloads=min_downloads,
         )
-        candidate_dicts = [_structured_to_dict(c) for c in candidates]
+        candidate_dicts = [structured_to_dict(c) for c in candidates]
 
         # Layer 2: Fuzzy scoring
         fuzzy_results = fuzzy.score_models(query, candidate_dicts)
@@ -101,10 +108,10 @@ def hf_search_models(
             network_results = search(
                 conn, query, limit=limit, fuzzy_scores=fuzzy_scores
             )
-            results = _format_network_results(network_results)
+            results = format_network_results(network_results)
         else:
             # Fallback: rank by fuzzy scores alone
-            results = _format_fuzzy_results(candidate_dicts, fuzzy_scores, limit)
+            results = format_fuzzy_results(candidate_dicts, fuzzy_scores, limit)
 
         output = {
             "query": query,
@@ -155,7 +162,7 @@ def hf_get_model_detail(model_id: str) -> str:
         conn.close()
 
     # Fallback: fetch from HF API
-    return _fetch_from_hf_api(model_id)
+    return fetch_from_hf_api(model_id)
 
 
 @mcp.tool()
@@ -221,7 +228,7 @@ def hf_build_index(
         return json.dumps({"error": f"No models found for task '{search_task}'"})
 
     # Build model dicts for batch extraction
-    model_dicts = _candidates_to_dicts(candidates)
+    model_dicts = candidates_to_dicts(candidates)
 
     conn = db.get_connection()
     try:
@@ -260,119 +267,114 @@ def hf_index_status() -> str:
         conn.close()
 
 
-# --- Helpers ---
+@mcp.tool()
+def search_models(
+    query: str,
+    source: str = "huggingface",
+    limit: int = 20,
+    task: str | None = None,
+    author: str | None = None,
+) -> str:
+    """Search models across sources (huggingface, ollama, or all).
 
+    Uses source adapters to search model registries. When source='all',
+    searches all registered sources and merges results.
 
-def _structured_to_dict(r: structured.StructuredResult) -> dict:
-    return {
-        "model_id": r.model_id,
-        "author": r.author,
-        "likes": r.likes,
-        "downloads": r.downloads,
-        "pipeline_tag": r.pipeline_tag,
-        "tags": r.tags,
-        "library_name": r.library_name,
-        "license": r.license,
-        "card_text": r.card_text,
-        "rank": r.rank,
-    }
+    Args:
+        query: Search query string
+        source: Source to search — 'huggingface', 'ollama', or 'all'
+        limit: Maximum results to return (default 20)
+        task: Task filter (only applies to sources that support it)
+        author: Author filter (only applies to sources that support it)
+    """
+    from .sources import get_source, list_sources as _list_sources
 
+    filters = {}
+    if task:
+        filters["task"] = task
+    if author:
+        filters["author"] = author
 
-def _candidates_to_dicts(candidates: list[structured.StructuredResult]) -> list[dict]:
-    """Convert structured results to dicts suitable for extract_batch."""
-    results = []
-    for c in candidates:
-        results.append(
-            {
-                "model_id": c.model_id,
-                "author": c.author,
-                "pipeline_tag": c.pipeline_tag,
-                "tags": c.tags,
-                "library_name": c.library_name,
-                "likes": c.likes,
-                "downloads": c.downloads,
-                "created_at": c.raw.get("created_at"),
-                "license": c.license,
-                "card_text": c.card_text,
-            }
-        )
-    return results
+    if source == "all":
+        all_results = []
+        errors = {}
+        for name, adapter in _list_sources().items():
+            try:
+                results = adapter.search(query, limit=limit, filters=filters)
+                all_results.extend(
+                    {
+                        "model_id": r.model_id,
+                        "source": r.source,
+                        "author": r.author,
+                        "display_name": r.display_name,
+                        "downloads": r.downloads,
+                        "likes": r.likes,
+                        "tags": r.tags[:10],
+                    }
+                    for r in results
+                )
+            except Exception as e:
+                errors[name] = str(e)
 
-
-def _format_network_results(network_results: list) -> list[dict]:
-    """Format SearchResult objects for JSON output."""
-    return [
-        {
-            "model_id": r.model_id,
-            "author": r.author,
-            "score": round(r.score, 4),
-            "score_breakdown": {
-                "bank_proximity": round(r.bank_score, 4),
-                "anchor_overlap": round(r.anchor_score, 4),
-                "fuzzy": round(r.fuzzy_score, 4),
-            },
-            "positions": r.positions,
-            "anchors": r.anchor_labels[:15],
-            "vibe": r.vibe_summary,
+        output = {
+            "query": query,
+            "source": "all",
+            "result_count": len(all_results),
+            "results": all_results[:limit],
         }
-        for r in network_results
-    ]
+        if errors:
+            output["errors"] = errors
+        return json.dumps(output, indent=2)
 
-
-def _format_fuzzy_results(
-    candidates: list[dict],
-    fuzzy_scores: dict[str, float],
-    limit: int,
-) -> list[dict]:
-    """Format results when network is empty (fuzzy-only fallback)."""
-    scored = []
-    for c in candidates:
-        mid = c["model_id"]
-        scored.append((fuzzy_scores.get(mid, 0.0), c))
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    return [
-        {
-            "model_id": c["model_id"],
-            "author": c["author"],
-            "score": round(score, 4),
-            "likes": c["likes"],
-            "downloads": c["downloads"],
-            "pipeline_tag": c["pipeline_tag"],
-            "tags": c["tags"][:10] if c["tags"] else [],
-            "library": c["library_name"],
-        }
-        for score, c in scored[:limit]
-    ]
-
-
-def _fetch_from_hf_api(model_id: str) -> str:
-    """Fetch model details directly from HuggingFace API."""
-    from huggingface_hub import HfApi
-
-    api = HfApi()
     try:
-        info = api.model_info(model_id)
-    except Exception as e:
-        return json.dumps({"error": f"Failed to fetch model info: {e}"})
+        adapter = get_source(source)
+    except KeyError:
+        available = list(_list_sources().keys())
+        return json.dumps(
+            {"error": f"Unknown source '{source}'. Available: {available}"}
+        )
 
-    return json.dumps(
-        {
-            "source": "huggingface_api",
-            "model_id": info.id,
-            "author": info.author,
-            "likes": info.likes,
-            "downloads": info.downloads,
-            "pipeline_tag": info.pipeline_tag,
-            "tags": list(info.tags or []),
-            "library_name": info.library_name,
-            "license": getattr(info, "license", None),
-            "hint": "This model is not in the semantic network. "
-            "Run hf_build_index to add it for richer navigational queries.",
-        },
-        indent=2,
-        default=str,
-    )
+    results = adapter.search(query, limit=limit, filters=filters)
+    output = {
+        "query": query,
+        "source": source,
+        "result_count": len(results),
+        "results": [
+            {
+                "model_id": r.model_id,
+                "source": r.source,
+                "author": r.author,
+                "display_name": r.display_name,
+                "downloads": r.downloads,
+                "likes": r.likes,
+                "tags": r.tags[:10],
+            }
+            for r in results
+        ],
+    }
+    return json.dumps(output, indent=2)
+
+
+@mcp.tool()
+def list_model_sources() -> str:
+    """List available model sources and their status.
+
+    Returns all registered source adapters with availability info.
+    """
+    from .sources import list_sources as _list_sources
+
+    sources = {}
+    for name, adapter in _list_sources().items():
+        status = "available"
+        # Quick availability check for non-HF sources
+        if name == "ollama":
+            try:
+                adapter.search("", limit=1)
+            except Exception:
+                status = "unavailable (not running)"
+        sources[name] = {"name": name, "status": status}
+
+    return json.dumps({"sources": sources}, indent=2)
 
 
 def main():

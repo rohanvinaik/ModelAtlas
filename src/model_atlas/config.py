@@ -1,9 +1,9 @@
-"""Configuration constants for HF Model Search."""
+"""Configuration constants for ModelAtlas."""
 
 from pathlib import Path
 
 # Cache and storage
-CACHE_DIR = Path.home() / ".cache" / "hf-model-search"
+CACHE_DIR = Path.home() / ".cache" / "model-atlas"
 MODEL_CARD_CACHE_DIR = CACHE_DIR / "model_cards"
 NETWORK_DB_PATH = CACHE_DIR / "network.db"
 
@@ -23,4 +23,4 @@ DEFAULT_INDEX_SIZE = 2000  # Models per batch when building index
 # Query scoring weights
 WEIGHT_BANK_PROXIMITY = 0.35  # How close in bank-position space
 WEIGHT_ANCHOR_OVERLAP = 0.45  # Jaccard similarity on anchor sets
-WEIGHT_FUZZY = 0.20           # Fuzzy name-resolution score
+WEIGHT_FUZZY = 0.20  # Fuzzy name-resolution score

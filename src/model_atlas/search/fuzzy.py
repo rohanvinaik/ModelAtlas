@@ -6,24 +6,105 @@ import logging
 import re
 from dataclasses import dataclass
 
-from rapidfuzz import fuzz, process
+from rapidfuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
 # Common stop words to skip during token matching
-STOP_WORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "may", "might", "can", "shall", "for", "and", "but", "or",
-    "nor", "not", "no", "so", "yet", "both", "either", "neither", "each",
-    "every", "all", "any", "few", "more", "most", "other", "some", "such",
-    "than", "too", "very", "just", "about", "above", "after", "again",
-    "also", "at", "before", "between", "by", "down", "during", "from",
-    "in", "into", "of", "on", "out", "over", "then", "there", "through",
-    "to", "under", "up", "with", "that", "this", "these", "those",
-    "i", "me", "my", "we", "our", "you", "your", "it", "its",
-    "model", "models",  # too generic in this context
-})
+STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "can",
+        "shall",
+        "for",
+        "and",
+        "but",
+        "or",
+        "nor",
+        "not",
+        "no",
+        "so",
+        "yet",
+        "both",
+        "either",
+        "neither",
+        "each",
+        "every",
+        "all",
+        "any",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "such",
+        "than",
+        "too",
+        "very",
+        "just",
+        "about",
+        "above",
+        "after",
+        "again",
+        "also",
+        "at",
+        "before",
+        "between",
+        "by",
+        "down",
+        "during",
+        "from",
+        "in",
+        "into",
+        "of",
+        "on",
+        "out",
+        "over",
+        "then",
+        "there",
+        "through",
+        "to",
+        "under",
+        "up",
+        "with",
+        "that",
+        "this",
+        "these",
+        "those",
+        "i",
+        "me",
+        "my",
+        "we",
+        "our",
+        "you",
+        "your",
+        "it",
+        "its",
+        "model",
+        "models",  # too generic in this context
+    }
+)
 
 
 @dataclass
@@ -40,7 +121,9 @@ def _tokenize_query(query: str) -> list[str]:
     return [t for t in tokens if t not in STOP_WORDS and len(t) > 1]
 
 
-def _build_searchable_strings(model_id: str, tags: list[str], pipeline_tag: str, card_text: str) -> dict[str, str]:
+def _build_searchable_strings(
+    model_id: str, tags: list[str], pipeline_tag: str, card_text: str
+) -> dict[str, str]:
     """Build a dict of field_name -> searchable string for a model."""
     # Split model_id into parts: "meta-llama/Llama-3.1-8B-Instruct" -> "meta llama Llama 3 1 8B Instruct"
     id_parts = re.findall(r"[a-zA-Z0-9]+", model_id)
@@ -110,11 +193,13 @@ def score_models(
 
         avg_score = sum(token_scores) / len(token_scores) if token_scores else 0.0
 
-        results.append(FuzzyScore(
-            model_id=model["model_id"],
-            score=avg_score,
-            best_match_field=best_field,
-            best_match_value=best_value,
-        ))
+        results.append(
+            FuzzyScore(
+                model_id=model["model_id"],
+                score=avg_score,
+                best_match_field=best_field,
+                best_match_value=best_value,
+            )
+        )
 
     return results

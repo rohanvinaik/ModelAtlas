@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hf_model_search.query import compare, lineage, search, similar_to
+from model_atlas.query import compare, lineage, search, similar_to
 
 
 class TestSearch:
@@ -15,14 +15,20 @@ class TestSearch:
         results = search(populated_conn, "small code model", limit=10)
         ids = [r.model_id for r in results]
         # Qwen Coder should rank higher for a code query
-        qwen_idx = ids.index("Qwen/Qwen2.5-Coder-1.5B") if "Qwen/Qwen2.5-Coder-1.5B" in ids else 999
+        qwen_idx = (
+            ids.index("Qwen/Qwen2.5-Coder-1.5B")
+            if "Qwen/Qwen2.5-Coder-1.5B" in ids
+            else 999
+        )
         assert qwen_idx < len(results)
 
     def test_fuzzy_scores_incorporated(self, populated_conn):
         fuzzy = {"meta-llama/Llama-3.1-8B-Instruct": 0.95}
         results = search(populated_conn, "llama", limit=10, fuzzy_scores=fuzzy)
         # Llama should get a boost from fuzzy
-        llama = next((r for r in results if "Llama-3.1-8B-Instruct" in r.model_id), None)
+        llama = next(
+            (r for r in results if "Llama-3.1-8B-Instruct" in r.model_id), None
+        )
         assert llama is not None
         assert llama.fuzzy_score == 0.95
 
@@ -33,7 +39,9 @@ class TestSearch:
 
 class TestSimilarTo:
     def test_similar_finds_related(self, populated_conn):
-        results = similar_to(populated_conn, "meta-llama/Llama-3.1-8B-Instruct", limit=10)
+        results = similar_to(
+            populated_conn, "meta-llama/Llama-3.1-8B-Instruct", limit=10
+        )
         ids = [r.model_id for r in results]
         # The GGUF variant shares the most anchors
         assert "TheBloke/Llama-3.1-8B-Instruct-GGUF" in ids
@@ -75,7 +83,9 @@ class TestLineage:
         result = lineage(populated_conn, "TheBloke/Llama-3.1-8B-Instruct-GGUF")
         assert result["model_id"] == "TheBloke/Llama-3.1-8B-Instruct-GGUF"
         assert len(result["derived_from"]) == 1
-        assert result["derived_from"][0]["target_id"] == "meta-llama/Llama-3.1-8B-Instruct"
+        assert (
+            result["derived_from"][0]["target_id"] == "meta-llama/Llama-3.1-8B-Instruct"
+        )
 
     def test_lineage_not_found(self, conn):
         result = lineage(conn, "nonexistent/Model")

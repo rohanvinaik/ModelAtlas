@@ -17,6 +17,7 @@ api = HfApi()
 @dataclass
 class StructuredResult:
     """A model result from the structured HF API search."""
+
     model_id: str
     author: str
     likes: int
@@ -114,5 +115,7 @@ def search(
             continue
         results.append(_model_to_result(model, rank))
 
-    logger.info("Layer 1 returned %d candidates (from %d fetched)", len(results), len(models))
+    logger.info(
+        "Layer 1 returned %d candidates (from %d fetched)", len(results), len(models)
+    )
     return results

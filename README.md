@@ -1,4 +1,4 @@
-# hf-model-search
+# ModelAtlas
 
 MCP server that builds a **navigable semantic network** of ML models. Models are positioned across orthogonal semantic banks (architecture, capability, efficiency, compatibility, lineage, domain, quality) and connected through a shared anchor vocabulary. Queries are navigational — find models by exploring semantic space, not just filtering columns.
 
@@ -6,7 +6,7 @@ MCP server that builds a **navigable semantic network** of ML models. Models are
 
 ```bash
 # Install and run (uv required)
-cd /Users/rohanvinaik/tools/infrastructure/hf-model-search
+cd /Users/rohanvinaik/tools/infrastructure/hf-model-search  # local directory name unchanged
 uv sync
 
 # Already registered as global MCP server in ~/.claude.json
@@ -136,8 +136,8 @@ Network stats: total models, breakdown by bank positions, anchor dictionary size
 
 | Path | Contents |
 |------|----------|
-| `~/.cache/hf-model-search/network.db` | The semantic network (SQLite) |
-| `~/.cache/hf-model-search/extraction_cache/` | Cached raw API responses (for re-extraction) |
+| `~/.cache/model-atlas/network.db` | The semantic network (SQLite) |
+| `~/.cache/model-atlas/extraction_cache/` | Cached raw API responses (for re-extraction) |
 
 ## Dependencies
 

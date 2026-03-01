@@ -23,6 +23,7 @@ class PatternResult:
     domain: BankPosition = field(default_factory=BankPosition)
     anchors: list[tuple[str, str]] = field(default_factory=list)  # (label, bank)
     base_model: str | None = None  # detected base model ID
+    metadata: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 # Tag/name patterns -> (anchor_label, bank)
@@ -46,7 +47,23 @@ _CAPABILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\bmultimodal\b", "multimodal"),
     (r"\blong.?context\b|\b\d+k\b", "long-context"),
     (r"\bstruct\w*?.?output\b|\bjson\b", "structured-output"),
+    (r"json[\s_-]?mode|structured[\s_-]?output|json[\s_-]?schema", "schema-following"),
+    (r"\boutlines\b|\bguidance\b|\blmql\b|grammar[\s_-]?constrained", "constrained-generation"),
+    (r"theorem[\s_-]?prov|formal[\s_-]?math|lean4?|coq|isabelle", "proof-level-math"),
+    (r"olympiad|competition[\s_-]?math|imo|aime|putnam", "olympiad-math"),
 ]
+
+# Quantization level patterns (from model ID)
+_QUANT_PATTERN = re.compile(
+    r"(?:^|[-_.])"
+    r"(Q[2-8]_[KS0-9]+(?:_[SML])?|Q[2-8]_0|F16|F32|"
+    r"GPTQ|AWQ|EXL2|GGUF)"
+    r"(?:[-_.]|$)",
+    re.IGNORECASE,
+)
+
+# Language tag detection (2-letter ISO codes in tags)
+_LANG_TAG_PATTERN = re.compile(r"^[a-z]{2}$")
 
 _COMPATIBILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\bgguf\b", "GGUF-available"),
@@ -61,6 +78,10 @@ _COMPATIBILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\btensorrt\b", "TensorRT-compatible"),
     (r"\btransformers\b", "transformers-compatible"),
     (r"\bdiffusers\b", "diffusers-compatible"),
+    (r"\bopenvino\b", "OpenVINO"),
+    (r"\bcoreml\b|\bcore[\s_-]ml\b", "CoreML"),
+    (r"\btflite\b|\btensorflow[\s_-]lite\b", "TFLite"),
+    (r"\bcpu[\s_-]?(?:inference|optimized|only)\b", "CPU-inference"),
 ]
 
 _DOMAIN_PATTERNS: list[tuple[str, str, int]] = [
@@ -73,8 +94,18 @@ _DOMAIN_PATTERNS: list[tuple[str, str, int]] = [
     (r"\bmath\b|\barithm\b", "math-domain", 1),
     (r"\bmultilingual\b|\btranslat\b", "multilingual", 1),
     (r"\bcreat\b|\bstory\b|\bpoet\b|\broleplay\b", "creative-domain", 1),
-    (r"\bpython\b", "code-domain", 2),  # narrow: specific language
+    (r"\bpython\b|\bpy\b", "Python-code", 2),
+    (r"\brust\b", "Rust-code", 2),
+    (r"\b(?:c\+\+|cpp)\b", "C++-code", 2),
+    (r"\b(?:javascript|js)\b(?!.*typescript)", "JavaScript-code", 2),
+    (r"\btypescript\b", "TypeScript-code", 2),
+    (r"\b(?:golang|go-lang)\b", "Go-code", 2),
+    (r"\bjava\b(?!script)", "Java-code", 2),
     (r"\bradiol\b|\bpathol\b", "medical-domain", 2),
+    (r"\bsystems[\s_-]?program\b", "systems-programming", 2),
+    (r"\bweb[\s_-]?dev\b", "web-development", 2),
+    (r"\bproof[\s_-]?assist\b|\blean4?\b|\bcoq\b|\bisabelle\b", "proof-assistant", 2),
+    (r"\bformal[\s_-]?verif\b", "formal-verification", 2),
 ]
 
 # Family detection: author/name prefix -> family anchor
@@ -103,9 +134,7 @@ def _detect_capabilities(searchable: str) -> list[str]:
     return found
 
 
-def _detect_compatibility(
-    searchable: str, library_name: str
-) -> tuple[list[str], int]:
+def _detect_compatibility(searchable: str, library_name: str) -> tuple[list[str], int]:
     """Detect format/framework compatibility. Returns anchors and max depth."""
     found: list[str] = []
     max_depth = 0
@@ -128,7 +157,12 @@ def _detect_compatibility(
     found = list(set(found))  # deduplicate
 
     # Depth: how specific is the compatibility target
-    format_anchors = {"GGUF-available", "GPTQ-available", "AWQ-available", "EXL2-available"}
+    format_anchors = {
+        "GGUF-available",
+        "GPTQ-available",
+        "AWQ-available",
+        "EXL2-available",
+    }
     hw_anchors = {"MLX-compatible", "Apple-Silicon-native", "TensorRT-compatible"}
     if found:
         if any(a in hw_anchors for a in found):
@@ -200,6 +234,35 @@ def _detect_lineage(
     return None, anchors, BankPosition(sign=1, depth=1)
 
 
+def _detect_quantization_level(model_id: str) -> str | None:
+    """Detect quantization level from model ID."""
+    match = _QUANT_PATTERN.search(model_id)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
+def _detect_chat_template(tags: list[str]) -> bool:
+    """Detect chat template availability from tags."""
+    for tag in tags:
+        tag_lower = tag.lower()
+        if any(
+            kw in tag_lower
+            for kw in ("chat_template", "chat-template", "conversational")
+        ):
+            return True
+    return False
+
+
+def _detect_language_tags(tags: list[str]) -> list[str]:
+    """Extract 2-letter language codes from tags."""
+    langs = []
+    for tag in tags:
+        if _LANG_TAG_PATTERN.match(tag.lower()):
+            langs.append(tag.lower())
+    return langs
+
+
 def extract(
     model_id: str,
     author: str = "",
@@ -227,6 +290,25 @@ def extract(
     # Lineage
     base_model, lineage_anchors, lineage_pos = _detect_lineage(model_id, tags, author)
 
+    # Quantization level metadata
+    metadata: dict[str, tuple[str, str]] = {}
+    quant_level = _detect_quantization_level(model_id)
+    if quant_level:
+        metadata["quantization_level"] = (quant_level, "str")
+
+    # Chat template detection
+    has_chat_template = _detect_chat_template(tags)
+    if has_chat_template:
+        compat_anchors.append("chat-template-available")
+        metadata["has_chat_template"] = ("true", "bool")
+
+    # Language tags
+    lang_tags = _detect_language_tags(tags)
+    if lang_tags:
+        import json
+
+        metadata["supported_languages"] = (json.dumps(lang_tags), "json")
+
     # Combine all anchors
     all_anchors: list[tuple[str, str]] = []
     all_anchors.extend((a, "CAPABILITY") for a in cap_anchors)
@@ -241,4 +323,5 @@ def extract(
         domain=BankPosition(sign=1 if domain_anchors else 0, depth=domain_depth),
         anchors=all_anchors,
         base_model=base_model,
+        metadata=metadata,
     )

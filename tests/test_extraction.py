@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from hf_model_search.extraction.deterministic import ModelInput, extract as extract_det
-from hf_model_search.extraction.patterns import extract as extract_pat
-from hf_model_search.extraction.vibes import extract_vibe_summary
+from model_atlas.extraction.deterministic import ModelInput
+from model_atlas.extraction.deterministic import extract as extract_det
+from model_atlas.extraction.patterns import extract as extract_pat
+from model_atlas.extraction.vibes import extract_vibe_summary
 
 
 class TestDeterministic:
@@ -127,6 +128,173 @@ class TestPatterns:
         anchors = [a[0] for a in result.anchors]
         assert "medical-domain" in anchors
         assert result.domain.depth >= 1
+
+
+class TestConfigExtraction:
+    def test_context_length_from_max_position_embeddings(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"max_position_embeddings": 32768},
+        )
+        result = extract_det(inp)
+        assert result.metadata["context_length"] == ("32768", "int")
+        anchors = [a[0] for a in result.anchors]
+        assert "long-context-32k" in anchors
+
+    def test_context_length_from_max_seq_len(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"max_seq_len": 131072},
+        )
+        result = extract_det(inp)
+        assert result.metadata["context_length"] == ("131072", "int")
+        anchors = [a[0] for a in result.anchors]
+        assert "long-context-32k" in anchors
+        assert "long-context-128k" in anchors
+
+    def test_context_length_1m(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"max_position_embeddings": 1048576},
+        )
+        result = extract_det(inp)
+        anchors = [a[0] for a in result.anchors]
+        assert "long-context-1m" in anchors
+
+    def test_context_length_short_no_anchors(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"max_position_embeddings": 4096},
+        )
+        result = extract_det(inp)
+        assert result.metadata["context_length"] == ("4096", "int")
+        anchors = [a[0] for a in result.anchors]
+        assert "long-context-32k" not in anchors
+
+    def test_vocab_size(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"vocab_size": 32000},
+        )
+        result = extract_det(inp)
+        assert result.metadata["vocab_size"] == ("32000", "int")
+
+    def test_no_config(self):
+        inp = ModelInput(model_id="test/Model-7B")
+        result = extract_det(inp)
+        assert "context_length" not in result.metadata
+        assert "vocab_size" not in result.metadata
+
+
+class TestNewPatterns:
+    def test_quantization_level_q4km(self):
+        result = extract_pat(model_id="user/Model-Q4_K_M-GGUF")
+        assert result.metadata.get("quantization_level") == ("Q4_K_M", "str")
+
+    def test_quantization_level_gptq(self):
+        result = extract_pat(model_id="user/Model-GPTQ")
+        assert result.metadata.get("quantization_level") == ("GPTQ", "str")
+
+    def test_python_code_domain(self):
+        result = extract_pat(
+            model_id="user/CodeModel",
+            tags=["python"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "Python-code" in anchors
+
+    def test_rust_code_domain(self):
+        result = extract_pat(
+            model_id="user/RustCoder",
+            tags=["rust"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "Rust-code" in anchors
+
+    def test_java_not_javascript(self):
+        result = extract_pat(
+            model_id="user/JavaModel",
+            tags=["java"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "Java-code" in anchors
+        assert "JavaScript-code" not in anchors
+
+    def test_openvino_detection(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["openvino"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "OpenVINO" in anchors
+
+    def test_coreml_detection(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["coreml"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "CoreML" in anchors
+
+    def test_cpu_inference_detection(self):
+        result = extract_pat(
+            model_id="user/Model-cpu-inference",
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "CPU-inference" in anchors
+
+    def test_chat_template_detection(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["chat_template", "text-generation"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "chat-template-available" in anchors
+        assert result.metadata.get("has_chat_template") == ("true", "bool")
+
+    def test_constrained_generation(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["outlines", "text-generation"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "constrained-generation" in anchors
+
+    def test_schema_following(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["json-mode", "structured-output"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "schema-following" in anchors
+
+    def test_proof_level_math(self):
+        result = extract_pat(
+            model_id="user/Lean4-Prover",
+            tags=["math", "theorem-proving"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "proof-level-math" in anchors
+
+    def test_olympiad_math(self):
+        result = extract_pat(
+            model_id="user/OlympiadModel",
+            tags=["competition-math", "aime"],
+        )
+        anchors = [a[0] for a in result.anchors]
+        assert "olympiad-math" in anchors
+
+    def test_language_tags(self):
+        result = extract_pat(
+            model_id="user/Model",
+            tags=["en", "fr", "de", "text-generation"],
+        )
+        import json
+        assert "supported_languages" in result.metadata
+        langs = json.loads(result.metadata["supported_languages"][0])
+        assert "en" in langs
+        assert "fr" in langs
+        assert "de" in langs
 
 
 class TestVibes:
