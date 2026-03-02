@@ -4,18 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
-  workflow_dispatch:
+    types: [opened, synchronize, reopened]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # full history for SonarCloud blame data
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v4
         with:
@@ -30,8 +27,15 @@ jobs:
       - name: Test with coverage
         run: uv run pytest tests/ --cov=src/model_atlas --cov-report=xml:coverage.xml -q
 
-      - name: SonarCloud Scan
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v4
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
