@@ -14,8 +14,6 @@ import re
 import sqlite3
 from functools import lru_cache
 
-from math import log
-
 from . import db
 from .config import (
     NAVIGATE_AVOID_DECAY,

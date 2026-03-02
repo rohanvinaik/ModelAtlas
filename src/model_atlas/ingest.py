@@ -19,14 +19,12 @@ import json
 import logging
 import signal
 import sqlite3
-import sys
 import time
 from datetime import datetime, timezone
 
 from . import db
 from .config import (
     INGEST_BATCH_SIZE,
-    INGEST_DB_PATH,
     INGEST_MIN_LIKES,
     INGEST_VIBE_MIN_LIKES,
     VIBE_MAX_RETRIES,
@@ -472,7 +470,7 @@ def get_status(ingest_conn: sqlite3.Connection) -> dict:
 def print_status(ingest_conn: sqlite3.Connection) -> None:
     """Print human-readable ingest status."""
     status = get_status(ingest_conn)
-    print(f"ModelAtlas Ingest Status")
+    print("ModelAtlas Ingest Status")
     print(f"{'=' * 40}")
     print(f"Total models tracked: {status['total_models']}")
     print(f"Phase A (fetched):    {status['phase_a_done']}")
@@ -790,7 +788,7 @@ def main() -> None:
         results = seed(network_conn, passes=pass_names)
         stats = db.network_stats(network_conn)
         network_conn.close()
-        print(f"\nSeed complete:")
+        print("\nSeed complete:")
         for name, count in results.items():
             print(f"  {name}: {count} models indexed")
         print(f"\nNetwork total: {stats['total_models']} models, {stats['total_anchors']} anchors")

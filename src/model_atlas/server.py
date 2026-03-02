@@ -22,7 +22,7 @@ from ._formatting import (
 )
 from .config import DEFAULT_CANDIDATE_LIMIT, DEFAULT_INDEX_SIZE, DEFAULT_RESULT_LIMIT
 from .extraction.pipeline import extract_batch
-from .query import NavigationResult, StructuredQuery, compare, navigate, search
+from .query import StructuredQuery, compare, navigate, search
 from .search import fuzzy, structured
 
 logging.basicConfig(level=logging.INFO)
