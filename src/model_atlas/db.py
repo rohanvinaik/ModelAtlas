@@ -287,8 +287,6 @@ def set_metadata(
 # --- Re-exports for backward compatibility ---
 from .db_ingest import (  # noqa: E402
     get_connection as get_ingest_connection,
-)
-from .db_ingest import (
     init_db as init_ingest_db,
 )
 from .db_queries import (  # noqa: E402
