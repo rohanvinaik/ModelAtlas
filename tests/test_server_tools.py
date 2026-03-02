@@ -116,7 +116,7 @@ class TestHfIndexStatus:
     def test_returns_stats(self, populated_conn, monkeypatch):
         _patch_db(monkeypatch, populated_conn)
         result = json.loads(hf_index_status())
-        assert result["total_models"] == 3
+        assert result["total_models"] == 4
         assert result["total_anchors"] > 0
 
 

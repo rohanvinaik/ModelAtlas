@@ -92,5 +92,25 @@ def populated_conn(conn):
         "quantized_from",
     )
 
+    # Model 4: A domain-specialized medical model (large, specialized)
+    db.insert_model(conn, "medicalai/BioMedGPT-LM-7B", author="medicalai")
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "ARCHITECTURE", 0, 0)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "EFFICIENCY", 0, 0)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "CAPABILITY", 1, 1)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "LINEAGE", 1, 2)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "QUALITY", 0, 0)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "DOMAIN", 1, 2)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "COMPATIBILITY", 0, 0)
+    for label in [
+        "decoder-only",
+        "instruction-following",
+        "7B-class",
+        "medical-domain",
+        "fine-tune",
+        "science-domain",
+    ]:
+        aid = db.get_or_create_anchor(conn, label, "CAPABILITY")
+        db.link_anchor(conn, "medicalai/BioMedGPT-LM-7B", aid)
+
     conn.commit()
     return conn

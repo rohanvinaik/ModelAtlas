@@ -22,7 +22,7 @@ from ._formatting import (
 )
 from .config import DEFAULT_CANDIDATE_LIMIT, DEFAULT_INDEX_SIZE, DEFAULT_RESULT_LIMIT
 from .extraction.pipeline import extract_batch
-from .query import compare, search
+from .query import NavigationResult, StructuredQuery, compare, navigate, search
 from .search import fuzzy, structured
 
 logging.basicConfig(level=logging.INFO)
@@ -129,6 +129,140 @@ def hf_search_models(
                 "for richer navigational search results."
             )
         return json.dumps(output, indent=2)
+    finally:
+        conn.close()
+
+
+@mcp.tool()
+def navigate_models(
+    architecture: int | None = None,
+    capability: int | None = None,
+    efficiency: int | None = None,
+    compatibility: int | None = None,
+    lineage: int | None = None,
+    domain: int | None = None,
+    quality: int | None = None,
+    require_anchors: list[str] | None = None,
+    prefer_anchors: list[str] | None = None,
+    avoid_anchors: list[str] | None = None,
+    similar_to: str | None = None,
+    limit: int = 20,
+) -> str:
+    """Navigate the semantic model network with structured scoring.
+
+    The primary recommendation engine. Decompose the user's natural language
+    query into these structured parameters — ModelAtlas does deterministic math.
+
+    BANK DIRECTIONS (-1, 0, or +1 for each; omit to express "don't care"):
+
+      architecture:  -1=simpler/older (encoder-only, RNN)
+                      0=standard transformer decoder (most models)
+                     +1=novel/specialized (Mamba, RWKV, SSM, MoE)
+
+      capability:    -1=narrow/single-task (classifier, embedding-only)
+                      0=general language model
+                     +1=rich/multi-capability (code, reasoning, tool-calling)
+
+      efficiency:    -1=smaller/lighter (3B, 1B, sub-1B, edge)
+                      0=~7B mainstream sweet spot
+                     +1=larger/frontier (13B, 30B, 70B+)
+
+      compatibility:  0=standard PyTorch/transformers
+                     +1=specific format/hardware (GGUF, MLX, Apple Silicon)
+
+      lineage:       -1=predecessor/earlier in family
+                      0=base/foundational model
+                     +1=derivative (fine-tune, quantized, community merge)
+
+      domain:         0=general knowledge
+                     +1=domain-specialized (code, medical, legal, finance)
+
+      quality:       -1=legacy/declining/abandoned
+                      0=established mainstream
+                     +1=trending/rising momentum
+
+    ANCHOR TARGETING:
+      require_anchors: Model MUST have ALL of these (hard filter).
+        Examples: "code-generation", "instruction-following", "Llama-family",
+                  "GGUF-available", "consumer-GPU-viable", "tool-calling"
+      prefer_anchors: Boost models with these (soft preference, IDF-weighted).
+      avoid_anchors: Penalize models with these (each halves the score).
+
+    SEED SIMILARITY:
+      similar_to: A model_id to use as similarity seed (IDF-weighted Jaccard
+                  on anchor sets). Example: "meta-llama/Llama-3.1-8B-Instruct"
+
+    Scoring: bank_alignment * anchor_relevance * seed_similarity
+    Each ∈ [0,1]. Product means any zero kills the score.
+
+    Args:
+        architecture: Bank direction for ARCHITECTURE (-1, 0, or +1)
+        capability: Bank direction for CAPABILITY (-1, 0, or +1)
+        efficiency: Bank direction for EFFICIENCY (-1, 0, or +1)
+        compatibility: Bank direction for COMPATIBILITY (-1, 0, or +1)
+        lineage: Bank direction for LINEAGE (-1, 0, or +1)
+        domain: Bank direction for DOMAIN (-1, 0, or +1)
+        quality: Bank direction for QUALITY (-1, 0, or +1)
+        require_anchors: Anchors the model MUST have (hard filter)
+        prefer_anchors: Anchors that boost score (soft, IDF-weighted)
+        avoid_anchors: Anchors that penalize score
+        similar_to: Model ID for anchor-similarity seed
+        limit: Max results to return (default 20)
+    """
+    conn = db.get_connection()
+    try:
+        stats = db.network_stats(conn)
+        if stats["total_models"] == 0:
+            return json.dumps({
+                "error": "Semantic network is empty. Run hf_build_index first.",
+                "network_models": 0,
+            })
+
+        sq = StructuredQuery(
+            architecture=architecture,
+            capability=capability,
+            efficiency=efficiency,
+            compatibility=compatibility,
+            lineage=lineage,
+            domain=domain,
+            quality=quality,
+            require_anchors=require_anchors or [],
+            prefer_anchors=prefer_anchors or [],
+            avoid_anchors=avoid_anchors or [],
+            similar_to=similar_to,
+            limit=limit,
+        )
+        results = navigate(conn, sq)
+
+        return json.dumps(
+            {
+                "query": {
+                    "banks": sq.bank_directions(),
+                    "require_anchors": sq.require_anchors,
+                    "prefer_anchors": sq.prefer_anchors,
+                    "avoid_anchors": sq.avoid_anchors,
+                    "similar_to": sq.similar_to,
+                },
+                "network_models": stats["total_models"],
+                "result_count": len(results),
+                "results": [
+                    {
+                        "model_id": r.model_id,
+                        "author": r.author,
+                        "score": round(r.score, 4),
+                        "score_breakdown": {
+                            "bank_alignment": round(r.bank_alignment, 4),
+                            "anchor_relevance": round(r.anchor_relevance, 4),
+                            "seed_similarity": round(r.seed_similarity, 4),
+                        },
+                        "positions": r.positions,
+                        "anchors": r.anchor_labels[:15],
+                    }
+                    for r in results
+                ],
+            },
+            indent=2,
+        )
     finally:
         conn.close()
 

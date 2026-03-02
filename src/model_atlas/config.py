@@ -41,3 +41,15 @@ LINK_WEIGHTS: dict[str, float] = {
     "predecessor": 0.6,
     "successor": 0.6,
 }
+
+# Navigate (structured scoring) constants
+NAVIGATE_MISSING_BANK_PENALTY = 0.3  # Score for a bank when model has no position
+NAVIGATE_AVOID_DECAY = 0.5  # Each avoided anchor multiplies score by this
+
+# Ingest daemon settings
+INGEST_DB_PATH = CACHE_DIR / "ingest_state.db"
+INGEST_BATCH_SIZE = 50
+INGEST_MIN_LIKES = 5
+INGEST_VIBE_MIN_LIKES = 50
+VIBE_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+VIBE_MAX_RETRIES = 3

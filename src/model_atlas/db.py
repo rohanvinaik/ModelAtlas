@@ -271,11 +271,10 @@ def init_db(conn: sqlite3.Connection | None = None) -> None:
         c.executescript(_SCHEMA)
         _migrate_schema(c)
         # Bootstrap anchors (skip duplicates)
-        for label, bank, category in _BOOTSTRAP_ANCHORS:
-            c.execute(
-                "INSERT OR IGNORE INTO anchors (label, bank, category, source) VALUES (?, ?, ?, 'bootstrap')",
-                (label, bank, category),
-            )
+        c.executemany(
+            "INSERT OR IGNORE INTO anchors (label, bank, category, source) VALUES (?, ?, ?, 'bootstrap')",
+            _BOOTSTRAP_ANCHORS,
+        )
 
 
 # --- CRUD Operations ---
@@ -521,6 +520,105 @@ def find_models_by_bank_range(
         params.append(max_signed)
     query += " ORDER BY signed_pos"
     return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+
+_INGEST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingest_models (
+    model_id         TEXT PRIMARY KEY,
+    source           TEXT DEFAULT 'huggingface',
+    likes            INTEGER DEFAULT 0,
+    phase_a_done     INTEGER DEFAULT 0,
+    phase_b_done     INTEGER DEFAULT 0,
+    phase_c_done     INTEGER DEFAULT 0,
+    phase_c_attempts INTEGER DEFAULT 0,
+    raw_json         TEXT,
+    fetched_at       TEXT,
+    extracted_at     TEXT,
+    vibed_at         TEXT
+);
+"""
+
+
+def init_ingest_db(conn: sqlite3.Connection) -> None:
+    """Create ingest progress tracking tables."""
+    conn.executescript(_INGEST_SCHEMA)
+    conn.commit()
+
+
+def get_ingest_connection(db_path: str | None = None) -> sqlite3.Connection:
+    """Get a connection to the ingest state database."""
+    from .config import INGEST_DB_PATH
+
+    path = db_path or str(INGEST_DB_PATH)
+    _ensure_db_dir()
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+
+def compute_anchor_idf(conn: sqlite3.Connection) -> dict[str, float]:
+    """Compute IDF for all anchors: log(N / count_models_with_anchor).
+
+    Returns {anchor_label: idf_value}. Rare anchors get high IDF,
+    ubiquitous anchors get low IDF.
+    """
+    from math import log
+
+    total = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+    if total == 0:
+        return {}
+    rows = conn.execute(
+        """SELECT a.label, COUNT(ma.model_id) as cnt
+           FROM anchors a LEFT JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
+           GROUP BY a.anchor_id, a.label"""
+    ).fetchall()
+    return {r["label"]: log(total / max(r["cnt"], 1)) for r in rows}
+
+
+def batch_get_positions(
+    conn: sqlite3.Connection, model_ids: list[str]
+) -> dict[str, dict[str, tuple[int, int]]]:
+    """Batch-fetch bank positions for a set of models.
+
+    Returns {model_id: {bank: (sign, depth)}}.
+    """
+    if not model_ids:
+        return {}
+    placeholders = ",".join("?" for _ in model_ids)
+    rows = conn.execute(
+        f"SELECT model_id, bank, path_sign, path_depth FROM model_positions WHERE model_id IN ({placeholders})",
+        model_ids,
+    ).fetchall()
+    result: dict[str, dict[str, tuple[int, int]]] = {}
+    for r in rows:
+        result.setdefault(r["model_id"], {})[r["bank"]] = (
+            r["path_sign"],
+            r["path_depth"],
+        )
+    return result
+
+
+def batch_get_anchor_sets(
+    conn: sqlite3.Connection, model_ids: list[str]
+) -> dict[str, set[str]]:
+    """Batch-fetch anchor label sets for a set of models.
+
+    Returns {model_id: {anchor_label, ...}}.
+    """
+    if not model_ids:
+        return {}
+    placeholders = ",".join("?" for _ in model_ids)
+    rows = conn.execute(
+        f"""SELECT ma.model_id, a.label
+            FROM model_anchors ma JOIN anchors a ON ma.anchor_id = a.anchor_id
+            WHERE ma.model_id IN ({placeholders})""",
+        model_ids,
+    ).fetchall()
+    result: dict[str, set[str]] = {}
+    for r in rows:
+        result.setdefault(r["model_id"], set()).add(r["label"])
+    return result
 
 
 def network_stats(conn: sqlite3.Connection) -> dict:

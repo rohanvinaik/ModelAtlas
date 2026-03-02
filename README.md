@@ -1,98 +1,107 @@
 # ModelAtlas
 
-You want to find "a small code model with tool-calling that runs on Apple Silicon." HuggingFace gives you a search bar and 10 filterable columns. You get 50,000 results, or zero, and no way to navigate between those extremes.
+Ask your LLM to find you a model and watch what happens. It recites whatever it memorized during training — names that were popular six months ago, vague impressions of what's good at code, no sense of what's related to what. It's navigating a landscape of a million models with no map.
 
-ModelAtlas fixes this. It's an MCP server that positions ML models in a **navigable semantic space** — so an LLM can explore what exists, not just filter what matches.
+ModelAtlas is the map. A structured semantic network of ML models, exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape instead of guessing at it.
 
-## The Problem
+## The gap
 
-HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and uses the `transformers` library. It does not know that this model is an instruction-tuned derivative of a base model in the Llama family, that it supports tool-calling, that it's in the mainstream efficiency range, or that it has 47 quantized variants on the Hub. That information is trapped in model cards, naming conventions, config files, and community knowledge.
+HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and uses the `transformers` library. What it doesn't know: this model is an instruction-tuned derivative of a base model in the Llama family, supports tool-calling, sits in the mainstream efficiency range, and has 47 quantized variants on the Hub. That information exists — scattered across model cards, naming conventions, config files, and community knowledge. But it's not queryable.
 
-This means you can't ask questions like:
-- "Most general Llama base model that supports tool-calling and fits on consumer GPU"
+So you can't ask:
+
+- "Most general Llama base that supports tool-calling and fits on consumer GPU"
 - "Models architecturally similar to Mamba but with instruction tuning"
-- "What distinguishes these two models? What do they share?"
-- "Navigate from this model toward smaller and more code-focused"
+- "Navigate from here toward smaller and more code-focused"
 
-These aren't filter queries. They're **navigation** — moving through a space of related models, understanding what's near what and why.
+These aren't filter queries. They're **navigation** — and HuggingFace doesn't have a coordinate system to navigate with.
 
-## How It Works
+## The idea
 
-Start with a single idea: every model has a **position** along several independent dimensions.
-
-Take efficiency. A 7B model is the mainstream sweet spot — most people searching for models land here. So 7B is **zero**. Smaller models (3B, 1B) go negative. Larger models (30B, 70B) go positive. Now any query about model size is just arithmetic: "small" means "negative in EFFICIENCY."
-
-Apply this to seven dimensions:
+Every model has a position along seven independent dimensions. Take efficiency: 7B is the mainstream sweet spot, so 7B is **zero**. Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
 
 ```
-ARCHITECTURE    zero = transformer decoder          the overwhelming default
-CAPABILITY      zero = general language model       before specialization
-EFFICIENCY      zero = ~7B parameters               the mainstream sweet spot
-COMPATIBILITY   zero = PyTorch + transformers        universal baseline
-LINEAGE         zero = base/foundational model      before fine-tuning
-DOMAIN          zero = general knowledge             before domain narrowing
-QUALITY         zero = established, mainstream       known and stable
+ARCHITECTURE    zero = transformer decoder       →  +novel (Mamba, MoE)
+CAPABILITY      zero = general language model     →  +rich (code, tools, reasoning)
+EFFICIENCY      zero = ~7B parameters             →  +larger  / -smaller
+COMPATIBILITY   zero = PyTorch + transformers     →  +specific (GGUF, MLX)
+LINEAGE         zero = base/foundational model    →  +derived (fine-tune, quant)
+DOMAIN          zero = general knowledge           →  +specialized (code, medical)
+QUALITY         zero = established mainstream      →  +trending  / -legacy
 ```
 
-Negative means simpler, earlier, more general. Positive means more specialized, derived, novel. Zero is always the **most common thing people look for** — so most queries resolve near the origin.
+Zero is always **the most common thing people look for**. Most queries resolve near the origin.
 
-This is the first layer: **structured coordinates in model space.**
+On top of coordinates, models share **anchors** — a vocabulary of characteristics like "instruction-following", "GGUF-available", "Llama-family." Models sharing anchors are similar without explicit edges. Similarity is emergent, and every score traces back to specific shared labels. Nothing is an opaque embedding.
 
-The second layer is the **anchor dictionary** — a shared vocabulary of characteristics. "instruction-following", "tool-calling", "GGUF-available", "Apple-Silicon-native", "Llama-family." Models link to anchors. Two models sharing 15 anchors are similar, without anyone wiring up an explicit edge between them. Similarity is **emergent**.
+The LLM decomposes a user's question into coordinates and anchors. ModelAtlas does arithmetic on integers and set intersections on small lists. The intelligence is in the interaction — no single piece is smart, but the system is.
 
-Because anchors are sets, you get set operations for free:
-- **Intersection** of two models' anchors = what they share
-- **Symmetric difference** = what makes them different
-- **Jaccard similarity** = overall semantic overlap
+## What this is not
 
-Every similarity score traces back to specific shared anchors and bank positions. Nothing is an opaque embedding.
+- **Not a vector store.** No embeddings. Similarity comes from shared structure.
+- **Not a database with 65 columns.** Seven signed dimensions and a label vocabulary replace flat attributes.
+- **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose.
+- **Not a ranking system.** No "best model" score. Just "what's near here, and what path leads where you need."
 
-The third layer is **spreading activation**: given a seed model, activation propagates through explicit links (fine-tuned-from, same-family) and shared anchors, decaying with distance. "Models like X" finds both direct relatives and structurally similar models from other families.
+The entire thing is a SQLite file, a few thousand anchor labels, and signed integers. No GPU at query time. No vector store in the background. No running services. The heaviest operation is optional vibe extraction during ingestion (a 0.5B model, runs once per model, ever). At query time it's multiplication and set intersection.
 
-## What This Is Not
-
-- **Not a vector store.** No embeddings. Similarity comes from shared structure, not cosine distance in a latent space.
-- **Not a SQL database with 65 columns.** The seven banks and anchor dictionary replace flat attributes with navigable dimensions.
-- **Not a HuggingFace API wrapper.** HF is one data source. The value is the extracted structure HF doesn't provide.
-- **Not a ranking system.** There's no "best model" score. There's "what's near this point in model space, and what path leads toward what you need."
-
-## Quick Start
+## Quick start
 
 ```bash
 uv sync
-uv run model-atlas   # starts MCP server
+uv run model-atlas
 ```
 
-Registered as a global MCP server — available in every Claude Code session automatically.
+MCP server — available in any Claude Code session.
 
-## Tools
+## Usage
 
-**`hf_search_models`** — Compound navigational search. Parses natural language into bank constraints + anchor targets, scores via four channels (bank proximity, anchor Jaccard, spreading activation, fuzzy matching).
+The primary tool is `navigate_models`. The calling LLM fills in structured parameters; ModelAtlas does deterministic scoring.
 
+```python
+navigate_models(
+    efficiency=-1,           # small
+    capability=1,            # capable
+    require_anchors=["code-generation"],
+    prefer_anchors=["instruction-following", "tool-calling"],
+    avoid_anchors=["embedding"]
+)
+# → Small code models with tool-calling, ranked by IDF-weighted anchor overlap
 ```
-"small code model with tool-calling"
- → EFFICIENCY < 0, anchors: code-generation + tool-calling
-```
 
-**`hf_build_index`** — Fetch models from a source (HuggingFace, Ollama, or both), extract bank positions and anchors, add to the network. Additive — each call enriches the same graph.
+**Bank directions** — `-1`, `0`, or `+1` per dimension. Omit any you don't care about.
 
-**`hf_get_model_detail`** — Full semantic profile: all 7 bank positions, complete anchor set, lineage links, overflow metadata.
+**Anchor targeting** — `require` (hard filter), `prefer` (IDF-weighted boost — rare anchors count more), `avoid` (each match halves the score).
 
-**`hf_compare_models`** — Anchor set operations between models. Shared characteristics, distinguishing features, per-bank position deltas.
+**Seed similarity** — `similar_to="meta-llama/Llama-3.1-8B-Instruct"` finds models with overlapping anchor sets, weighted by anchor rarity.
 
-**`set_model_vibe`** — The calling LLM writes a one-sentence vibe summary and optional anchors after reading a model card. The LLM *is* the NLP extraction tier.
+**Scoring** — `bank_alignment * anchor_relevance * seed_similarity`. Multiplicative: a model that nails efficiency but misses capability gets zero, not fifty percent.
 
-**`hf_index_status`** — Network stats: model count, anchor dictionary size, per-bank coverage.
+### Other tools
 
-## Storage
+| Tool | What it does |
+|------|-------------|
+| `hf_search_models` | Natural language fallback — keyword parsing into bank constraints + fuzzy matching |
+| `hf_build_index` | Fetch models from HuggingFace/Ollama, extract positions and anchors, add to network |
+| `hf_get_model_detail` | Full semantic profile: all 7 bank positions, anchor set, lineage, metadata |
+| `hf_compare_models` | Set operations on anchor sets: shared features, distinguishing features, Jaccard similarity |
+| `set_model_vibe` | LLM writes a one-sentence vibe summary after reading a model card |
+| `hf_index_status` | Network stats |
 
-| Path | Contents |
-|------|----------|
-| `~/.cache/model-atlas/network.db` | Semantic network (SQLite) |
-| `~/.cache/model-atlas/extraction_cache/` | Cached raw API responses |
+## How it works underneath
 
-## Design Reference
+**Extraction** runs in three tiers:
 
-Full system design document: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+1. **Deterministic** — parameter count, architecture type, download velocity. Pure arithmetic on structured API fields.
+2. **Pattern matching** — regex on tags, model names, configs. Detects instruction-tuning, quantization formats, family membership, domain signals.
+3. **Vibe extraction** — a 0.5B local model produces a one-sentence summary and extra anchors via constrained generation. Runs once per model during ingestion.
 
-Theoretical foundation (signed hierarchies, anchor dictionaries, spreading activation): [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
+**Ingestion** is additive. Each `hf_build_index` call enriches the same network. A background daemon can run continuously, streaming new models through all three extraction tiers.
+
+**Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
+
+## Design reference
+
+- Theory and design: [`docs/DESIGN.md`](docs/DESIGN.md)
+- Architectural spec: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+- Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)

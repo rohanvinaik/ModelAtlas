@@ -12,61 +12,28 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from dataclasses import dataclass, field
+from functools import lru_cache
+
+from math import log
 
 from . import db
-from .config import WEIGHT_ANCHOR, WEIGHT_BANK, WEIGHT_FUZZY, WEIGHT_SPREAD
+from .config import (
+    NAVIGATE_AVOID_DECAY,
+    NAVIGATE_MISSING_BANK_PENALTY,
+    WEIGHT_ANCHOR,
+    WEIGHT_BANK,
+    WEIGHT_FUZZY,
+    WEIGHT_SPREAD,
+)
+from .query_types import (  # noqa: F401 — re-exported for backward compat
+    BankConstraint,
+    ComparisonResult,
+    NavigationResult,
+    ParsedQuery,
+    SearchResult,
+    StructuredQuery,
+)
 from .spreading import spread
-
-
-@dataclass
-class BankConstraint:
-    """A constraint on a single semantic bank."""
-
-    bank: str
-    direction: int | None = None  # +1 or -1, None = any
-    target_position: int | None = None  # specific signed position to be near
-    min_signed: int | None = None
-    max_signed: int | None = None
-    weight: float = 1.0
-
-
-@dataclass
-class ParsedQuery:
-    """Structured representation of a parsed natural language query."""
-
-    bank_constraints: list[BankConstraint]
-    anchor_targets: list[str]  # desired anchor labels
-    seed_model_ids: list[str]  # "models like X" seeds
-    direction_vectors: dict[str, int]  # bank -> desired direction (+1/-1)
-    raw_tokens: list[str]  # for fuzzy fallback
-
-
-@dataclass
-class SearchResult:
-    """A model returned from a navigational search."""
-
-    model_id: str
-    score: float
-    bank_score: float = 0.0
-    anchor_score: float = 0.0
-    spread_score: float = 0.0
-    fuzzy_score: float = 0.0
-    positions: dict[str, dict] = field(default_factory=dict)
-    anchor_labels: list[str] = field(default_factory=list)
-    vibe_summary: str = ""
-    author: str = ""
-
-
-@dataclass
-class ComparisonResult:
-    """Result of comparing two or more models."""
-
-    models: list[str]
-    shared_anchors: list[str]
-    per_model_unique: dict[str, list[str]]
-    jaccard_similarity: float
-    bank_deltas: dict[str, dict]
 
 
 # Query signal keywords mapped to bank constraints
@@ -122,6 +89,7 @@ _LIKE_PATTERN = re.compile(
 )
 
 
+@lru_cache(maxsize=1024)
 def _parse_query(query: str) -> ParsedQuery:
     """Parse a natural language query into structured components."""
     tokens = re.findall(r"[a-zA-Z0-9_.-]+", query.lower())
@@ -495,3 +463,190 @@ def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
         "derivatives": derivatives,
         "family": family,
     }
+
+
+# ---------------------------------------------------------------------------
+# Structured navigation — the calling LLM fills in StructuredQuery,
+# ModelAtlas does deterministic math.
+# ---------------------------------------------------------------------------
+
+# Module-level IDF cache, invalidated by clearing it after index builds.
+_idf_cache: dict[str, float] = {}
+
+
+def _get_idf(conn: sqlite3.Connection) -> dict[str, float]:
+    """Return cached IDF dict, computing on first call."""
+    global _idf_cache
+    if not _idf_cache:
+        _idf_cache = db.compute_anchor_idf(conn)
+    return _idf_cache
+
+
+def invalidate_idf_cache() -> None:
+    """Clear the IDF cache — call after index builds."""
+    global _idf_cache
+    _idf_cache = {}
+
+
+def _bank_score_single(model_signed_pos: int, query_direction: int) -> float:
+    """Score a single bank alignment.
+
+    direction == 0: want near zero, penalize distance.
+    direction == +1/-1: reward alignment, penalize opposition.
+    """
+    if query_direction == 0:
+        return 1.0 / (1.0 + abs(model_signed_pos))
+    alignment = model_signed_pos * query_direction
+    if alignment > 0:
+        return 1.0
+    elif alignment == 0:
+        return 0.5
+    else:
+        return 1.0 / (1.0 + abs(alignment))
+
+
+def navigate(
+    conn: sqlite3.Connection,
+    query: StructuredQuery,
+) -> list[NavigationResult]:
+    """Structured navigational search — the primary recommendation engine.
+
+    Three signals, multiplicative:
+        final_score = bank_alignment * anchor_relevance * seed_similarity
+
+    Uses batch SQL instead of N+1 per-model lookups.
+    """
+    idf = _get_idf(conn)
+    directions = query.bank_directions()
+    require_set = set(query.require_anchors)
+    prefer_set = set(query.prefer_anchors)
+    avoid_set = set(query.avoid_anchors)
+    has_anchor_constraints = bool(require_set or prefer_set or avoid_set)
+
+    # --- Step 1: Determine candidate set ---
+    if require_set:
+        # Pre-filter: only models that have ALL required anchors
+        anchor_ids = []
+        for label in require_set:
+            row = conn.execute(
+                "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
+            ).fetchone()
+            if row:
+                anchor_ids.append(row["anchor_id"])
+            else:
+                return []  # required anchor doesn't exist → no results
+        if len(anchor_ids) != len(require_set):
+            return []
+        placeholders = ",".join("?" for _ in anchor_ids)
+        rows = conn.execute(
+            f"""SELECT model_id FROM model_anchors
+                WHERE anchor_id IN ({placeholders})
+                GROUP BY model_id
+                HAVING COUNT(DISTINCT anchor_id) = ?""",
+            [*anchor_ids, len(anchor_ids)],
+        ).fetchall()
+        candidate_ids = [r["model_id"] for r in rows]
+        if not candidate_ids:
+            return []
+    else:
+        rows = conn.execute("SELECT model_id FROM models").fetchall()
+        candidate_ids = [r["model_id"] for r in rows]
+
+    if not candidate_ids:
+        return []
+
+    # --- Step 2: Batch-fetch positions and anchors ---
+    all_positions = db.batch_get_positions(conn, candidate_ids)
+    all_anchors = db.batch_get_anchor_sets(conn, candidate_ids)
+
+    # Seed model anchors (for similarity)
+    seed_anchors: set[str] = set()
+    if query.similar_to:
+        seed_anchors = db.get_anchor_set(conn, query.similar_to)
+
+    # Batch-fetch authors
+    ph = ",".join("?" for _ in candidate_ids)
+    author_rows = conn.execute(
+        f"SELECT model_id, author FROM models WHERE model_id IN ({ph})",
+        candidate_ids,
+    ).fetchall()
+    authors = {r["model_id"]: r["author"] or "" for r in author_rows}
+
+    # Prefer IDF sum for prefer_anchors (precompute denominator)
+    prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
+
+    # --- Step 3: Score each candidate ---
+    results: list[NavigationResult] = []
+    for mid in candidate_ids:
+        positions = all_positions.get(mid, {})
+        model_anchor_set = all_anchors.get(mid, set())
+
+        # 1) Bank alignment — multiplicative across specified banks
+        if directions:
+            bank_scores = []
+            for bank_name, direction in directions.items():
+                pos = positions.get(bank_name)
+                if pos is None:
+                    bank_scores.append(NAVIGATE_MISSING_BANK_PENALTY)
+                else:
+                    signed = pos[0] * pos[1]  # sign * depth
+                    bank_scores.append(_bank_score_single(signed, direction))
+            bank_alignment = 1.0
+            for s in bank_scores:
+                bank_alignment *= s
+        else:
+            bank_alignment = 1.0
+
+        # 2) Anchor relevance — IDF-weighted
+        if has_anchor_constraints:
+            # require already gated by SQL pre-filter
+
+            # prefer: IDF-weighted overlap
+            if prefer_set and prefer_idf_total > 0:
+                matched = prefer_set & model_anchor_set
+                prefer_score = (
+                    sum(idf.get(a, 0.0) for a in matched) / prefer_idf_total
+                )
+            else:
+                prefer_score = 1.0
+
+            # avoid: each present anchor halves the score
+            avoided = avoid_set & model_anchor_set
+            avoid_penalty = NAVIGATE_AVOID_DECAY ** len(avoided)
+
+            anchor_relevance = prefer_score * avoid_penalty
+        else:
+            anchor_relevance = 1.0
+
+        # 3) Seed similarity — IDF-weighted Jaccard
+        if seed_anchors:
+            shared = seed_anchors & model_anchor_set
+            union = seed_anchors | model_anchor_set
+            idf_intersection = sum(idf.get(a, 0.0) for a in shared)
+            idf_union = sum(idf.get(a, 0.0) for a in union)
+            seed_similarity = idf_intersection / idf_union if idf_union else 0.0
+        else:
+            seed_similarity = 1.0
+
+        final_score = bank_alignment * anchor_relevance * seed_similarity
+
+        # Build positions dict for output
+        pos_out = {}
+        for bank_name, (sign, depth) in positions.items():
+            pos_out[bank_name] = {"sign": sign, "depth": depth}
+
+        results.append(
+            NavigationResult(
+                model_id=mid,
+                score=final_score,
+                bank_alignment=bank_alignment,
+                anchor_relevance=anchor_relevance,
+                seed_similarity=seed_similarity,
+                positions=pos_out,
+                anchor_labels=sorted(model_anchor_set),
+                author=authors.get(mid, ""),
+            )
+        )
+
+    results.sort(key=lambda r: r.score, reverse=True)
+    return results[: query.limit]
