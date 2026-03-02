@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from model_atlas import db
 from model_atlas.extraction.deterministic import ModelInput
-from model_atlas.extraction.pipeline import extract_and_store, extract_batch
+from model_atlas.extraction.pipeline import (
+    extract_and_store,
+    extract_batch,
+    infer_relationships,
+)
 
 
 class TestExtractAndStore:
@@ -242,3 +246,82 @@ class TestExtractBatch:
         assert count == 1
         # Model should exist; card_text is consumed by vibes (which is a stub)
         assert db.get_model(conn, "test/WithCard") is not None
+
+
+class TestInferRelationships:
+    def test_sibling_inference(self, conn):
+        """Models sharing a base model should get variant_of links."""
+        db.insert_model(conn, "base/Model", author="base")
+        db.insert_model(conn, "user/FT-A", author="user")
+        db.insert_model(conn, "user/FT-B", author="user")
+        db.add_link(conn, "user/FT-A", "base/Model", "fine_tuned_from")
+        db.add_link(conn, "user/FT-B", "base/Model", "fine_tuned_from")
+        conn.commit()
+
+        count = infer_relationships(conn)
+        assert count >= 1
+
+        row = conn.execute(
+            "SELECT * FROM model_links WHERE relation='variant_of'"
+        ).fetchone()
+        assert row is not None
+
+    def test_variant_inference_shared_prefix(self, conn):
+        """Models from same author with shared name prefix get variant_of."""
+        db.insert_model(conn, "meta/Llama-7B", author="meta")
+        db.insert_model(conn, "meta/Llama-13B", author="meta")
+        conn.commit()
+
+        count = infer_relationships(conn)
+        assert count >= 1
+
+        row = conn.execute(
+            "SELECT * FROM model_links WHERE relation='variant_of'"
+        ).fetchone()
+        assert row is not None
+
+    def test_fingerprint_inference(self, conn):
+        """Models with same structural fingerprint get same_family links."""
+        db.insert_model(conn, "org/ModelA", author="org")
+        db.insert_model(conn, "org2/ModelB", author="org2")
+        db.set_metadata(conn, "org/ModelA", "structural_fingerprint", "abc123", "str")
+        db.set_metadata(conn, "org2/ModelB", "structural_fingerprint", "abc123", "str")
+        conn.commit()
+
+        count = infer_relationships(conn)
+        assert count >= 1
+
+        row = conn.execute(
+            "SELECT * FROM model_links WHERE relation='same_family'"
+        ).fetchone()
+        assert row is not None
+
+    def test_no_op_on_single_model(self, conn):
+        """Single model should produce no inferred links."""
+        db.insert_model(conn, "test/Solo", author="test")
+        conn.commit()
+
+        count = infer_relationships(conn)
+        assert count == 0
+
+    def test_confidence_variation_stored(self, conn):
+        """Pattern anchors should store per-category confidence, not flat 0.8."""
+        inp = ModelInput(
+            model_id="meta-llama/Llama-3.1-8B-Instruct",
+            author="meta-llama",
+            tags=["text-generation", "base_model:meta-llama/Llama-3.1-8B"],
+            library_name="transformers",
+        )
+        db.insert_model(conn, "meta-llama/Llama-3.1-8B", author="meta-llama")
+        extract_and_store(conn, inp)
+        conn.commit()
+
+        # Check that not all pattern anchors have confidence=0.8
+        rows = conn.execute(
+            """SELECT DISTINCT confidence FROM model_anchors
+               WHERE model_id = ?""",
+            ("meta-llama/Llama-3.1-8B-Instruct",),
+        ).fetchall()
+        confidences = {row[0] for row in rows}
+        # Should have more than just {1.0} — pattern anchors vary
+        assert len(confidences) > 1

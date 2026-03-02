@@ -186,6 +186,176 @@ class TestConfigExtraction:
         assert "vocab_size" not in result.metadata
 
 
+class TestConfigSignals:
+    def test_gqa_detection(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={
+                "num_attention_heads": 32,
+                "num_key_value_heads": 8,
+                "hidden_size": 4096,
+                "num_hidden_layers": 32,
+                "vocab_size": 32000,
+            },
+        )
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "grouped-query-attention" in anchors
+
+    def test_no_gqa_when_equal_heads(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={
+                "num_attention_heads": 32,
+                "num_key_value_heads": 32,
+            },
+        )
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "grouped-query-attention" not in anchors
+
+    def test_rope_scaling(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"rope_scaling": {"type": "dynamic"}},
+        )
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "rope-dynamic" in anchors
+
+    def test_rope_scaling_rope_type_key(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"rope_scaling": {"rope_type": "yarn"}},
+        )
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "rope-yarn" in anchors
+
+    def test_fingerprint_stability(self):
+        """Same config dimensions should produce the same fingerprint."""
+        config = {
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "num_attention_heads": 32,
+            "vocab_size": 32000,
+        }
+        inp1 = ModelInput(model_id="test/A", config=config)
+        inp2 = ModelInput(model_id="test/B", config=config)
+        r1 = extract_det(inp1)
+        r2 = extract_det(inp2)
+        assert r1.metadata["structural_fingerprint"] == r2.metadata["structural_fingerprint"]
+        assert r1.metadata["structural_fingerprint"][1] == "str"
+
+    def test_fingerprint_none_when_incomplete(self):
+        inp = ModelInput(
+            model_id="test/Model",
+            config={"hidden_size": 4096},
+        )
+        result = extract_det(inp)
+        assert "structural_fingerprint" not in result.metadata
+
+    def test_model_type_metadata(self):
+        inp = ModelInput(
+            model_id="test/Model-7B",
+            config={"model_type": "llama"},
+        )
+        result = extract_det(inp)
+        assert result.metadata["model_type"] == ("llama", "str")
+
+    def test_model_type_arch_fallback(self):
+        """model_type should be used when architectures[0] is not in _ARCH_MAP."""
+        inp = ModelInput(
+            model_id="test/Model",
+            config={"architectures": ["UnknownForCausalLM"], "model_type": "mamba"},
+        )
+        result = extract_det(inp)
+        assert result.architecture.sign == 1
+        assert "mamba" in result.architecture.nodes
+
+    def test_quantization_config_anchor(self):
+        inp = ModelInput(
+            model_id="test/Model-GPTQ",
+            config={"quantization_config": {"quant_method": "gptq"}},
+        )
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "gptq-quantized" in anchors
+
+    def test_torch_dtype_metadata(self):
+        inp = ModelInput(
+            model_id="test/Model",
+            config={"torch_dtype": "bfloat16"},
+        )
+        result = extract_det(inp)
+        assert result.metadata["torch_dtype"] == ("bfloat16", "str")
+
+    def test_none_config_returns_empty_signals(self):
+        inp = ModelInput(model_id="test/Model")
+        result = extract_det(inp)
+        assert "hidden_size" not in result.metadata
+        assert "model_type" not in result.metadata
+
+    def test_hidden_size_metadata(self):
+        inp = ModelInput(
+            model_id="test/Model",
+            config={"hidden_size": 4096, "num_hidden_layers": 32},
+        )
+        result = extract_det(inp)
+        assert result.metadata["hidden_size"] == ("4096", "int")
+        assert result.metadata["num_layers"] == ("32", "int")
+
+
+class TestLicenseAnchors:
+    def test_apache_commercial(self):
+        inp = ModelInput(model_id="test/Model", license_str="apache-2.0")
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "commercial-use-allowed" in anchors
+
+    def test_mit_commercial(self):
+        inp = ModelInput(model_id="test/Model", license_str="mit")
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "commercial-use-allowed" in anchors
+
+    def test_cc_by_nc_research_only(self):
+        inp = ModelInput(model_id="test/Model", license_str="cc-by-nc-4.0")
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "research-only" in anchors
+
+    def test_llama_license(self):
+        inp = ModelInput(model_id="test/Model", license_str="llama3.1")
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "llama-license" in anchors
+
+    def test_unknown_license_no_anchor(self):
+        inp = ModelInput(model_id="test/Model", license_str="unknown-license")
+        result = extract_det(inp)
+        anchors = [a.label for a in result.anchors]
+        assert "commercial-use-allowed" not in anchors
+        assert "research-only" not in anchors
+        assert "llama-license" not in anchors
+
+    def test_empty_license_no_anchor(self):
+        inp = ModelInput(model_id="test/Model", license_str="")
+        result = extract_det(inp)
+        license_anchors = [
+            a for a in result.anchors
+            if a.label in ("commercial-use-allowed", "research-only", "llama-license")
+        ]
+        assert license_anchors == []
+
+    def test_license_anchor_in_compatibility_bank(self):
+        inp = ModelInput(model_id="test/Model", license_str="apache-2.0")
+        result = extract_det(inp)
+        lic = [a for a in result.anchors if a.label == "commercial-use-allowed"]
+        assert len(lic) == 1
+        assert lic[0].bank == "COMPATIBILITY"
+
+
 class TestNewPatterns:
     def test_quantization_level_q4km(self):
         result = extract_pat(model_id="user/Model-Q4_K_M-GGUF")

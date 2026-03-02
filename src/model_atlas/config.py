@@ -35,6 +35,7 @@ ANCHOR_SLICE = 15  # Max anchor co-occurrences per node
 # Relation-specific link weights for spreading
 LINK_WEIGHTS: dict[str, float] = {
     "fine_tuned_from": 0.9,
+    "merged_from": 0.85,
     "quantized_from": 0.85,
     "variant_of": 0.8,
     "same_family": 0.7,

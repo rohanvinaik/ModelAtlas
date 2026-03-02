@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from .deterministic import BankPosition
+from .deterministic import AnchorTag, BankPosition
 
 
 @dataclass
@@ -23,9 +23,14 @@ class PatternResult:
     compatibility: BankPosition = field(default_factory=BankPosition)
     lineage: BankPosition = field(default_factory=BankPosition)
     domain: BankPosition = field(default_factory=BankPosition)
-    anchors: list[tuple[str, str]] = field(default_factory=list)  # (label, bank)
-    base_model: str | None = None  # detected base model ID
+    anchors: list[AnchorTag] = field(default_factory=list)
+    base_models: list[tuple[str, str]] = field(default_factory=list)  # (model_id, relation)
     metadata: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    @property
+    def base_model(self) -> str | None:
+        """Backward-compatible accessor: first base model ID or None."""
+        return self.base_models[0][0] if self.base_models else None
 
 
 # Tag/name patterns -> (anchor_label, bank)
@@ -195,10 +200,33 @@ def _detect_domain(searchable: str) -> tuple[list[str], int]:
     return found, max_depth
 
 
+# base_model: tag subtype -> link relation
+_TAG_RELATION_MAP: dict[str, str] = {
+    "finetune": "fine_tuned_from",
+    "adapter": "fine_tuned_from",
+    "merge": "merged_from",
+    "quantized": "quantized_from",
+}
+
+
+def _infer_relation(model_id: str) -> str:
+    """Infer the link relation from model name heuristics."""
+    name_lower = model_id.lower()
+    if any(q in name_lower for q in ("gguf", "gptq", "awq", "exl2")):
+        return "quantized_from"
+    if any(q in name_lower for q in ("merge", "franken")):
+        return "merged_from"
+    return "fine_tuned_from"
+
+
 def _detect_lineage(
     model_id: str, tags: list[str], author: str
-) -> tuple[str | None, list[str], BankPosition]:
-    """Detect model family and lineage position."""
+) -> tuple[list[tuple[str, str]], list[str], BankPosition]:
+    """Detect model family and lineage position.
+
+    Returns (base_models, anchors, lineage_position) where base_models
+    is a list of (model_id, relation) tuples.
+    """
     anchors: list[str] = []
     searchable = f"{model_id} {author}".lower()
 
@@ -208,38 +236,47 @@ def _detect_lineage(
             anchors.append(family_anchor)
             break
 
-    # Base model detection from tags
-    base_model = None
+    # Base model detection from tags — collect ALL, parse subtypes
+    base_models: list[tuple[str, str]] = []
     for tag in tags:
-        if tag.startswith("base_model:"):
-            base_model = tag.split(":", 1)[1].strip()
-            break
+        if not tag.startswith("base_model:"):
+            continue
+        rest = tag[len("base_model:"):]
+        # Parse subtype: base_model:finetune:org/model -> subtype=finetune, id=org/model
+        parts = rest.split(":", 1)
+        if len(parts) == 2 and parts[0] in _TAG_RELATION_MAP:
+            subtype, model_ref = parts
+            relation = _TAG_RELATION_MAP[subtype]
+            base_models.append((model_ref.strip(), relation))
+        else:
+            # No subtype or unknown subtype — the whole rest is the model ID
+            base_models.append((rest.strip(), _infer_relation(model_id)))
 
     # Lineage depth heuristics
     name_lower = model_id.lower()
-    if base_model:
-        # Has a base model → derivative
-        if any(q in name_lower for q in ["gguf", "gptq", "awq", "exl2"]):
+    if base_models:
+        # Has base model(s) → derivative
+        if any(q in name_lower for q in ("gguf", "gptq", "awq", "exl2")):
             anchors.append("quantized")
-            return base_model, anchors, BankPosition(sign=1, depth=3)
-        if any(q in name_lower for q in ["merge", "franken"]):
+            return base_models, anchors, BankPosition(sign=1, depth=3)
+        if any(q in name_lower for q in ("merge", "franken")):
             anchors.append("merge")
-            return base_model, anchors, BankPosition(sign=1, depth=3)
-        if any(q in name_lower for q in ["lora", "dpo", "rlhf", "sft"]):
+            return base_models, anchors, BankPosition(sign=1, depth=3)
+        if any(q in name_lower for q in ("lora", "dpo", "rlhf", "sft")):
             anchors.append("fine-tune")
-            return base_model, anchors, BankPosition(sign=1, depth=2)
-        if any(q in name_lower for q in ["instruct", "chat"]):
+            return base_models, anchors, BankPosition(sign=1, depth=2)
+        if any(q in name_lower for q in ("instruct", "chat")):
             anchors.append("fine-tune")
-            return base_model, anchors, BankPosition(sign=1, depth=1)
+            return base_models, anchors, BankPosition(sign=1, depth=1)
         anchors.append("fine-tune")
-        return base_model, anchors, BankPosition(sign=1, depth=2)
+        return base_models, anchors, BankPosition(sign=1, depth=2)
 
     # No base model detected — check if it looks like a base model
-    if not any(q in name_lower for q in ["instruct", "chat", "gguf", "gptq", "lora"]):
+    if not any(q in name_lower for q in ("instruct", "chat", "gguf", "gptq", "lora")):
         anchors.append("base-model")
-        return None, anchors, BankPosition(sign=0, depth=0)
+        return [], anchors, BankPosition(sign=0, depth=0)
 
-    return None, anchors, BankPosition(sign=1, depth=1)
+    return [], anchors, BankPosition(sign=1, depth=1)
 
 
 @lru_cache(maxsize=256)
@@ -298,7 +335,7 @@ def extract(
     domain_anchors, domain_depth = _detect_domain(searchable)
 
     # Lineage
-    base_model, lineage_anchors, lineage_pos = _detect_lineage(model_id, tags, author)
+    base_models, lineage_anchors, lineage_pos = _detect_lineage(model_id, tags, author)
 
     # Quantization level metadata
     metadata: dict[str, tuple[str, str]] = {}
@@ -317,12 +354,15 @@ def extract(
     if lang_tags:
         metadata["supported_languages"] = (json.dumps(lang_tags), "json")
 
-    # Combine all anchors
-    all_anchors: list[tuple[str, str]] = []
-    all_anchors.extend((a, "CAPABILITY") for a in cap_anchors)
-    all_anchors.extend((a, "COMPATIBILITY") for a in compat_anchors)
-    all_anchors.extend((a, "DOMAIN") for a in domain_anchors)
-    all_anchors.extend((a, "LINEAGE") for a in lineage_anchors)
+    # Combine all anchors with per-category confidence
+    all_anchors: list[AnchorTag] = []
+    all_anchors.extend(AnchorTag(a, "CAPABILITY", 0.85) for a in cap_anchors)
+    all_anchors.extend(AnchorTag(a, "COMPATIBILITY", 0.90) for a in compat_anchors)
+    all_anchors.extend(AnchorTag(a, "DOMAIN", 0.80) for a in domain_anchors)
+    # Lineage: tag-based anchors get 0.95, name-heuristic gets 0.70
+    for a in lineage_anchors:
+        conf = 0.95 if base_models else 0.70
+        all_anchors.append(AnchorTag(a, "LINEAGE", conf))
 
     return PatternResult(
         capability=BankPosition(sign=cap_sign, depth=cap_depth),
@@ -330,6 +370,6 @@ def extract(
         lineage=lineage_pos,
         domain=BankPosition(sign=1 if domain_anchors else 0, depth=domain_depth),
         anchors=all_anchors,
-        base_model=base_model,
+        base_models=base_models,
         metadata=metadata,
     )

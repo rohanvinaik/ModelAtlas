@@ -150,10 +150,17 @@ def extract_vibe_summary(
     pipeline_tag: str = "",
     tags: list[str] | None = None,
     author: str = "",
+    param_count: str = "unknown",
+    family: str = "unknown",
+    capabilities: list[str] | None = None,
 ) -> str:
     """Return empty string — vibes are delegated to Phase C / set_model_vibe.
 
     During Tier 1+2 batch indexing, models are indexed without vibes.
     Phase C of the ingest daemon fills them in via VibeExtractor.
+
+    The param_count, family, and capabilities params are accepted so that
+    extract_and_store can pass pre-extracted Tier 1+2 data, which
+    VibeExtractor.extract() will use when Phase C is active.
     """
     return ""

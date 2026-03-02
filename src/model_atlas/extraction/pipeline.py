@@ -11,12 +11,14 @@ import sqlite3
 
 from .. import db
 from .deterministic import (
+    AnchorTag,
     DeterministicResult,
     ModelInput,
 )
 from .deterministic import (
     extract as extract_deterministic,
 )
+from .benchmarks import extract_benchmarks
 from .patterns import PatternResult
 from .patterns import extract as extract_patterns
 from .vibes import extract_vibe_summary
@@ -51,6 +53,17 @@ def extract_and_store(
         pipeline_tag=inp.pipeline_tag,
     )
 
+    # Extract enrichment data from Tier 1+2 for vibe prompt
+    param_b = det.metadata.get("parameter_count_b")
+    param_count = param_b[0] + "B" if param_b else "unknown"
+    family = "unknown"
+    capabilities: list[str] = []
+    for anchor in pat.anchors:
+        if anchor.bank == "LINEAGE" and anchor.label.endswith("-family"):
+            family = anchor.label
+        elif anchor.bank == "CAPABILITY":
+            capabilities.append(anchor.label)
+
     # Tier 3: Vibes
     vibe = extract_vibe_summary(
         model_id=inp.model_id,
@@ -58,6 +71,9 @@ def extract_and_store(
         pipeline_tag=inp.pipeline_tag,
         tags=inp.tags,
         author=inp.author,
+        param_count=param_count,
+        family=family,
+        capabilities=capabilities,
     )
 
     # Write bank positions (merge deterministic + pattern results)
@@ -69,14 +85,14 @@ def extract_and_store(
         inp.model_id,
         det.anchors,
         source="deterministic",
-        confidence=1.0,
+        default_confidence=1.0,
     )
     _store_anchors(
         conn,
         inp.model_id,
         pat.anchors,
         source="pattern",
-        confidence=0.8,
+        default_confidence=0.8,
     )
 
     # Write metadata (deterministic + pattern)
@@ -89,9 +105,15 @@ def extract_and_store(
     if vibe:
         db.set_metadata(conn, inp.model_id, "vibe_summary", vibe, "str")
 
-    # Store lineage link if base model detected
-    if pat.base_model:
-        db.add_link(conn, inp.model_id, pat.base_model, "fine_tuned_from")
+    # Extract and store benchmark scores from card text
+    if card_text:
+        benchmarks = extract_benchmarks(card_text)
+        for key, (value, value_type) in benchmarks.items():
+            db.set_metadata(conn, inp.model_id, key, value, value_type)
+
+    # Store lineage links for all detected base models
+    for base_id, relation in pat.base_models:
+        db.add_link(conn, inp.model_id, base_id, relation)
 
 
 def _store_positions(
@@ -126,23 +148,29 @@ def _store_positions(
 def _store_anchors(
     conn: sqlite3.Connection,
     model_id: str,
-    anchors: list[tuple[str, str]],
+    anchors: list[AnchorTag],
     source: str = "deterministic",
-    confidence: float = 1.0,
+    default_confidence: float = 1.0,
 ) -> None:
-    """Deduplicate and write anchor links with provenance."""
+    """Deduplicate and write anchor links with provenance.
+
+    Uses the per-anchor confidence from AnchorTag when it differs from
+    the default (1.0), otherwise falls back to default_confidence.
+    """
     seen: set[str] = set()
-    for label, bank_name in anchors:
-        if label in seen:
+    for anchor in anchors:
+        if anchor.label in seen:
             continue
-        seen.add(label)
+        seen.add(anchor.label)
         anchor_id = db.get_or_create_anchor(
             conn,
-            label,
-            bank_name,
+            anchor.label,
+            anchor.bank,
             source=source,
         )
-        db.link_anchor(conn, model_id, anchor_id, confidence=confidence)
+        # Use per-anchor confidence if set, else fall back to default
+        conf = anchor.confidence if anchor.confidence != 1.0 else default_confidence
+        db.link_anchor(conn, model_id, anchor_id, confidence=conf)
 
 
 def extract_batch(conn: sqlite3.Connection, models: list[dict]) -> int:
@@ -171,4 +199,114 @@ def extract_batch(conn: sqlite3.Connection, models: list[dict]) -> int:
                 m.get("model_id", "?"),
                 exc_info=True,
             )
+    if count > 1:
+        infer_relationships(conn)
     return count
+
+
+# --- Post-batch relationship inference ---
+
+
+def _infer_sibling_links(conn: sqlite3.Connection) -> int:
+    """Create variant_of links between models that share the same base model.
+
+    Uses SQL GROUP BY on model_links target_id to find siblings.
+    Caps at 20 siblings per group to avoid combinatorial explosion.
+    """
+    rows = conn.execute(
+        """SELECT target_id, GROUP_CONCAT(source_id) AS sources
+           FROM model_links
+           WHERE relation IN ('fine_tuned_from', 'quantized_from', 'merged_from')
+           GROUP BY target_id
+           HAVING COUNT(source_id) > 1"""
+    ).fetchall()
+
+    count = 0
+    for row in rows:
+        siblings = row[1].split(",")[:20]  # cap
+        for i, a in enumerate(siblings):
+            for b in siblings[i + 1:]:
+                conn.execute(
+                    """INSERT OR IGNORE INTO model_links (source_id, target_id, relation, weight)
+                       VALUES (?, ?, 'variant_of', 0.6)""",
+                    (a, b),
+                )
+                count += 1
+    return count
+
+
+def _infer_variant_links(conn: sqlite3.Connection) -> int:
+    """Create variant_of links between models from the same author with shared name prefix.
+
+    Groups by author, then checks for shared name prefix >= 3 chars.
+    Caps at 50 models per author to avoid O(n^2) blowup.
+    """
+    rows = conn.execute(
+        """SELECT author, GROUP_CONCAT(model_id) AS models
+           FROM models
+           WHERE author != ''
+           GROUP BY author
+           HAVING COUNT(model_id) > 1"""
+    ).fetchall()
+
+    count = 0
+    for row in rows:
+        model_ids = row[1].split(",")[:50]  # cap
+        for i, a in enumerate(model_ids):
+            name_a = a.split("/")[-1].lower()
+            for b in model_ids[i + 1:]:
+                name_b = b.split("/")[-1].lower()
+                # Find shared prefix length
+                prefix_len = 0
+                for ca, cb in zip(name_a, name_b):
+                    if ca != cb:
+                        break
+                    prefix_len += 1
+                if prefix_len >= 3:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO model_links
+                           (source_id, target_id, relation, weight)
+                           VALUES (?, ?, 'variant_of', 0.5)""",
+                        (a, b),
+                    )
+                    count += 1
+    return count
+
+
+def _infer_fingerprint_links(conn: sqlite3.Connection) -> int:
+    """Create same_family links between models sharing a structural fingerprint.
+
+    Uses SQL GROUP BY on model_metadata structural_fingerprint.
+    """
+    rows = conn.execute(
+        """SELECT value, GROUP_CONCAT(model_id) AS models
+           FROM model_metadata
+           WHERE key = 'structural_fingerprint'
+           GROUP BY value
+           HAVING COUNT(model_id) > 1"""
+    ).fetchall()
+
+    count = 0
+    for row in rows:
+        model_ids = row[1].split(",")[:50]  # cap
+        for i, a in enumerate(model_ids):
+            for b in model_ids[i + 1:]:
+                conn.execute(
+                    """INSERT OR IGNORE INTO model_links
+                       (source_id, target_id, relation, weight)
+                       VALUES (?, ?, 'same_family', 0.5)""",
+                    (a, b),
+                )
+                count += 1
+    return count
+
+
+def infer_relationships(conn: sqlite3.Connection) -> int:
+    """Run all post-batch relationship inference. Returns total links created."""
+    total = 0
+    total += _infer_sibling_links(conn)
+    total += _infer_variant_links(conn)
+    total += _infer_fingerprint_links(conn)
+    if total:
+        logger.info("Inferred %d relationship links", total)
+    return total

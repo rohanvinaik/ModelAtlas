@@ -7,11 +7,13 @@ likes, license, etc.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
+from typing import NamedTuple
 
 
 @dataclass
@@ -41,6 +43,19 @@ class BankPosition:
     nodes: list[str] = field(default_factory=list)
 
 
+class AnchorTag(NamedTuple):
+    """An anchor with its bank and confidence score.
+
+    NamedTuple is backward-compatible with a[0]/a[1] indexing,
+    so existing code treating anchors as (label, bank) tuples
+    continues to work.
+    """
+
+    label: str
+    bank: str
+    confidence: float = 1.0
+
+
 @dataclass
 class DeterministicResult:
     """Output of deterministic extraction for one model."""
@@ -49,7 +64,7 @@ class DeterministicResult:
     efficiency: BankPosition = field(default_factory=BankPosition)
     quality: BankPosition = field(default_factory=BankPosition)
     metadata: dict[str, tuple[str, str]] = field(default_factory=dict)
-    anchors: list[tuple[str, str]] = field(default_factory=list)  # (label, bank)
+    anchors: list[AnchorTag] = field(default_factory=list)
 
 
 # Architecture type -> (sign, depth, nodes)
@@ -89,6 +104,52 @@ _ARCH_MAP: dict[str, tuple[int, int, list[str]]] = {
     "CLIPModel": (1, 1, ["vision-transformer"]),
     "ViTModel": (1, 1, ["vision-transformer"]),
 }
+
+# model_type string -> (sign, depth, nodes) — fallback when architectures[0] not in _ARCH_MAP
+_MODEL_TYPE_MAP: dict[str, tuple[int, int, list[str]]] = {
+    "llama": (0, 0, ["decoder-only"]),
+    "mistral": (0, 0, ["decoder-only"]),
+    "gpt2": (0, 0, ["decoder-only"]),
+    "gpt_neo": (0, 0, ["decoder-only"]),
+    "gpt_neox": (0, 0, ["decoder-only"]),
+    "qwen2": (0, 0, ["decoder-only"]),
+    "phi": (0, 0, ["decoder-only"]),
+    "phi3": (0, 0, ["decoder-only"]),
+    "gemma": (0, 0, ["decoder-only"]),
+    "gemma2": (0, 0, ["decoder-only"]),
+    "falcon": (0, 0, ["decoder-only"]),
+    "opt": (0, 0, ["decoder-only"]),
+    "bloom": (0, 0, ["decoder-only"]),
+    "t5": (-1, 1, ["encoder-decoder"]),
+    "bart": (-1, 1, ["encoder-decoder"]),
+    "bert": (-1, 1, ["encoder-only"]),
+    "roberta": (-1, 1, ["encoder-only"]),
+    "mamba": (1, 2, ["mamba", "ssm"]),
+    "rwkv": (1, 2, ["rwkv"]),
+    "mixtral": (1, 1, ["mixture-of-experts"]),
+    "clip": (1, 1, ["vision-transformer"]),
+    "vit": (1, 1, ["vision-transformer"]),
+}
+
+
+@dataclass
+class ConfigSignals:
+    """All signals extracted from config.json."""
+
+    context_length: int | None = None
+    vocab_size: int | None = None
+    hidden_size: int | None = None
+    num_layers: int | None = None
+    num_heads: int | None = None
+    num_kv_heads: int | None = None
+    intermediate_size: int | None = None
+    model_type: str | None = None
+    uses_gqa: bool = False
+    rope_scaling_type: str | None = None
+    quantization_config: str | None = None
+    torch_dtype: str | None = None
+    structural_fingerprint: str | None = None
+
 
 # Parameter count -> (sign, depth, anchor_label)
 _PARAM_RANGES: list[tuple[float, float, int, int, str]] = [
@@ -131,7 +192,11 @@ def _estimate_params_billions(
 
 
 def _extract_architecture(config: dict | None) -> BankPosition:
-    """Map model architecture class to ARCHITECTURE bank position."""
+    """Map model architecture class to ARCHITECTURE bank position.
+
+    Tries architectures[0] in _ARCH_MAP first, then falls back to
+    model_type in _MODEL_TYPE_MAP for configs with unknown arch classes.
+    """
     arch_type = None
     if config and "architectures" in config:
         arch_list = config["architectures"]
@@ -141,6 +206,14 @@ def _extract_architecture(config: dict | None) -> BankPosition:
     if arch_type and arch_type in _ARCH_MAP:
         sign, depth, nodes = _ARCH_MAP[arch_type]
         return BankPosition(sign=sign, depth=depth, nodes=list(nodes))
+
+    # Fallback: model_type string
+    if config:
+        model_type = config.get("model_type")
+        if model_type and model_type in _MODEL_TYPE_MAP:
+            sign, depth, nodes = _MODEL_TYPE_MAP[model_type]
+            return BankPosition(sign=sign, depth=depth, nodes=list(nodes))
+
     return BankPosition(sign=0, depth=0, nodes=["decoder-only"])
 
 
@@ -195,10 +268,24 @@ def _extract_quality(
     return BankPosition(sign=-1, depth=2), anchors
 
 
-def _extract_from_config(config: dict | None) -> tuple[int | None, int | None]:
-    """Extract context_length and vocab_size from config.json fields."""
+def _compute_structural_fingerprint(cfg: ConfigSignals) -> str | None:
+    """Hash key architectural dimensions into a stable fingerprint.
+
+    Models with the same fingerprint likely share architecture (e.g. same
+    base model with different fine-tunes). Returns None when insufficient
+    dimensions are available.
+    """
+    parts = [cfg.hidden_size, cfg.num_layers, cfg.num_heads, cfg.vocab_size]
+    if any(p is None for p in parts):
+        return None
+    raw = f"{cfg.hidden_size}:{cfg.num_layers}:{cfg.num_heads}:{cfg.vocab_size}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _extract_from_config(config: dict | None) -> ConfigSignals:
+    """Extract all structured signals from config.json."""
     if not config:
-        return None, None
+        return ConfigSignals()
 
     # Context length: try multiple keys in priority order
     context_length = None
@@ -218,7 +305,109 @@ def _extract_from_config(config: dict | None) -> tuple[int | None, int | None]:
     if not isinstance(vocab_size, int) or vocab_size <= 0:
         vocab_size = None
 
-    return context_length, vocab_size
+    def _int_or_none(key: str) -> int | None:
+        v = config.get(key)
+        return v if isinstance(v, int) and v > 0 else None
+
+    hidden_size = _int_or_none("hidden_size")
+    num_layers = _int_or_none("num_hidden_layers")
+    num_heads = _int_or_none("num_attention_heads")
+    num_kv_heads = _int_or_none("num_key_value_heads")
+    intermediate_size = _int_or_none("intermediate_size")
+
+    model_type = config.get("model_type")
+    if not isinstance(model_type, str):
+        model_type = None
+
+    # GQA detection: fewer KV heads than attention heads
+    uses_gqa = (
+        num_heads is not None
+        and num_kv_heads is not None
+        and num_kv_heads < num_heads
+    )
+
+    # RoPE scaling
+    rope_scaling_type = None
+    rope_cfg = config.get("rope_scaling")
+    if isinstance(rope_cfg, dict):
+        rt = rope_cfg.get("type") or rope_cfg.get("rope_type")
+        if isinstance(rt, str):
+            rope_scaling_type = rt.lower()
+
+    # Quantization config
+    quantization_config = None
+    qcfg = config.get("quantization_config")
+    if isinstance(qcfg, dict):
+        quantization_config = qcfg.get("quant_method")
+        if not isinstance(quantization_config, str):
+            quantization_config = None
+
+    torch_dtype = config.get("torch_dtype")
+    if not isinstance(torch_dtype, str):
+        torch_dtype = None
+
+    cfg = ConfigSignals(
+        context_length=context_length,
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        num_kv_heads=num_kv_heads,
+        intermediate_size=intermediate_size,
+        model_type=model_type,
+        uses_gqa=uses_gqa,
+        rope_scaling_type=rope_scaling_type,
+        quantization_config=quantization_config,
+        torch_dtype=torch_dtype,
+    )
+    cfg.structural_fingerprint = _compute_structural_fingerprint(cfg)
+    return cfg
+
+
+def _config_anchors(cfg: ConfigSignals) -> list[AnchorTag]:
+    """Generate anchors from config signals."""
+    anchors: list[AnchorTag] = []
+    if cfg.uses_gqa:
+        anchors.append(AnchorTag("grouped-query-attention", "ARCHITECTURE"))
+    if cfg.rope_scaling_type:
+        label = f"rope-{cfg.rope_scaling_type}"
+        anchors.append(AnchorTag(label, "ARCHITECTURE"))
+    if cfg.quantization_config:
+        label = f"{cfg.quantization_config}-quantized"
+        anchors.append(AnchorTag(label, "EFFICIENCY"))
+    return anchors
+
+
+# License string -> anchor label (COMPATIBILITY/license)
+_LICENSE_ANCHOR_MAP: dict[str, str] = {
+    "apache-2.0": "commercial-use-allowed",
+    "mit": "commercial-use-allowed",
+    "bsd-2-clause": "commercial-use-allowed",
+    "bsd-3-clause": "commercial-use-allowed",
+    "openrail": "commercial-use-allowed",
+    "openrail++": "commercial-use-allowed",
+    "cc-by-4.0": "commercial-use-allowed",
+    "cc-by-nc-4.0": "research-only",
+    "cc-by-nc-sa-4.0": "research-only",
+    "cc-by-nc-nd-4.0": "research-only",
+    "cc-by-nc-3.0": "research-only",
+    "cc-by-nc-sa-3.0": "research-only",
+    "llama3.1": "llama-license",
+    "llama3": "llama-license",
+    "llama3.2": "llama-license",
+    "llama2": "llama-license",
+}
+
+
+def _license_anchors(license_str: str) -> list[AnchorTag]:
+    """Map license string to COMPATIBILITY anchors."""
+    if not license_str:
+        return []
+    key = license_str.lower().strip()
+    label = _LICENSE_ANCHOR_MAP.get(key)
+    if label:
+        return [AnchorTag(label, "COMPATIBILITY")]
+    return []
 
 
 @lru_cache(maxsize=256)
@@ -239,8 +428,7 @@ def _context_length_anchors(context_length: int | None) -> list[str]:
 def _collect_metadata(
     inp: ModelInput,
     param_b: float | None,
-    context_length: int | None = None,
-    vocab_size: int | None = None,
+    cfg: ConfigSignals | None = None,
 ) -> dict[str, tuple[str, str]]:
     """Collect overflow metadata fields."""
     meta: dict[str, tuple[str, str]] = {}
@@ -258,10 +446,27 @@ def _collect_metadata(
         meta["pipeline_tag"] = (inp.pipeline_tag, "str")
     if inp.library_name:
         meta["library_name"] = (inp.library_name, "str")
-    if context_length is not None:
-        meta["context_length"] = (str(context_length), "int")
-    if vocab_size is not None:
-        meta["vocab_size"] = (str(vocab_size), "int")
+    if cfg:
+        if cfg.context_length is not None:
+            meta["context_length"] = (str(cfg.context_length), "int")
+        if cfg.vocab_size is not None:
+            meta["vocab_size"] = (str(cfg.vocab_size), "int")
+        if cfg.hidden_size is not None:
+            meta["hidden_size"] = (str(cfg.hidden_size), "int")
+        if cfg.num_layers is not None:
+            meta["num_layers"] = (str(cfg.num_layers), "int")
+        if cfg.num_heads is not None:
+            meta["num_heads"] = (str(cfg.num_heads), "int")
+        if cfg.num_kv_heads is not None:
+            meta["num_kv_heads"] = (str(cfg.num_kv_heads), "int")
+        if cfg.intermediate_size is not None:
+            meta["intermediate_size"] = (str(cfg.intermediate_size), "int")
+        if cfg.model_type:
+            meta["model_type"] = (cfg.model_type, "str")
+        if cfg.torch_dtype:
+            meta["torch_dtype"] = (cfg.torch_dtype, "str")
+        if cfg.structural_fingerprint:
+            meta["structural_fingerprint"] = (cfg.structural_fingerprint, "str")
     return meta
 
 
@@ -269,11 +474,11 @@ def extract(inp: ModelInput) -> DeterministicResult:
     """Extract deterministic signals from HF API model metadata."""
     # Architecture
     arch = _extract_architecture(inp.config)
-    arch_anchors = [(n, "ARCHITECTURE") for n in arch.nodes]
 
     # Config-based signals
-    context_length, vocab_size = _extract_from_config(inp.config)
-    ctx_anchors = _context_length_anchors(context_length)
+    cfg = _extract_from_config(inp.config)
+    ctx_anchors = _context_length_anchors(cfg.context_length)
+    cfg_anchors = _config_anchors(cfg)
 
     # Efficiency
     param_b = _estimate_params_billions(inp.model_id, inp.tags, inp.safetensors_info)
@@ -282,16 +487,21 @@ def extract(inp: ModelInput) -> DeterministicResult:
     # Quality
     quality, qual_anchors = _extract_quality(inp.likes, inp.downloads, inp.created_at)
 
+    # License anchors
+    lic_anchors = _license_anchors(inp.license_str)
+
     # Combine anchors
-    all_anchors = arch_anchors
-    all_anchors.extend((a, "EFFICIENCY") for a in eff_anchors)
-    all_anchors.extend((a, "EFFICIENCY") for a in ctx_anchors)
-    all_anchors.extend((a, "QUALITY") for a in qual_anchors)
+    all_anchors: list[AnchorTag] = [AnchorTag(n, "ARCHITECTURE") for n in arch.nodes]
+    all_anchors.extend(AnchorTag(a, "EFFICIENCY") for a in eff_anchors)
+    all_anchors.extend(AnchorTag(a, "EFFICIENCY") for a in ctx_anchors)
+    all_anchors.extend(AnchorTag(a, "QUALITY") for a in qual_anchors)
+    all_anchors.extend(cfg_anchors)
+    all_anchors.extend(lic_anchors)
 
     return DeterministicResult(
         architecture=arch,
         efficiency=efficiency,
         quality=quality,
-        metadata=_collect_metadata(inp, param_b, context_length, vocab_size),
+        metadata=_collect_metadata(inp, param_b, cfg),
         anchors=all_anchors,
     )

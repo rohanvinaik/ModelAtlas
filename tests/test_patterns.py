@@ -328,10 +328,10 @@ class TestDetectDomain:
 
 class TestDetectLineage:
     def test_base_model_detection(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "meta-llama/Llama-3.1-8B", [], "meta-llama"
         )
-        assert base is None
+        assert bases == []
         assert "base-model" in anchors
         assert pos.sign == 0
         assert pos.depth == 0
@@ -353,27 +353,27 @@ class TestDetectLineage:
         assert "DeepSeek-family" in anchors
 
     def test_derivative_from_base_model_tag(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-FT",
             ["base_model:meta-llama/Llama-3.1-8B"],
             "user",
         )
-        assert base == "meta-llama/Llama-3.1-8B"
+        assert bases[0][0] == "meta-llama/Llama-3.1-8B"
         assert pos.sign == 1
         assert pos.depth >= 1
 
     def test_quantized_derivative(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-GGUF",
             ["base_model:org/BaseModel"],
             "user",
         )
-        assert base == "org/BaseModel"
+        assert bases[0][0] == "org/BaseModel"
         assert "quantized" in anchors
         assert pos.depth == 3
 
     def test_merge_derivative(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-merge",
             ["base_model:org/BaseModel"],
             "user",
@@ -382,7 +382,7 @@ class TestDetectLineage:
         assert pos.depth == 3
 
     def test_lora_derivative(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-LoRA",
             ["base_model:org/BaseModel"],
             "user",
@@ -391,7 +391,7 @@ class TestDetectLineage:
         assert pos.depth == 2
 
     def test_instruct_official_variant(self):
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-Instruct",
             ["base_model:org/BaseModel"],
             "user",
@@ -401,21 +401,78 @@ class TestDetectLineage:
 
     def test_no_base_model_with_instruct_name(self):
         """Model with instruct in name but no base_model tag gets depth 1."""
-        base, anchors, pos = _detect_lineage("user/Model-Instruct", [], "user")
-        assert base is None
+        bases, anchors, pos = _detect_lineage("user/Model-Instruct", [], "user")
+        assert bases == []
         assert pos.sign == 1
         assert pos.depth == 1
 
     def test_generic_derivative_with_base(self):
         """Derivative with base model but no specific type heuristic."""
-        base, anchors, pos = _detect_lineage(
+        bases, anchors, pos = _detect_lineage(
             "user/Model-Custom",
             ["base_model:org/BaseModel"],
             "user",
         )
-        assert base == "org/BaseModel"
+        assert bases[0][0] == "org/BaseModel"
         assert "fine-tune" in anchors
         assert pos.depth == 2
+
+    def test_subtype_finetune(self):
+        """base_model:finetune:org/model should parse subtype correctly."""
+        bases, anchors, pos = _detect_lineage(
+            "user/Model-FT",
+            ["base_model:finetune:org/BaseModel"],
+            "user",
+        )
+        assert bases == [("org/BaseModel", "fine_tuned_from")]
+
+    def test_subtype_quantized(self):
+        bases, _, _ = _detect_lineage(
+            "user/Model-GGUF",
+            ["base_model:quantized:org/BaseModel"],
+            "user",
+        )
+        assert bases == [("org/BaseModel", "quantized_from")]
+
+    def test_subtype_merge(self):
+        bases, _, _ = _detect_lineage(
+            "user/Model-merge",
+            ["base_model:merge:org/BaseModel"],
+            "user",
+        )
+        assert bases == [("org/BaseModel", "merged_from")]
+
+    def test_subtype_adapter(self):
+        bases, _, _ = _detect_lineage(
+            "user/Model-Adapter",
+            ["base_model:adapter:org/BaseModel"],
+            "user",
+        )
+        assert bases == [("org/BaseModel", "fine_tuned_from")]
+
+    def test_multi_parent(self):
+        """Multiple base_model tags should all be collected."""
+        bases, _, _ = _detect_lineage(
+            "user/Model-merge",
+            [
+                "base_model:merge:org/ModelA",
+                "base_model:merge:org/ModelB",
+            ],
+            "user",
+        )
+        assert len(bases) == 2
+        assert ("org/ModelA", "merged_from") in bases
+        assert ("org/ModelB", "merged_from") in bases
+
+    def test_old_format_backward_compat(self):
+        """Plain base_model:org/model (no subtype) should still work."""
+        bases, _, _ = _detect_lineage(
+            "user/Model-FT",
+            ["base_model:meta-llama/Llama-3.1-8B"],
+            "user",
+        )
+        assert bases[0][0] == "meta-llama/Llama-3.1-8B"
+        assert bases[0][1] == "fine_tuned_from"
 
 
 class TestDetectQuantizationLevel:
@@ -551,7 +608,7 @@ class TestExtractIntegration:
             tags=["text-generation", "gguf"],
             library_name="gguf",
         )
-        banks = {bank for _, bank in result.anchors}
+        banks = {a.bank for a in result.anchors}
         assert "CAPABILITY" in banks
         assert "COMPATIBILITY" in banks
         assert "LINEAGE" in banks
