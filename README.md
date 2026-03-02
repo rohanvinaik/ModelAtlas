@@ -12,7 +12,7 @@ Regardless, it's clear that the field is starting to suffer from its own success
 
 ModelAtlas is the map. 
 
-A structured semantic network of ML models. Built with simple symbolic operations. Typed, structural data encoding of relative model characteristics, with a tiny footprint and searches executed at the speed of thought. All exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape itself. To get a subconscious "vibe" of model architectures, and help you find the models you didn't know you were searching for.
+A structured semantic network of ML models. Built with simple symbolic operations. Typed, structural data encoding of relative model characteristics, with a tiny footprint and searches executed at the speed of thought. All exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape itself. Get a subconscious "vibe" of model architectures, and help you find the models you didn't know you were searching for.
 
 ## The gap
 
