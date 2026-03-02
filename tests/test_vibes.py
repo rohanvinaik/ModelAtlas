@@ -101,6 +101,36 @@ class TestVibeExtractor:
         assert len(result.extra_anchors) <= 5
 
 
+    def test_extract_object_result_fallback(self):
+        """When Outlines returns an object instead of dict, attributes are extracted."""
+        extractor = VibeExtractor(model_name="test/model")
+        mock_gen = MagicMock()
+        # Return an object with attributes instead of a dict
+        obj = MagicMock()
+        obj.summary = "An object-style result"
+        obj.extra_anchors = ["tag1", "tag2"]
+        # Make isinstance check fail for dict
+        mock_gen.return_value = obj
+        extractor._generator = mock_gen
+
+        result = extractor.extract("prompt")
+        assert result.summary == "An object-style result"
+        assert result.extra_anchors == ["tag1", "tag2"]
+
+    def test_extract_object_missing_attrs(self):
+        """Object result with missing attributes uses defaults."""
+        extractor = VibeExtractor(model_name="test/model")
+        mock_gen = MagicMock()
+        # Return a non-dict object without our expected attributes
+        obj = object()
+        mock_gen.return_value = obj
+        extractor._generator = mock_gen
+
+        result = extractor.extract("prompt")
+        assert result.summary == ""
+        assert result.extra_anchors == []
+
+
 class TestBackwardCompat:
     def test_extract_vibe_summary_returns_empty(self):
         """The old stub still returns empty for pipeline compatibility."""

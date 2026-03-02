@@ -94,7 +94,7 @@ def format_fuzzy_results(
     ]
 
 
-def fetch_from_hf_api(model_id: str) -> str:
+def fetch_from_hf_api(model_id: str) -> str:  # pragma: no cover — calls HfApi
     """Fetch model details directly from HuggingFace API."""
     from huggingface_hub import HfApi
 

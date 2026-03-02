@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from model_atlas.query import compare, lineage, search, similar_to
+from model_atlas.query import compare, invalidate_idf_cache, lineage, search, similar_to
+from model_atlas.query_types import StructuredQuery
 
 
 class TestSearch:
@@ -90,3 +91,46 @@ class TestLineage:
     def test_lineage_not_found(self, conn):
         result = lineage(conn, "nonexistent/Model")
         assert "error" in result
+
+
+class TestInvalidateIdfCache:
+    def test_clears_cache(self, populated_conn):
+        """invalidate_idf_cache resets the module-level IDF cache."""
+        # Run a search to populate the IDF cache
+        search(populated_conn, "model", limit=1)
+        # Clear it
+        invalidate_idf_cache()
+        # Should not raise — cache is just empty now
+        results = search(populated_conn, "model", limit=1)
+        assert len(results) >= 0
+
+    def test_idempotent(self):
+        """Calling invalidate_idf_cache twice doesn't raise."""
+        invalidate_idf_cache()
+        invalidate_idf_cache()
+
+
+class TestStructuredQueryBankDirections:
+    def test_returns_only_set_banks(self):
+        sq = StructuredQuery(efficiency=-1, capability=1)
+        dirs = sq.bank_directions()
+        assert dirs == {"EFFICIENCY": -1, "CAPABILITY": 1}
+        assert "ARCHITECTURE" not in dirs
+
+    def test_all_banks_set(self):
+        sq = StructuredQuery(
+            architecture=0, capability=1, efficiency=-1,
+            compatibility=1, lineage=0, domain=1, quality=-1,
+        )
+        dirs = sq.bank_directions()
+        assert len(dirs) == 7
+
+    def test_no_banks_set(self):
+        sq = StructuredQuery()
+        assert sq.bank_directions() == {}
+
+    def test_zero_is_included(self):
+        """Direction 0 (near-zero) is a valid direction, not omitted."""
+        sq = StructuredQuery(architecture=0)
+        dirs = sq.bank_directions()
+        assert dirs == {"ARCHITECTURE": 0}

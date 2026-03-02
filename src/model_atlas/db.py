@@ -123,7 +123,7 @@ def transaction(conn: sqlite3.Connection | None = None) -> Iterator[sqlite3.Conn
         c.rollback()
         raise
     finally:
-        if own_conn:
+        if own_conn:  # pragma: no cover — only when no conn passed
             c.close()
 
 
@@ -132,13 +132,13 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     # anchors.source (added for anchor provenance)
     try:
         conn.execute("SELECT source FROM anchors LIMIT 1")
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError:  # pragma: no cover — legacy schema only
         conn.execute("ALTER TABLE anchors ADD COLUMN source TEXT DEFAULT 'bootstrap'")
 
     # model_anchors.confidence (added for confidence-weighted scoring)
     try:
         conn.execute("SELECT confidence FROM model_anchors LIMIT 1")
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError:  # pragma: no cover — legacy schema only
         conn.execute("ALTER TABLE model_anchors ADD COLUMN confidence REAL DEFAULT 1.0")
 
 

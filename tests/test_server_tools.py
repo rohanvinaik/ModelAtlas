@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 
 from model_atlas import db
+from model_atlas.search.structured import StructuredResult
 from model_atlas.server import (
+    _build_index_huggingface,
     _find_models_without_vibes,
     hf_compare_models,
     hf_get_model_detail,
     hf_index_status,
+    hf_search_models,
+    navigate_models,
     set_model_vibe,
 )
 
@@ -155,3 +159,175 @@ class TestFindModelsWithoutVibes:
 
     def test_empty_list(self, populated_conn):
         assert _find_models_without_vibes(populated_conn, []) == []
+
+
+class TestNavigateModels:
+    def test_empty_network_returns_error(self, conn, monkeypatch):
+        _patch_db(monkeypatch, conn)
+        result = json.loads(navigate_models())
+        assert "error" in result
+        assert result["network_models"] == 0
+
+    def test_returns_results_with_populated_db(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(efficiency=-1))
+        assert result["network_models"] == 4
+        assert result["result_count"] >= 1
+        assert "results" in result
+
+    def test_bank_directions_in_query(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(capability=1, domain=1))
+        assert result["query"]["banks"]["CAPABILITY"] == 1
+        assert result["query"]["banks"]["DOMAIN"] == 1
+
+    def test_require_anchors_filter(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(require_anchors=["code-generation"]))
+        assert result["query"]["require_anchors"] == ["code-generation"]
+        # Only code model should match
+        model_ids = [r["model_id"] for r in result["results"]]
+        assert "Qwen/Qwen2.5-Coder-1.5B" in model_ids
+
+    def test_prefer_anchors_boost(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(prefer_anchors=["medical-domain"]))
+        assert result["query"]["prefer_anchors"] == ["medical-domain"]
+        assert result["result_count"] >= 1
+
+    def test_avoid_anchors_penalty(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(avoid_anchors=["quantized"]))
+        assert result["query"]["avoid_anchors"] == ["quantized"]
+
+    def test_similar_to(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(
+            navigate_models(similar_to="meta-llama/Llama-3.1-8B-Instruct")
+        )
+        assert result["query"]["similar_to"] == "meta-llama/Llama-3.1-8B-Instruct"
+        assert result["result_count"] >= 1
+
+    def test_limit_respected(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(limit=2))
+        assert result["result_count"] <= 2
+
+    def test_result_structure(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models())
+        if result["results"]:
+            r = result["results"][0]
+            assert "model_id" in r
+            assert "score" in r
+            assert "score_breakdown" in r
+            assert "bank_alignment" in r["score_breakdown"]
+            assert "anchor_relevance" in r["score_breakdown"]
+            assert "seed_similarity" in r["score_breakdown"]
+            assert "positions" in r
+            assert "anchors" in r
+
+
+def _make_structured_result(model_id="test/Model", rank=0):
+    """Create a mock StructuredResult for testing."""
+    return StructuredResult(
+        model_id=model_id,
+        author=model_id.split("/")[0] if "/" in model_id else "",
+        likes=100,
+        downloads=5000,
+        pipeline_tag="text-generation",
+        tags=["text-generation"],
+        library_name="transformers",
+        license="apache-2.0",
+        card_text="A test model.",
+        rank=rank,
+        raw={"created_at": "2025-01-01"},
+    )
+
+
+class TestHfSearchModels:
+    def _patch_search(self, monkeypatch, conn, candidates=None):
+        """Patch both DB and structured search for hf_search_models."""
+        _patch_db(monkeypatch, conn)
+        if candidates is None:
+            candidates = [_make_structured_result("test/A", 0)]
+        monkeypatch.setattr(
+            "model_atlas.server.structured.search", lambda **kw: candidates
+        )
+
+    def test_empty_network_returns_fuzzy_fallback(self, conn, monkeypatch):
+        self._patch_search(monkeypatch, conn)
+        result = json.loads(hf_search_models("test query"))
+        assert result["network_status"] == "empty"
+        assert "hint" in result
+        assert result["total_candidates"] == 1
+
+    def test_populated_network_returns_network_results(
+        self, populated_conn, monkeypatch
+    ):
+        self._patch_search(monkeypatch, populated_conn)
+        result = json.loads(hf_search_models("instruct model"))
+        assert result["network_status"] == "active"
+        assert result["network_models"] == 4
+        assert "hint" not in result
+
+    def test_filters_passed_through(self, conn, monkeypatch):
+        self._patch_search(monkeypatch, conn)
+        result = json.loads(
+            hf_search_models(
+                "code model", task="text-generation", author="meta", library="gguf"
+            )
+        )
+        assert result["filters"]["task"] == "text-generation"
+        assert result["filters"]["author"] == "meta"
+        assert result["filters"]["library"] == "gguf"
+
+    def test_empty_candidates(self, conn, monkeypatch):
+        self._patch_search(monkeypatch, conn, candidates=[])
+        result = json.loads(hf_search_models("nonexistent"))
+        assert result["total_candidates"] == 0
+        assert result["result_count"] == 0
+
+    def test_output_structure(self, conn, monkeypatch):
+        self._patch_search(monkeypatch, conn)
+        result = json.loads(hf_search_models("test"))
+        assert "query" in result
+        assert "filters" in result
+        assert "network_status" in result
+        assert "total_candidates" in result
+        assert "result_count" in result
+        assert "results" in result
+
+
+class TestBuildIndexHuggingface:
+    def test_no_candidates_returns_error(self, conn, monkeypatch):
+        monkeypatch.setattr(
+            "model_atlas.server.structured.search", lambda **kw: []
+        )
+        result = json.loads(_build_index_huggingface(conn, "code", None, 100, 5))
+        assert "error" in result
+
+    def test_indexes_candidates(self, conn, monkeypatch):
+        db.init_db(conn)
+        candidates = [
+            _make_structured_result("test/A", 0),
+            _make_structured_result("test/B", 1),
+        ]
+        monkeypatch.setattr(
+            "model_atlas.server.structured.search", lambda **kw: candidates
+        )
+        result = json.loads(_build_index_huggingface(conn, "text-gen", None, 100, 5))
+        assert result["status"] == "indexed"
+        assert result["models_fetched"] == 2
+        assert result["models_indexed"] == 2
+        assert result["network_total"] >= 2
+
+    def test_vibes_needed_reported(self, conn, monkeypatch):
+        db.init_db(conn)
+        candidates = [_make_structured_result("test/A", 0)]
+        monkeypatch.setattr(
+            "model_atlas.server.structured.search", lambda **kw: candidates
+        )
+        result = json.loads(_build_index_huggingface(conn, "text-gen", None, 100, 5))
+        assert "vibes_needed" in result
+        assert "test/A" in result["vibes_needed"]

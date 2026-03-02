@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from model_atlas import db
 
 
@@ -105,3 +107,123 @@ def test_upsert_model(conn):
     model = db.get_model(conn, "test/Model")
     assert model is not None
     assert model["author"] == "new"
+
+
+def test_transaction_rollback_on_error(conn):
+    """Transaction rolls back on exception."""
+    db.insert_model(conn, "test/Rollback", author="test")
+    conn.commit()
+
+    try:
+        with db.transaction(conn) as c:
+            db.insert_model(c, "test/Rollback", author="changed")
+            raise ValueError("simulated error")
+    except ValueError:
+        pass
+
+    model = db.get_model(conn, "test/Rollback")
+    assert model["author"] == "test"  # rolled back to original
+
+
+def test_anchor_bank_reassignment_warning(conn, caplog):
+    """Creating an anchor in a different bank logs a warning."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        aid1 = db.get_or_create_anchor(conn, "code-gen", "CAPABILITY", "skill")
+        aid2 = db.get_or_create_anchor(conn, "code-gen", "DOMAIN", "skill")
+    # Same anchor ID returned
+    assert aid1 == aid2
+    assert "already assigned to bank" in caplog.text
+
+
+def test_set_position_with_path_nodes(conn):
+    """Path nodes are stored as JSON."""
+    db.insert_model(conn, "test/Model", author="test")
+    db.set_position(conn, "test/Model", "ARCHITECTURE", 1, 2, ["MoE", "sparse"])
+    conn.commit()
+
+    model = db.get_model(conn, "test/Model")
+    arch = model["positions"]["ARCHITECTURE"]
+    assert arch["sign"] == 1
+    assert arch["depth"] == 2
+
+
+def test_link_anchor_with_confidence(conn):
+    """Anchors can be linked with custom weight and confidence."""
+    db.insert_model(conn, "test/Model", author="test")
+    aid = db.get_or_create_anchor(conn, "test-anchor", "CAPABILITY")
+    db.link_anchor(conn, "test/Model", aid, weight=0.8, confidence=0.6)
+    conn.commit()
+
+    row = conn.execute(
+        "SELECT weight, confidence FROM model_anchors WHERE model_id = ? AND anchor_id = ?",
+        ("test/Model", aid),
+    ).fetchone()
+    assert abs(row["weight"] - 0.8) < 0.001
+    assert abs(row["confidence"] - 0.6) < 0.001
+
+
+def test_batch_get_positions(conn):
+    """Batch position retrieval returns data for multiple models."""
+    for mid in ["test/A", "test/B"]:
+        db.insert_model(conn, mid, author="test")
+        db.set_position(conn, mid, "EFFICIENCY", 0, 0)
+    conn.commit()
+
+    positions = db.batch_get_positions(conn, ["test/A", "test/B"])
+    assert "test/A" in positions
+    assert "test/B" in positions
+    assert "EFFICIENCY" in positions["test/A"]
+
+
+def test_batch_get_anchor_sets(conn):
+    """Batch anchor set retrieval works for multiple models."""
+    for mid in ["test/A", "test/B"]:
+        db.insert_model(conn, mid, author="test")
+        aid = db.get_or_create_anchor(conn, f"{mid}-anchor", "CAPABILITY")
+        db.link_anchor(conn, mid, aid)
+    conn.commit()
+
+    anchor_sets = db.batch_get_anchor_sets(conn, ["test/A", "test/B"])
+    assert "test/A-anchor" in anchor_sets["test/A"]
+    assert "test/B-anchor" in anchor_sets["test/B"]
+
+
+def test_compute_anchor_idf(conn):
+    """IDF computation returns positive values for rare anchors."""
+    db.insert_model(conn, "test/A", author="test")
+    db.insert_model(conn, "test/B", author="test")
+    rare = db.get_or_create_anchor(conn, "rare-anchor", "CAPABILITY")
+    common = db.get_or_create_anchor(conn, "common-anchor", "CAPABILITY")
+    db.link_anchor(conn, "test/A", rare)
+    db.link_anchor(conn, "test/A", common)
+    db.link_anchor(conn, "test/B", common)
+    conn.commit()
+
+    idf = db.compute_anchor_idf(conn)
+    # rare-anchor appears in 1 of 2 models → IDF > 0
+    assert "rare-anchor" in idf
+    assert idf["rare-anchor"] > 0
+    # common-anchor appears in all models → IDF = 0
+    assert idf["common-anchor"] == 0.0
+    # Rare anchor has higher IDF than common
+    assert idf["rare-anchor"] > idf["common-anchor"]
+
+
+def test_get_connection(tmp_path, monkeypatch):
+    """get_connection returns a configured SQLite connection."""
+    db_path = tmp_path / "data" / "network.db"
+    monkeypatch.setattr("model_atlas.db.NETWORK_DB_PATH", db_path)
+    conn = db.get_connection()
+    assert isinstance(conn, sqlite3.Connection)
+    assert conn.row_factory == sqlite3.Row
+    # WAL mode enabled
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode == "wal"
+    # Foreign keys enabled
+    fk = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+    assert fk == 1
+    conn.close()
+    # Parent dir was created
+    assert db_path.parent.exists()

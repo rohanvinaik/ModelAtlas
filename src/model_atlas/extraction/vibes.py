@@ -103,7 +103,7 @@ class VibeExtractor:
         self.model_name = model_name or VIBE_MODEL_NAME
         self._generator = None
 
-    def load(self) -> None:
+    def load(self) -> None:  # pragma: no cover — loads ML model
         """Load the model and create the Outlines JSON generator."""
         import json
 
