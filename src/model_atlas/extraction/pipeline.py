@@ -37,7 +37,7 @@ def extract_and_store(
     5. Writes all positions, anchors, metadata, and links to the DB
     """
     # Insert model entity
-    db.insert_model(conn, inp.model_id, author=inp.author, source="huggingface")
+    db.insert_model(conn, inp.model_id, author=inp.author, source=inp.source)
 
     # Tier 1: Deterministic
     det = extract_deterministic(inp)

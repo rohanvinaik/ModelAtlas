@@ -13,9 +13,15 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
 ]
+ingest = [
+    "outlines>=0.1.0",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+]
 
 [project.scripts]
 model-atlas = "model_atlas.server:main"
+model-atlas-ingest = "model_atlas.ingest:main"
 
 [build-system]
 requires = ["hatchling"]

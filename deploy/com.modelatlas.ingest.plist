@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.ingest</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3.11</string>
+        <string>-m</string>
+        <string>model_atlas.ingest</string>
+        <string>--daemon</string>
+        <string>--phase</string>
+        <string>abc</string>
+        <string>--min-likes</string>
+        <string>5</string>
+        <string>--vibe-min-likes</string>
+        <string>50</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rohan/tools/infrastructure/ModelAtlas</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/rohan/tools/infrastructure/ModelAtlas/src</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-ingest.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-ingest.err</string>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+</dict>
+</plist>

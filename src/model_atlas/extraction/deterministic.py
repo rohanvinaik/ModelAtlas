@@ -11,6 +11,7 @@ import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 
 
 @dataclass
@@ -28,6 +29,7 @@ class ModelInput:
     license_str: str = ""
     safetensors_info: dict | None = None
     config: dict | None = None
+    source: str = "huggingface"
 
 
 @dataclass
@@ -219,6 +221,7 @@ def _extract_from_config(config: dict | None) -> tuple[int | None, int | None]:
     return context_length, vocab_size
 
 
+@lru_cache(maxsize=256)
 def _context_length_anchors(context_length: int | None) -> list[str]:
     """Generate context-length tier anchors."""
     if context_length is None:

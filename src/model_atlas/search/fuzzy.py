@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from rapidfuzz import fuzz
 
@@ -115,6 +116,7 @@ class FuzzyScore:
     best_match_value: str  # The matched value
 
 
+@lru_cache(maxsize=1024)
 def _tokenize_query(query: str) -> list[str]:
     """Extract meaningful tokens from a natural language query."""
     tokens = re.findall(r"[a-zA-Z0-9_.-]+", query.lower())

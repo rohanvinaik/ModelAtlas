@@ -7,8 +7,10 @@ direct field mapping.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from .deterministic import BankPosition
 
@@ -28,25 +30,25 @@ class PatternResult:
 
 # Tag/name patterns -> (anchor_label, bank)
 _CAPABILITY_PATTERNS: list[tuple[str, str]] = [
-    (r"\binstruct\b", "instruction-following"),
+    (r"\binstruct", "instruction-following"),
     (r"\bchat\b", "chat"),
     (r"\brlhf\b", "RLHF-tuned"),
     (r"\bdpo\b", "DPO-tuned"),
-    (r"\btool.?(?:call|use)\b", "tool-calling"),
-    (r"\bfunction.?call\b", "function-calling"),
+    (r"\btool[\s_.-]?(?:call|use)", "tool-calling"),
+    (r"\bfunction[\s_.-]?call", "function-calling"),
     (r"\bcode\b", "code-generation"),
-    (r"\breason\b", "reasoning"),
+    (r"\breason", "reasoning"),
     (r"\bmath\b", "math"),
     (r"\bner\b", "NER"),
-    (r"\bembedd?ing\b", "embedding"),
-    (r"\bclassif\b", "classification"),
-    (r"\btranslat\b", "translation"),
-    (r"\bsummar\b", "summarization"),
-    (r"\bqa\b|\bquestion.?answer\b", "question-answering"),
-    (r"\bvision\b|\bimage.?understand\b|\bvlm\b", "image-understanding"),
+    (r"\bembedd?ing", "embedding"),
+    (r"\bclassif", "classification"),
+    (r"\btranslat", "translation"),
+    (r"\bsummar", "summarization"),
+    (r"\bqa\b|\bquestion[\s_.-]?answer", "question-answering"),
+    (r"\bvision\b|\bimage[\s_.-]?understand|\bvlm\b", "image-understanding"),
     (r"\bmultimodal\b", "multimodal"),
-    (r"\blong.?context\b|\b\d+k\b", "long-context"),
-    (r"\bstruct\w*?.?output\b|\bjson\b", "structured-output"),
+    (r"\blong[\s_.-]?context\b|\b\d+k\b", "long-context"),
+    (r"\bstruct\w*?[\s_.-]?output\b|\bjson\b", "structured-output"),
     (r"json[\s_-]?mode|structured[\s_-]?output|json[\s_-]?schema", "schema-following"),
     (r"\boutlines\b|\bguidance\b|\blmql\b|grammar[\s_-]?constrained", "constrained-generation"),
     (r"theorem[\s_-]?prov|formal[\s_-]?math|lean4?|coq|isabelle", "proof-level-math"),
@@ -87,25 +89,25 @@ _COMPATIBILITY_PATTERNS: list[tuple[str, str]] = [
 _DOMAIN_PATTERNS: list[tuple[str, str, int]] = [
     # (pattern, anchor, domain_depth)
     (r"\bcode\b|\bcoder\b", "code-domain", 1),
-    (r"\bmedic\b|\bclinical\b|\bbiomed\b", "medical-domain", 1),
+    (r"\bmedic|\bclinical\b|\bbiomed", "medical-domain", 1),
     (r"\blegal\b|\blaw\b", "legal-domain", 1),
-    (r"\bfinance\b|\bfinancial\b", "finance-domain", 1),
-    (r"\bscien\b|\bchemist\b|\bphysic\b|\bbio\b", "science-domain", 1),
-    (r"\bmath\b|\barithm\b", "math-domain", 1),
-    (r"\bmultilingual\b|\btranslat\b", "multilingual", 1),
-    (r"\bcreat\b|\bstory\b|\bpoet\b|\broleplay\b", "creative-domain", 1),
+    (r"\bfinanc", "finance-domain", 1),
+    (r"\bscien|\bchemist|\bphysic|\bbio\b", "science-domain", 1),
+    (r"\bmath\b|\barithm", "math-domain", 1),
+    (r"\bmultilingual\b|\btranslat", "multilingual", 1),
+    (r"\bcreat(?:iv|ion)|\bstory|\bpoet|\broleplay", "creative-domain", 1),
     (r"\bpython\b|\bpy\b", "Python-code", 2),
     (r"\brust\b", "Rust-code", 2),
-    (r"\b(?:c\+\+|cpp)\b", "C++-code", 2),
+    (r"\bc\+\+|\bcpp\b", "C++-code", 2),
     (r"\b(?:javascript|js)\b(?!.*typescript)", "JavaScript-code", 2),
     (r"\btypescript\b", "TypeScript-code", 2),
     (r"\b(?:golang|go-lang)\b", "Go-code", 2),
     (r"\bjava\b(?!script)", "Java-code", 2),
-    (r"\bradiol\b|\bpathol\b", "medical-domain", 2),
-    (r"\bsystems[\s_-]?program\b", "systems-programming", 2),
-    (r"\bweb[\s_-]?dev\b", "web-development", 2),
-    (r"\bproof[\s_-]?assist\b|\blean4?\b|\bcoq\b|\bisabelle\b", "proof-assistant", 2),
-    (r"\bformal[\s_-]?verif\b", "formal-verification", 2),
+    (r"\bradiol|\bpathol", "medical-domain", 2),
+    (r"\bsystems[\s_-]?program", "systems-programming", 2),
+    (r"\bweb[\s_-]?dev", "web-development", 2),
+    (r"\bproof[\s_-]?assist|\blean4?\b|\bcoq\b|\bisabelle\b", "proof-assistant", 2),
+    (r"\bformal[\s_-]?verif", "formal-verification", 2),
 ]
 
 # Family detection: author/name prefix -> family anchor
@@ -125,6 +127,7 @@ _FAMILY_MAP: dict[str, str] = {
 }
 
 
+@lru_cache(maxsize=256)
 def _detect_capabilities(searchable: str) -> list[str]:
     """Match capability patterns against searchable text."""
     found: list[str] = []
@@ -134,6 +137,7 @@ def _detect_capabilities(searchable: str) -> list[str]:
     return found
 
 
+@lru_cache(maxsize=256)
 def _detect_compatibility(searchable: str, library_name: str) -> tuple[list[str], int]:
     """Detect format/framework compatibility. Returns anchors and max depth."""
     found: list[str] = []
@@ -175,6 +179,7 @@ def _detect_compatibility(searchable: str, library_name: str) -> tuple[list[str]
     return found, max_depth
 
 
+@lru_cache(maxsize=256)
 def _detect_domain(searchable: str) -> tuple[list[str], int]:
     """Detect domain specialization. Returns anchors and max depth."""
     found: list[str] = []
@@ -234,6 +239,7 @@ def _detect_lineage(
     return None, anchors, BankPosition(sign=1, depth=1)
 
 
+@lru_cache(maxsize=256)
 def _detect_quantization_level(model_id: str) -> str | None:
     """Detect quantization level from model ID."""
     match = _QUANT_PATTERN.search(model_id)
@@ -281,8 +287,9 @@ def extract(
     if len(cap_anchors) == 1 and cap_anchors[0] in ("embedding", "classification"):
         cap_sign = -1  # narrow/single-task
 
-    # Compatibility
+    # Compatibility (copy list — cached original must not be mutated)
     compat_anchors, compat_depth = _detect_compatibility(searchable, library_name)
+    compat_anchors = list(compat_anchors)
 
     # Domain
     domain_anchors, domain_depth = _detect_domain(searchable)
@@ -305,8 +312,6 @@ def extract(
     # Language tags
     lang_tags = _detect_language_tags(tags)
     if lang_tags:
-        import json
-
         metadata["supported_languages"] = (json.dumps(lang_tags), "json")
 
     # Combine all anchors
