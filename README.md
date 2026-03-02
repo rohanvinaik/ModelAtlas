@@ -1,7 +1,7 @@
 # ModelAtlas
 
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
-[![CI](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml/badge.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 Ask your LLM to find you a model and watch what happens. It recites whatever it memorized during training — names that were popular six months ago, vague impressions of what's good at code, no sense of what's related to what. It's navigating a landscape of a million models with no map.
 
