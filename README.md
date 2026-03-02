@@ -110,7 +110,9 @@ navigate_models(
 
 **Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
 
-Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logmarithic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
+Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logmarithic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. 
+
+Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
 
 ## Design reference
 
