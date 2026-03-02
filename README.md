@@ -6,25 +6,29 @@
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 
-Ask your LLM to find you a model and watch what happens. It recites whatever it memorized during training — names that were popular six months ago, vague impressions of what's good at code, no sense of what's related to what. It's navigating a landscape of a million models with no map.
+Have you ever spent a wasted afternoon digging though HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's burried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment. 
 
-ModelAtlas is the map. A structured semantic network of ML models, exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape instead of guessing at it.
+Regardless, it's clear that the field is starting to suffer from its own success; the profusion of models that are small enough to fit on consumer hardware has made finding the *right* model almost impossible. HF's model search is...adequate. If you know what you're looking for. But if you *don't* know what you're looking for--if you're looking to *discover* a model that fits your specific requirements--you're left navigating a jungle of LLMs without a map.
+
+ModelAtlas is the map. 
+
+A structured semantic network of ML models. Built with simple symbolic operations. Typed, structural data encoding of relative model characteristics, with a tiny footprint and searches executed at the speed of thought. All exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape as a subconscious "vibe", and help you find and understand models from a *demantically*-meaningful perspective.
 
 ## The gap
 
 HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and uses the `transformers` library. What it doesn't know: this model is an instruction-tuned derivative of a base model in the Llama family, supports tool-calling, sits in the mainstream efficiency range, and has 47 quantized variants on the Hub. That information exists — scattered across model cards, naming conventions, config files, and community knowledge. But it's not queryable.
 
-So you can't ask:
+There isn't an API call or a search bar that answers:
 
-- "Most general Llama base that supports tool-calling and fits on consumer GPU"
-- "Models architecturally similar to Mamba but with instruction tuning"
-- "Navigate from here toward smaller and more code-focused"
+- "What's the most general Llama base that supports tool-calling and fits on consumer GPU?"
+- "What are some models that arearchitecturally similar to Mamba, but with instruction tuning?"
+- "Can we find models like *this* one, but smaller and more code-focused?"
 
 These aren't filter queries. They're **navigation** — and HuggingFace doesn't have a coordinate system to navigate with.
 
 ## The idea
 
-Every model has a position along seven independent dimensions. Take efficiency: 7B is the mainstream sweet spot, so 7B is **zero**. Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
+Every model has a position along seven independent dimensions, with signed hierarchical traversal from an assigned zero point. Take efficiency: 7B is a mainstream sweet spot, so 7B is set as "zero". Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
 
 ```
 ARCHITECTURE    zero = transformer decoder       →  +novel (Mamba, MoE)
@@ -36,7 +40,7 @@ DOMAIN          zero = general knowledge           →  +specialized (code, medi
 QUALITY         zero = established mainstream      →  +trending  / -legacy
 ```
 
-Zero is always **the most common thing people look for**. Most queries resolve near the origin.
+Zero is defined as **the most common thing people look for**. Most queries resolve near the origin.
 
 On top of coordinates, models share **anchors** — a vocabulary of characteristics like "instruction-following", "GGUF-available", "Llama-family." Models sharing anchors are similar without explicit edges. Similarity is emergent, and every score traces back to specific shared labels. Nothing is an opaque embedding.
 
@@ -49,7 +53,7 @@ The LLM decomposes a user's question into coordinates and anchors. ModelAtlas do
 - **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose.
 - **Not a ranking system.** No "best model" score. Just "what's near here, and what path leads where you need."
 
-The entire thing is a SQLite file, a few thousand anchor labels, and signed integers. No GPU at query time. No vector store in the background. No running services. The heaviest operation is optional vibe extraction during ingestion (a 0.5B model, runs once per model, ever). At query time it's multiplication and set intersection.
+The entire thing is a SQLite file, a few thousand anchor labels, and signed integers. No GPU at query time. No vector store in the background. No running services. Full semantic decomposition was done at home with spare compute. At query time, it's simply multiplication and set intersection.
 
 ## Quick start
 
@@ -100,11 +104,13 @@ navigate_models(
 
 1. **Deterministic** — parameter count, architecture type, download velocity. Pure arithmetic on structured API fields.
 2. **Pattern matching** — regex on tags, model names, configs. Detects instruction-tuning, quantization formats, family membership, domain signals.
-3. **Vibe extraction** — a 0.5B local model produces a one-sentence summary and extra anchors via constrained generation. Runs once per model during ingestion.
+3. **Vibe extraction** — a small (sub-7B) local model produces a one-sentence summary and extra anchors via constrained generation. Runs once per model during ingestion.
 
 **Ingestion** is additive. Each `hf_build_index` call enriches the same network. A background daemon can run continuously, streaming new models through all three extraction tiers.
 
 **Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
+
+Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logmarithic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
 
 ## Design reference
 
