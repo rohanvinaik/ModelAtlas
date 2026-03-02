@@ -62,7 +62,7 @@ uv sync
 uv run model-atlas
 ```
 
-MCP server — available in any Claude Code session.
+MCP server — available in any model that follows the standard.
 
 ## Usage
 
