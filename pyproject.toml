@@ -25,6 +25,17 @@ ingest = [
 model-atlas = "model_atlas.server:main"
 model-atlas-ingest = "model_atlas.ingest:main"
 
+[tool.ruff]
+src = ["src", "tests"]
+exclude = ["mutants", "deploy", ".claude"]
+
+[tool.mypy]
+files = ["src", "tests"]
+exclude = ["^mutants/", "^deploy/", "^\\.claude/"]
+
+[tool.bandit]
+exclude_dirs = ["mutants", "deploy", ".claude", "tests"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -290,6 +290,7 @@ class TestNewPatterns:
             tags=["en", "fr", "de", "text-generation"],
         )
         import json
+
         assert "supported_languages" in result.metadata
         langs = json.loads(result.metadata["supported_languages"][0])
         assert "en" in langs

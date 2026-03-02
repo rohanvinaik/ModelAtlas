@@ -33,7 +33,6 @@ from .query_types import (  # noqa: F401 — re-exported for backward compat
 )
 from .spreading import spread
 
-
 # Query signal keywords mapped to bank constraints
 _BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None, int]]] = {
     # keyword -> [(bank, min_signed, max_signed, direction), ...]
@@ -124,6 +123,35 @@ def _parse_query(query: str) -> ParsedQuery:
     )
 
 
+def _gradient_decay(distance: int | float) -> float:
+    """Score that decays with distance: 1.0 / (1.0 + abs(distance))."""
+    return 1.0 / (1.0 + abs(distance))
+
+
+def _score_constraint(signed: int, c: BankConstraint) -> float:
+    """Score a single constraint against a signed bank position."""
+    lo = c.min_signed
+    hi = c.max_signed
+
+    if lo is not None and hi is not None:
+        if lo <= signed <= hi:
+            return 1.0
+        return _gradient_decay(min(abs(signed - lo), abs(signed - hi)))
+
+    if lo is not None:
+        return 1.0 if signed >= lo else _gradient_decay(lo - signed)
+
+    if hi is not None:
+        return 1.0 if signed <= hi else _gradient_decay(signed - hi)
+
+    if c.direction is not None:
+        if signed == 0:
+            return 0.5
+        return 1.0 if (signed * c.direction > 0) else _gradient_decay(abs(signed))
+
+    return 0.5
+
+
 def _bank_proximity_score(
     model_positions: dict[str, dict],
     constraints: list[BankConstraint],
@@ -135,7 +163,7 @@ def _bank_proximity_score(
     - For directional queries: full score on desired side, decaying on wrong side
     """
     if not constraints:
-        return 0.5  # neutral when no constraints
+        return 0.5
 
     scores: list[float] = []
     for c in constraints:
@@ -143,47 +171,7 @@ def _bank_proximity_score(
         if not pos:
             scores.append(0.0)
             continue
-
-        signed = pos["sign"] * pos["depth"]
-
-        # Gradient scoring: closer to target range = higher score
-        if c.min_signed is not None and c.max_signed is not None:
-            # Both bounds: score by proximity to the range
-            if c.min_signed <= signed <= c.max_signed:
-                scores.append(1.0)
-            else:
-                dist = min(
-                    abs(signed - c.min_signed),
-                    abs(signed - c.max_signed),
-                )
-                scores.append(1.0 / (1.0 + dist))
-        elif c.min_signed is not None:
-            # Lower bound only: gradient above, decay below
-            if signed >= c.min_signed:
-                scores.append(1.0)
-            else:
-                dist = c.min_signed - signed
-                scores.append(1.0 / (1.0 + dist))
-        elif c.max_signed is not None:
-            # Upper bound only: gradient below, decay above
-            if signed <= c.max_signed:
-                scores.append(1.0)
-            else:
-                dist = signed - c.max_signed
-                scores.append(1.0 / (1.0 + dist))
-        elif c.direction is not None:
-            # Direction only: full score on desired side
-            if c.direction > 0 and signed > 0:
-                scores.append(1.0)
-            elif c.direction < 0 and signed < 0:
-                scores.append(1.0)
-            elif signed == 0:
-                scores.append(0.5)
-            else:
-                dist = abs(signed)
-                scores.append(1.0 / (1.0 + dist))
-        else:
-            scores.append(0.5)
+        scores.append(_score_constraint(pos["sign"] * pos["depth"], c))
 
     return sum(scores) / len(scores) if scores else 0.5
 
@@ -503,6 +491,98 @@ def _bank_score_single(model_signed_pos: int, query_direction: int) -> float:
         return 1.0 / (1.0 + abs(alignment))
 
 
+# ---------------------------------------------------------------------------
+# navigate() scoring helpers — extracted to reduce cognitive complexity
+# ---------------------------------------------------------------------------
+
+
+def _nav_candidates(
+    conn: sqlite3.Connection,
+    require_set: set[str],
+) -> list[str] | None:
+    """Resolve candidate model IDs, pre-filtering by required anchors.
+
+    Returns None if a required anchor doesn't exist (→ no results possible).
+    """
+    if require_set:
+        anchor_ids = []
+        for label in require_set:
+            row = conn.execute(
+                "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
+            ).fetchone()
+            if row:
+                anchor_ids.append(row["anchor_id"])
+            else:
+                return None
+        if len(anchor_ids) != len(require_set):
+            return None
+        placeholders = ",".join("?" for _ in anchor_ids)
+        rows = conn.execute(
+            f"""SELECT model_id FROM model_anchors
+                WHERE anchor_id IN ({placeholders})
+                GROUP BY model_id
+                HAVING COUNT(DISTINCT anchor_id) = ?""",
+            [*anchor_ids, len(anchor_ids)],
+        ).fetchall()
+        return [r["model_id"] for r in rows] or None
+    rows = conn.execute("SELECT model_id FROM models").fetchall()
+    return [r["model_id"] for r in rows] or None
+
+
+def _nav_bank_alignment(
+    positions: dict[str, tuple[int, int]],
+    directions: dict[str, int],
+) -> float:
+    """Multiplicative bank alignment score across all queried banks."""
+    if not directions:
+        return 1.0
+    result = 1.0
+    for bank_name, direction in directions.items():
+        pos = positions.get(bank_name)
+        if pos is None:
+            result *= NAVIGATE_MISSING_BANK_PENALTY
+        else:
+            result *= _bank_score_single(pos[0] * pos[1], direction)
+    return result
+
+
+def _nav_anchor_relevance(
+    model_anchor_set: set[str],
+    prefer_set: set[str],
+    avoid_set: set[str],
+    idf: dict[str, float],
+    prefer_idf_total: float,
+    has_constraints: bool,
+) -> float:
+    """IDF-weighted anchor relevance combining prefer/avoid signals."""
+    if not has_constraints:
+        return 1.0
+    if prefer_set and prefer_idf_total > 0:
+        matched = prefer_set & model_anchor_set
+        prefer_score = sum(idf.get(a, 0.0) for a in matched) / prefer_idf_total
+    else:
+        prefer_score = 1.0
+    avoided = avoid_set & model_anchor_set
+    avoid_penalty = NAVIGATE_AVOID_DECAY ** len(avoided)
+    return prefer_score * avoid_penalty
+
+
+def _nav_seed_similarity(
+    model_anchor_set: set[str],
+    seed_anchors: set[str],
+    idf: dict[str, float],
+) -> float:
+    """IDF-weighted Jaccard between seed model anchors and candidate."""
+    if not seed_anchors:
+        return 1.0
+    shared = seed_anchors & model_anchor_set
+    union = seed_anchors | model_anchor_set
+    idf_union = sum(idf.get(a, 0.0) for a in union)
+    if not idf_union:
+        return 0.0
+    return sum(idf.get(a, 0.0) for a in shared) / idf_union
+
+
 def navigate(
     conn: sqlite3.Connection,
     query: StructuredQuery,
@@ -520,49 +600,20 @@ def navigate(
     prefer_set = set(query.prefer_anchors)
     avoid_set = set(query.avoid_anchors)
     has_anchor_constraints = bool(require_set or prefer_set or avoid_set)
+    prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
 
-    # --- Step 1: Determine candidate set ---
-    if require_set:
-        # Pre-filter: only models that have ALL required anchors
-        anchor_ids = []
-        for label in require_set:
-            row = conn.execute(
-                "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
-            ).fetchone()
-            if row:
-                anchor_ids.append(row["anchor_id"])
-            else:
-                return []  # required anchor doesn't exist → no results
-        if len(anchor_ids) != len(require_set):
-            return []
-        placeholders = ",".join("?" for _ in anchor_ids)
-        rows = conn.execute(
-            f"""SELECT model_id FROM model_anchors
-                WHERE anchor_id IN ({placeholders})
-                GROUP BY model_id
-                HAVING COUNT(DISTINCT anchor_id) = ?""",
-            [*anchor_ids, len(anchor_ids)],
-        ).fetchall()
-        candidate_ids = [r["model_id"] for r in rows]
-        if not candidate_ids:
-            return []
-    else:
-        rows = conn.execute("SELECT model_id FROM models").fetchall()
-        candidate_ids = [r["model_id"] for r in rows]
-
+    # Step 1: Determine candidate set
+    candidate_ids = _nav_candidates(conn, require_set)
     if not candidate_ids:
         return []
 
-    # --- Step 2: Batch-fetch positions and anchors ---
+    # Step 2: Batch-fetch positions, anchors, authors
     all_positions = db.batch_get_positions(conn, candidate_ids)
     all_anchors = db.batch_get_anchor_sets(conn, candidate_ids)
+    seed_anchors = (
+        db.get_anchor_set(conn, query.similar_to) if query.similar_to else set()
+    )
 
-    # Seed model anchors (for similarity)
-    seed_anchors: set[str] = set()
-    if query.similar_to:
-        seed_anchors = db.get_anchor_set(conn, query.similar_to)
-
-    # Batch-fetch authors
     ph = ",".join("?" for _ in candidate_ids)
     author_rows = conn.execute(
         f"SELECT model_id, author FROM models WHERE model_id IN ({ph})",
@@ -570,69 +621,28 @@ def navigate(
     ).fetchall()
     authors = {r["model_id"]: r["author"] or "" for r in author_rows}
 
-    # Prefer IDF sum for prefer_anchors (precompute denominator)
-    prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
-
-    # --- Step 3: Score each candidate ---
+    # Step 3: Score each candidate
     results: list[NavigationResult] = []
     for mid in candidate_ids:
         positions = all_positions.get(mid, {})
         model_anchor_set = all_anchors.get(mid, set())
 
-        # 1) Bank alignment — multiplicative across specified banks
-        if directions:
-            bank_scores = []
-            for bank_name, direction in directions.items():
-                pos = positions.get(bank_name)
-                if pos is None:
-                    bank_scores.append(NAVIGATE_MISSING_BANK_PENALTY)
-                else:
-                    signed = pos[0] * pos[1]  # sign * depth
-                    bank_scores.append(_bank_score_single(signed, direction))
-            bank_alignment = 1.0
-            for s in bank_scores:
-                bank_alignment *= s
-        else:
-            bank_alignment = 1.0
-
-        # 2) Anchor relevance — IDF-weighted
-        if has_anchor_constraints:
-            # require already gated by SQL pre-filter
-
-            # prefer: IDF-weighted overlap
-            if prefer_set and prefer_idf_total > 0:
-                matched = prefer_set & model_anchor_set
-                prefer_score = (
-                    sum(idf.get(a, 0.0) for a in matched) / prefer_idf_total
-                )
-            else:
-                prefer_score = 1.0
-
-            # avoid: each present anchor halves the score
-            avoided = avoid_set & model_anchor_set
-            avoid_penalty = NAVIGATE_AVOID_DECAY ** len(avoided)
-
-            anchor_relevance = prefer_score * avoid_penalty
-        else:
-            anchor_relevance = 1.0
-
-        # 3) Seed similarity — IDF-weighted Jaccard
-        if seed_anchors:
-            shared = seed_anchors & model_anchor_set
-            union = seed_anchors | model_anchor_set
-            idf_intersection = sum(idf.get(a, 0.0) for a in shared)
-            idf_union = sum(idf.get(a, 0.0) for a in union)
-            seed_similarity = idf_intersection / idf_union if idf_union else 0.0
-        else:
-            seed_similarity = 1.0
-
+        bank_alignment = _nav_bank_alignment(positions, directions)
+        anchor_relevance = _nav_anchor_relevance(
+            model_anchor_set,
+            prefer_set,
+            avoid_set,
+            idf,
+            prefer_idf_total,
+            has_anchor_constraints,
+        )
+        seed_similarity = _nav_seed_similarity(model_anchor_set, seed_anchors, idf)
         final_score = bank_alignment * anchor_relevance * seed_similarity
 
-        # Build positions dict for output
-        pos_out = {}
-        for bank_name, (sign, depth) in positions.items():
-            pos_out[bank_name] = {"sign": sign, "depth": depth}
-
+        pos_out = {
+            bank_name: {"sign": sign, "depth": depth}
+            for bank_name, (sign, depth) in positions.items()
+        }
         results.append(
             NavigationResult(
                 model_id=mid,

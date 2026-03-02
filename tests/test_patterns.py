@@ -101,13 +101,17 @@ class TestDetectCapabilities:
 
     def test_schema_following(self):
         assert "schema-following" in _detect_capabilities("json-mode support")
-        assert "schema-following" in _detect_capabilities("structured-output generation")
+        assert "schema-following" in _detect_capabilities(
+            "structured-output generation"
+        )
         assert "schema-following" in _detect_capabilities("json schema constrained")
 
     def test_constrained_generation(self):
         assert "constrained-generation" in _detect_capabilities("outlines constrained")
         assert "constrained-generation" in _detect_capabilities("uses guidance library")
-        assert "constrained-generation" in _detect_capabilities("grammar-constrained decoding")
+        assert "constrained-generation" in _detect_capabilities(
+            "grammar-constrained decoding"
+        )
 
     def test_proof_level_math(self):
         assert "proof-level-math" in _detect_capabilities("theorem proving")
@@ -397,9 +401,7 @@ class TestDetectLineage:
 
     def test_no_base_model_with_instruct_name(self):
         """Model with instruct in name but no base_model tag gets depth 1."""
-        base, anchors, pos = _detect_lineage(
-            "user/Model-Instruct", [], "user"
-        )
+        base, anchors, pos = _detect_lineage("user/Model-Instruct", [], "user")
         assert base is None
         assert pos.sign == 1
         assert pos.depth == 1

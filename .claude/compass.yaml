@@ -1,0 +1,282 @@
+version: 1
+axes:
+  problem:
+    name: problem
+    claims:
+    - text: 'Project purpose: MCP server exposing a navigable semantic network of
+        ML models'
+      source: pyproject.toml
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'README: MCP server that builds a **navigable semantic network** of ML
+        models. Models are positioned across orthogonal semantic banks (architecture,
+        capability, efficiency, compatibility, lineage, domain, qual'
+      source: README.md
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'conftest.py: Shared test fixtures for ModelAtlas tests.'
+      source: docstring:conftest.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'test_db.py: Tests for the SQLite database layer.'
+      source: docstring:test_db.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'test_extraction.py: Tests for the extraction pipeline.'
+      source: docstring:test_extraction.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'test_query.py: Tests for the navigational query engine.'
+      source: docstring:test_query.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'db.py: SQLite database for the semantic network.'
+      source: docstring:db.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'server.py: ModelAtlas MCP Server.'
+      source: docstring:server.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'config.py: Configuration constants for ModelAtlas.'
+      source: docstring:config.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'query.py: Navigational query engine for the semantic network.'
+      source: docstring:query.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'cache.py: Disk-based caching for model cards and metadata.'
+      source: docstring:cache.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: '__init__.py: ModelAtlas — navigable semantic network of ML models.'
+      source: docstring:__init__.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'fuzzy.py: Layer 2: Fuzzy string matching on model metadata.'
+      source: docstring:fuzzy.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: '__init__.py: Search layers for HF Model Search.'
+      source: docstring:__init__.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'structured.py: Layer 1: Structured search via HuggingFace Hub API.'
+      source: docstring:structured.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'patterns.py: Tier 2: Pattern matching on tags, model names, and file
+        lists.'
+      source: docstring:patterns.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'deterministic.py: Tier 1: Deterministic extraction from HF API fields
+        and config metadata.'
+      source: docstring:deterministic.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: '__init__.py: Extraction pipeline: HF metadata → semantic network positions
+        and anchors.'
+      source: docstring:__init__.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'pipeline.py: Extraction pipeline orchestrator.'
+      source: docstring:pipeline.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    - text: 'vibes.py: Tier 3: Heuristic NLP extraction from model card text.'
+      source: docstring:vibes.py
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: core_theory
+    summary: 'README: MCP server that builds a **navigable semantic network** of ML
+      models. Models are positioned across orthogonal semantic banks (architecture,
+      capability, efficiency, compatibility, lineage, domain, qual'
+    depth: 3
+  solution:
+    name: solution
+    claims:
+    - text: Uses pytest for testing
+      source: imports
+      heading: ''
+      confidence: 0.55
+      provenance: inferred
+      origin_facet: architecture
+    summary: Uses pytest for testing
+    depth: 1
+  implementation:
+    name: implementation
+    claims:
+    - text: Uses src/ layout
+      source: directory_structure
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: abstractions
+    - text: Tests in tests/
+      source: directory_structure
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: enforceable_rules
+    - text: Uses pytest
+      source: test_patterns
+      heading: ''
+      confidence: 0.55
+      provenance: inferred
+      origin_facet: enforceable_rules
+    - text: Uses conftest.py for shared fixtures
+      source: test_patterns
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: enforceable_rules
+    - text: Uses pytest fixtures
+      source: test_patterns
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: enforceable_rules
+    - text: 'query.py:SearchResult: A model returned from a navigational search.'
+      source: docstring:query.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'query.py:ComparisonResult: Result of comparing two or more models.'
+      source: docstring:query.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'structured.py:StructuredResult: A model result from the structured HF
+        API search.'
+      source: docstring:structured.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'patterns.py:PatternResult: Output of pattern-based extraction for one
+        model.'
+      source: docstring:patterns.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'deterministic.py:ModelInput: Structured input from the HF API for one
+        model.'
+      source: docstring:deterministic.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'deterministic.py:BankPosition: A position in one semantic bank.'
+      source: docstring:deterministic.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    - text: 'deterministic.py:DeterministicResult: Output of deterministic extraction
+        for one model.'
+      source: docstring:deterministic.py
+      heading: ''
+      confidence: 0.35
+      provenance: inferred
+      origin_facet: abstractions
+    summary: Uses pytest
+    depth: 3
+  world:
+    name: world
+    claims:
+    - text: 'Python version: >=3.10'
+      source: pyproject.toml
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: ''
+    - text: CI pipeline detected
+      source: README.md
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: ''
+    - text: Code coverage tracking
+      source: README.md
+      heading: ''
+      confidence: 0.4
+      provenance: inferred
+      origin_facet: ''
+    - text: 'Test suite: 3 test file(s)'
+      source: test_patterns
+      heading: ''
+      confidence: 0.5
+      provenance: inferred
+      origin_facet: ''
+    summary: 'Test suite: 3 test file(s)'
+    depth: 2
+directives:
+- kind: forbidden
+  text: proposed_rules
+  source: enforceable_rules
+- kind: forbidden
+  text: existing_rule_count
+  source: enforceable_rules
+- kind: forbidden
+  text: directives_analyzed
+  source: enforceable_rules
+- kind: forbidden
+  text: already_covered
+  source: enforceable_rules
+gap_report:
+  axis_depths:
+    problem: 3
+    solution: 1
+    implementation: 3
+    world: 2
+  spikiness: 0.3333
+  sparse_axes:
+  - solution
+  interview_recommended: true
+forged_at: 1772352621.119157
+frozen: true
+frozen_hash: b7868e6407f46551

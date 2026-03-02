@@ -11,7 +11,6 @@ from model_atlas.query import (
     navigate,
 )
 
-
 # ---------------------------------------------------------------------------
 # Unit tests for _bank_score_single
 # ---------------------------------------------------------------------------
@@ -90,7 +89,9 @@ class TestBankAlignment:
     def test_efficiency_small_penalizes_zero(self, populated_conn):
         """Models at EFFICIENCY zero get 0.5 when we want -1."""
         results = navigate(populated_conn, StructuredQuery(efficiency=-1))
-        llama = next(r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct")
+        llama = next(
+            r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct"
+        )
         assert llama.bank_alignment == 0.5
 
     def test_domain_specialized_prefers_specialized(self, populated_conn):
@@ -111,9 +112,7 @@ class TestBankAlignment:
         """Multiple bank constraints multiply — model must satisfy both."""
         # Small + domain-specialized: only Qwen is small, only medical is domain-specialized
         # Neither satisfies both perfectly, so scores should be < 1.0
-        results = navigate(
-            populated_conn, StructuredQuery(efficiency=-1, domain=1)
-        )
+        results = navigate(populated_conn, StructuredQuery(efficiency=-1, domain=1))
         for r in results:
             assert r.bank_alignment <= 1.0
         # Qwen: efficiency=1.0, domain=1.0 (sign=1,depth=1 → aligned) → 1.0
@@ -163,7 +162,9 @@ class TestAnchorRelevance:
             StructuredQuery(prefer_anchors=["code-generation", "consumer-GPU-viable"]),
         )
         qwen = next(r for r in results if r.model_id == "Qwen/Qwen2.5-Coder-1.5B")
-        llama = next(r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct")
+        llama = next(
+            r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct"
+        )
         # Qwen has both preferred anchors, Llama has neither
         assert qwen.anchor_relevance > llama.anchor_relevance
         assert qwen.score > llama.score
@@ -185,8 +186,12 @@ class TestAnchorRelevance:
             populated_conn,
             StructuredQuery(avoid_anchors=["quantized"]),
         )
-        gguf = next(r for r in results if r.model_id == "TheBloke/Llama-3.1-8B-Instruct-GGUF")
-        llama = next(r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct")
+        gguf = next(
+            r for r in results if r.model_id == "TheBloke/Llama-3.1-8B-Instruct-GGUF"
+        )
+        llama = next(
+            r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct"
+        )
         # GGUF model has "quantized" anchor, so it gets penalized
         assert gguf.anchor_relevance == 0.5  # one avoided anchor → 0.5^1
         assert llama.anchor_relevance == 1.0
@@ -204,7 +209,9 @@ class TestSeedSimilarity:
         )
         # GGUF model shares the most anchors with Llama (both have Llama-family,
         # instruction-following, decoder-only)
-        gguf = next(r for r in results if r.model_id == "TheBloke/Llama-3.1-8B-Instruct-GGUF")
+        gguf = next(
+            r for r in results if r.model_id == "TheBloke/Llama-3.1-8B-Instruct-GGUF"
+        )
         qwen = next(r for r in results if r.model_id == "Qwen/Qwen2.5-Coder-1.5B")
         assert gguf.seed_similarity > qwen.seed_similarity
 
@@ -281,8 +288,14 @@ class TestIDFWeighting:
             populated_conn,
             StructuredQuery(prefer_anchors=["decoder-only"]),
         )
-        qwen_rare = next(r for r in results_rare if r.model_id == "Qwen/Qwen2.5-Coder-1.5B")
-        llama_common = next(r for r in results_common if r.model_id == "meta-llama/Llama-3.1-8B-Instruct")
+        qwen_rare = next(
+            r for r in results_rare if r.model_id == "Qwen/Qwen2.5-Coder-1.5B"
+        )
+        llama_common = next(
+            r
+            for r in results_common
+            if r.model_id == "meta-llama/Llama-3.1-8B-Instruct"
+        )
         # Both should have anchor_relevance = 1.0 since they have the preferred anchor
         assert qwen_rare.anchor_relevance == 1.0
         assert llama_common.anchor_relevance == 1.0

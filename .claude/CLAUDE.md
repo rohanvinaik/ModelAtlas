@@ -1,255 +1,87 @@
-# hf-model-search — System Design Document
+# model-atlas Context
 
-This document is the complete architectural specification. A new agent should be able to recover the entire design from this file alone.
+## What You Are Doing
 
-## What This Is
+MCP server exposing a navigable semantic network of ML models. Your job is to write correct code; LintGate's job is to catch the discipline failures that waste your intelligence budget.
 
-A **hierarchical semantic network** of ML models, exposed as an MCP server. Models are positioned across multiple orthogonal **semantic banks** via signed distances from meaningful zero states, and connected through a shared **anchor dictionary** that creates emergent similarity. A flat SQL table exists as a sidecar for overflow metadata that doesn't decompose cleanly into the network.
+## Know Your Epistemic State
 
-The query model is **navigational**, not filtering. You don't ask "give me rows matching these WHERE clauses." You ask "what's near this point in model space?", "navigate toward more general in CAPABILITY while staying small in EFFICIENCY", "what exists that I could fine-tune for this task?"
+Before acting on a file you haven't read, before trying a third approach, before ignoring a behavioral finding — ask yourself:
 
-## What This Is NOT
+- **Do I have theory context?** If not → `build_theory_pack`. The theory profile tells you what this project values, how it solves problems, and what it considers anti-patterns. Without it you are guessing at alignment.
+- **Am I session-ready?** The session gate checks three things: theory profile has core_theory + problem_solving + alignment facets with claims, at least one enforceable rule exists, and no missing required facets. If the gate fires an advisory, run `bootstrap_context_files` before continuing.
+- **What is my prediction accuracy?** If `constraint_check` shows accuracy below 50% after 5+ predictions, your mental model of the project's constraints is wrong. Stop and re-orient.
+- **What is the coherence state?** If `controlplane_run` shows cross-channel disagreement (lint + tests + git pointing at the same files), that convergence IS the diagnosis. Read it.
 
-- NOT a vector store / embedding search engine
-- NOT a flat SQL database with 65 columns and WHERE clauses
-- NOT a thin wrapper around HuggingFace's API
-- NOT a system that stores or embeds raw model card text
+## Dispositions
 
-The value: HF exposes ~10 structured fields. This tool extracts/derives relational and hierarchical information about models — their capabilities, lineage, efficiency profiles, architectural properties, domain specializations — and encodes them as **positions in a structured semantic space**. This enables compound navigational queries HF can't support: "most general base model in the Llama family that supports tool-calling and runs on consumer GPU" or "models architecturally similar to Mamba but with instruction tuning."
+**When starting a session** — orient first. Call `build_theory_pack` or `controlplane_status`. Read theory claims before writing code. The 200 tokens you spend orienting prevent the 2,000 tokens you spend on a doomed approach.
 
-## Core Architecture: The Semantic Network
+**When acting** — register predictions. Before any Bash command, call `constraint_check` with a structured prediction (`prediction_type`: exit_code/error_signature/stdout_contains, `prediction_value`: what you expect). The system checks your prediction on the next tool event. This is not bureaucracy — it builds the accuracy signal that modulates behavioral finding confidence.
 
-Inspired by the Sparse Wiki Grounding architecture (see `/Users/rohanvinaik/sparse-wiki-grounding/reports/ARCHITECTURE_DEEP_DIVE.md` for the theoretical foundation). The key ideas borrowed:
+**When stuck** — DO NOT try variant #4. If you have cycled through 3 approaches, your problem is not execution — it is understanding. Run `constraint_check` to see your constraint coverage. Read the theory claims attached to behavioral findings. The answer is almost always in the constraints you have not yet verified, not in the approaches you have not yet tried.
 
-1. **Signed hierarchies with zero states** — every model has a signed distance from a semantically meaningful "zero" in each bank. Zero is placed at the query-frequency mode (the most commonly searched region), so most queries resolve near the origin.
+**When the system speaks** — findings are weather reports, not commands. "3 approaches in 20min, all failed" is an observation. The theory coda attached to it connects the observation to the project's values. You decide what to do. But if you ignore a hard signal and try the same pattern again, the system will escalate — and it will be right.
 
-2. **Orthogonal semantic banks** — multiple independent dimensions, each tracking a different aspect of model identity. Banks prevent semantic bleeding: searching for "good at code" activates CAPABILITY, not EFFICIENCY.
+**When context evolves** — review and apply patches explicitly. When the living_context system generates a context patch (from accepted constraints, confirmed predictions, or recurring behavioral signals), use `context_patch_review` to see the diff. Use `context_patch_apply` to write it. Patches are never auto-applied. The cumulative rebasing ensures multiple patches to the same section compose correctly — each apply re-reads the current on-disk state.
 
-3. **Anchor dictionary** — shared vocabulary of characteristics (like "instruction-following", "RLHF-tuned", "Apple-Silicon-native") that models link to. Models sharing anchors are semantically related without needing explicit edges. Anchor sets enable set-operation queries (intersection = shared capabilities, symmetric difference = distinguishing features, Jaccard = overall similarity).
+**When you change the system** — update the docs immediately, in the same action. If you add an MCP tool, add it to AGENTS.md and README.md tool tables and increment the count. Source of truth for tool count: `grep -Rho "@mcp.tool()" mcp_server.py mcp_tools | wc -l`. Documentation precision has compounding returns — one stale count becomes a chain of wrong assumptions across every session that reads it.
 
-4. **Two-layer connectivity** — Layer 1: explicit model relationships (fine-tuned-from, same-family, quantized-from). Layer 2: implicit similarity through shared anchors.
+## Mission
 
-5. **Auditable, not black-box** — every similarity score traces back to specific shared anchors and bank positions. No opaque embeddings.
-
-### The Seven Semantic Banks
-
-Each bank has a zero state (the semantic origin), with signed distances indicating direction from zero. Negative = toward abstract/general/earlier. Positive = toward specific/specialized/derived.
-
-```
-ARCHITECTURE    Zero: standard transformer decoder (the mode — most models, most queries)
-                -N: simpler/older (encoder-only, encoder-decoder, RNN-era)
-                +N: novel/specialized (Mamba, RWKV, SSM, hybrid, mixture-of-experts)
-                WHY ITS OWN BANK: cleanest, most numerical signal. ~95% of model
-                filtering can be executed by querying this bank alone.
-
-CAPABILITY      Zero: general language model
-                -N: narrower capability (single-task classifiers, embedding-only)
-                +N: richer capability (code, reasoning, creative writing, tool-calling,
-                     NER, orchestration, structured output, function calling)
-                ANCHORS: "instruction-following", "tool-calling", "code-generation",
-                         "creative-writing", "NER", "orchestration", "time-series"
-
-EFFICIENCY      Zero: ~7B mainstream (the sweet spot most people search for)
-                -N: smaller/lighter (3B, 1B, 0.5B, micro/embedded)
-                +N: larger/heavier (13B, 30B, 70B, frontier)
-                DERIVED FROM: parameter_count, quantization, memory_footprint
-
-COMPATIBILITY   Zero: standard transformers + PyTorch (universal baseline)
-                +N: more specific format/framework/hardware target
-                    +1: specific framework (MLX, llama.cpp, vLLM, TensorRT)
-                    +2: specific format (GGUF, GPTQ, AWQ, EXL2, safetensors)
-                    +3: specific hardware optimization (Apple Silicon, specific GPU arch)
-
-LINEAGE         Zero: base/foundational model of a family
-                -N: EARLIER architectures in the same family (GPT-2 is negative
-                    relative to GPT-4 — they share a family even though one isn't
-                    fine-tuned from the other. Predecessors go negative.)
-                +N: DERIVED models (fine-tune → quantized → community derivative)
-                    +1: official variant (size variant, instruct version)
-                    +2: fine-tune (LoRA, DPO, RLHF, domain adaptation)
-                    +3: community derivative (merged, quantized, distilled)
-
-DOMAIN          Zero: general knowledge (broad training data, no specialization)
-                +N: increasingly narrow domain specialization
-                    +1: broad domain (code, science, legal, medical, finance)
-                    +2: narrow domain (Python, constitutional law, radiology)
-                    +3: ultra-narrow (Apple Shortcuts DSL, SEC filings, specific game lore)
-
-QUALITY         Zero: established, well-known, mainstream adoption
-                -N: legacy, abandoned, superseded, low community engagement
-                +N: trending, high momentum, rising community adoption
-                DERIVED FROM: likes, downloads, download_velocity, days_since_release
-```
-
-### The Anchor Dictionary
-
-A shared vocabulary of semantic labels that models link to. Each anchor belongs to a bank (routes activation through that bank's channel). Anchors create **emergent connections** — models sharing anchors cluster together without explicit edges.
-
-**Bootstrap strategy**: Start from known tags, capabilities, format names extracted from HF metadata and model cards. Grow organically as more models are indexed. No need for a perfect upfront vocabulary — vibe-y bootstrapping, refined over time.
-
-**Example anchors** (bank assignment in parentheses):
-- "instruction-following" (CAPABILITY)
-- "RLHF-tuned" (CAPABILITY)
-- "tool-calling" (CAPABILITY)
-- "code-generation" (CAPABILITY)
-- "orchestration" (CAPABILITY)
-- "consumer-GPU-viable" (EFFICIENCY)
-- "Apple-Silicon-native" (COMPATIBILITY)
-- "GGUF-available" (COMPATIBILITY)
-- "MLX-compatible" (COMPATIBILITY)
-- "Llama-family" (LINEAGE)
-- "Mistral-family" (LINEAGE)
-- "legal-domain" (DOMAIN)
-- "transformer" (ARCHITECTURE)
-- "mixture-of-experts" (ARCHITECTURE)
-- "trending" (QUALITY)
-
-### Database Schema
-
-```sql
--- Models: the entities
-models (
-    model_id    TEXT PRIMARY KEY,  -- e.g. "meta-llama/Llama-3.1-8B-Instruct"
-    author      TEXT,
-    source      TEXT DEFAULT 'huggingface',  -- huggingface, ollama, replicate, civitai
-    display_name TEXT
-);
-
--- Bank positions: signed positions across the 7 banks
-model_positions (
-    model_id    TEXT REFERENCES models,
-    bank        TEXT,          -- ARCHITECTURE, CAPABILITY, EFFICIENCY, etc.
-    path_sign   INTEGER,       -- -1 or +1
-    path_depth  INTEGER,       -- distance from zero
-    path_nodes  TEXT,          -- JSON: path from zero to this position
-    zero_state  TEXT,          -- the zero reference label for this bank
-    PRIMARY KEY (model_id, bank)
-);
-
--- Model links: explicit relationships (Layer 1)
-model_links (
-    source_id   TEXT REFERENCES models,
-    target_id   TEXT REFERENCES models,
-    relation    TEXT,          -- 'fine_tuned_from', 'quantized_from', 'same_family',
-                               -- 'predecessor', 'successor', 'variant_of'
-    weight      REAL DEFAULT 1.0
-);
-
--- Anchor dictionary: shared capability vocabulary
-anchors (
-    anchor_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    label       TEXT UNIQUE,   -- 'instruction-following', 'RLHF-tuned', etc.
-    bank        TEXT,          -- which bank this anchor activates
-    category    TEXT           -- optional grouping
-);
-
--- Model-anchor links: which models have which characteristics (Layer 2)
-model_anchors (
-    model_id    TEXT REFERENCES models,
-    anchor_id   INTEGER REFERENCES anchors,
-    weight      REAL DEFAULT 1.0,
-    PRIMARY KEY (model_id, anchor_id)
-);
-
--- Overflow metadata: flat fields that don't decompose into the network
--- In a perfect design this table would be empty. In practice it catches
--- data that's just a number or string with no meaningful hierarchy.
-model_metadata (
-    model_id    TEXT REFERENCES models,
-    key         TEXT,          -- 'sha', 'created_at', 'gated', 'context_length',
-                               -- 'parameter_count', 'license', benchmark scores, etc.
-    value       TEXT,
-    value_type  TEXT,          -- 'int', 'float', 'str', 'bool', 'datetime'
-    PRIMARY KEY (model_id, key)
-);
-
--- Key indices (bidirectional anchor lookup, as in sparse-wiki)
-CREATE INDEX idx_positions_bank ON model_positions(bank);
-CREATE INDEX idx_links_source ON model_links(source_id);
-CREATE INDEX idx_links_target ON model_links(target_id);
-CREATE INDEX idx_model_anchors_model ON model_anchors(model_id);
-CREATE INDEX idx_model_anchors_anchor ON model_anchors(anchor_id);  -- "what models share this anchor?"
-CREATE INDEX idx_metadata_key ON model_metadata(key);
-```
-
-### Query Model
-
-Queries are **navigational**, not just filtering. Examples:
-
-| Query | How It Works |
-|-------|-------------|
-| "Models like X" | Jaccard similarity on anchor sets, weighted by bank |
-| "Most general base for fine-tuning on code" | Find models with "code-generation" anchor, sort by lowest path_depth in LINEAGE (closest to zero = most general base) |
-| "Small model with tool-calling" | EFFICIENCY bank position < 0 (small) + CAPABILITY anchor "tool-calling" |
-| "What distinguishes Model A from Model B?" | Symmetric difference of anchor sets |
-| "Navigate from X toward smaller and more code-focused" | Decrease EFFICIENCY position, increase CAPABILITY toward code anchors |
-| "Llama family tree" | Traverse LINEAGE bank: all models with "Llama-family" anchor, ordered by signed position |
-| "Trending models in the Mamba architecture space" | ARCHITECTURE bank position > 0 (novel) + QUALITY bank position > 0 (trending) |
-
-**Set operations on anchor sets** (from sparse-wiki):
-- **Intersection** (A & B) = shared capabilities between two models
-- **Symmetric difference** (A ^ B) = what makes them different
-- **Jaccard similarity** (|A & B| / |A | B|) = overall semantic overlap
-
-### The One Natural Language Field
-
-`vibe_summary`: one sentence per model capturing the irreducible "feel" — what it's known for, what makes it distinctive. This is the ONLY prose stored. Everything else is numbers, categories, positions, and anchors.
-
-This field lives in the overflow metadata table (or optionally in a small ChromaDB sidecar for semantic search over vibes). It handles the queries that no structured decomposition can fully capture.
-
-## Source Adapters
-
-Pluggable fetchers that all produce the same output format: model entities with bank positions, anchor links, metadata, and explicit relationships. Each source has different raw data but maps to the same schema.
-
-| Source | What It Provides | Adapter Status |
-|--------|-----------------|---------------|
-| HuggingFace | Richest metadata — API fields + model cards + configs + file lists | Primary, build first |
-| Ollama | Direct hardware compatibility info, simpler metadata | Future |
-| Replicate | API-oriented models, pricing info, latency data | Future |
-| CivitAI | Image/diffusion models, community ratings | Future |
-
-Every indexed model carries a `source` field. The network is source-agnostic — a Llama model from HF and the same model from Ollama occupy the same point in semantic space and link to the same anchors.
-
-## Extraction Pipeline
-
-The hard part. Reads model cards, configs, API metadata, and file lists. Produces: bank positions, anchor links, explicit model relationships, and overflow metadata.
-
-**Three tiers of extraction reliability:**
-
-1. **Deterministic** (from API / config.json / safetensors metadata):
-   Parameter count, context length, architecture type, vocab size, embedding dim, num layers, num heads, file formats available, author, license, dates, download counts.
-
-2. **Pattern matching** (from tags / file names / model card structure):
-   Is instruction-tuned, is chat model, is code model, quantization formats, base model reference, fine-tune method, has chat template, supported languages, benchmark scores (often in tables in model cards).
-
-3. **NLP/LLM extraction** (from model card prose — the hard part):
-   Training data domains, capability signals, the vibe_summary sentence. This is where a small local embedding model or LLM call fills gaps that symbolic parsing can't handle. "Vibe coding" — a mish-mash of regex, heuristics, and LLM calls papered over to get 99% of what a careful human would extract.
-
-## Update Strategy
-
-Model data is **mostly static**. A model's parameter count, architecture, and training data don't change after release. The real "update" operation is **discovering and adding new models**, not updating existing entries.
-
-- **Periodic additive sweeps**: Find new models above quality thresholds, run through extraction pipeline, INSERT into network. Existing nodes rarely need touching.
-- **Download/like snapshots**: Capture periodically to compute velocity (QUALITY bank signal). Store snapshots in metadata.
-- **Lineage updates**: When a new fine-tune appears, add it to the network with a `fine_tuned_from` link to its base. The LINEAGE bank position is computed from the link structure.
-
-## Current State of Code
-
-- MCP server skeleton exists and works (5 tools registered, server connects via FastMCP)
-- Layer 1 (HF API structured search) and Layer 2 (RapidFuzz fuzzy matching) are reusable
-- Layer 3 (ChromaDB semantic search) was built around the wrong architecture and needs complete replacement with the network-based approach
-- Dependencies installed: mcp, huggingface-hub, sentence-transformers, chromadb, rapidfuzz
-- The network database (SQLite with the schema above) needs to be built from scratch
-- The extraction pipeline needs to be built from scratch
-- All documentation has been updated to reflect the new architecture
+- Keep feedback loops tight between generated code and validated code quality.
+- Prefer deterministic checks and explicit diagnostics over ambiguous heuristics.
+- Preserve graceful degradation when optional tooling is unavailable.
+- Offload discipline to the deterministic layer so the agent spends its intelligence budget on novel reasoning.
 
 ## Guardrails
 
-1. **Do not embed raw model card text.** Model cards are an INPUT SOURCE for the extraction pipeline. They are read, analyzed, decomposed into structured positions/anchors/metadata, then discarded.
-2. **Do not store prose** except the one `vibe_summary` field per model.
-3. **Do not treat this as a filtering problem.** Queries are navigational — exploring a semantic space, not running WHERE clauses.
-4. **The network is the primary storage, SQL is overflow.** If you're putting most data in the metadata table, you're doing it wrong.
-5. **Signed hierarchies apply across ALL banks**, not just lineage. Every bank has a zero state and models have signed distances from it.
-6. **Anchors create emergent similarity.** Two models sharing 15 anchors are similar even without an explicit edge. The anchor dictionary IS the semantic vocabulary.
-7. **Source-agnostic.** The same model from different sources occupies the same point in semantic space.
-8. **Talk before building.** The architecture IS the project. Don't start coding without understanding this document.
+- DO NOT disable lint channels globally to hide regressions.
+- DO NOT auto-apply generated repairs without explicit acceptance.
+- DO NOT try a 4th approach without running `constraint_check` first.
+- DO NOT ignore theory codas on behavioral findings — they exist to connect observations to project values.
+- MUST keep hook and MCP outputs machine-readable and stable for downstream consumers.
+- MUST preserve backward-compatible MCP tool contracts unless versioned intentionally.
+- MUST update AGENTS.md, README.md, and docs/design.md when adding, removing, or changing MCP tools. Verify with `grep -Rho "@mcp.tool()" mcp_server.py mcp_tools | wc -l`.
+- MUST update docs/design.md YAML examples when adding config options.
+
+<!-- LINTGATE:BEGIN theory_alignment v1 -->
+## Theory-Aligned Development
+- Core theory: Understand before acting — orient on the constraint space before writing code, because the cost of a wrong approach compounds while the cost of reading is fixed.
+- Preferred approach: A structured semantic network of ML models, exposed as an MCP tool, so the LLM you're already talking to can see the model landscape instead of guessing at it.
+- Alignment criteria: Why signed hierarchies instead of flat categories: A categorical "size" field with values {small, medium, large} can't express proximity.
+- Architecture intent: Four indexed queries instead of 18K individual get_model() calls.
+<!-- LINTGATE:END theory_alignment -->
+
+<!-- LINTGATE:BEGIN do_dont v1 -->
+- DO: A structured semantic network of ML models, exposed as an MCP tool, so the LLM you're already talking to can see the model landscape instead of guessing at it.
+- DO: Why signed hierarchies instead of flat categories: A categorical "size" field with values {small, medium, large} can't express proximity.
+- DO NOT: Do not try a 4th approach without first enumerating all known constraints and verifying which ones the new approach actually addresses.
+- DO NOT: Do not discover constraints one-at-a-time through failure — enumerate the full constraint space upfront by reading before acting.
+- DO NOT: Do not re-attempt an approach that already failed unless the conditions that caused the failure have changed.
+- DO NOT: Do not use O(n²) algorithms when O(n) alternatives exist — quadratic membership checks on lists, re.compile inside loops, and sorted()[0] instead of min() are structural mistakes, not style issues.
+<!-- LINTGATE:END do_dont -->
+
+<!-- LINTGATE:BEGIN machine_rules v1 -->
+# Add project-specific constraints as they become stable:
+# LINTGATE_FORBID_REGEX: <regex>
+# LINTGATE_REQUIRE_REGEX: <regex>
+<!-- LINTGATE:END machine_rules -->
+
+<!-- LINTGATE:BEGIN context_map v1 -->
+## Context Map
+- `.claude/rules/theory.md` - extracted theory summaries and anti-patterns.
+- `.claude/lintgate.yaml` - lint and ControlPlane configuration.
+<!-- LINTGATE:END context_map -->
+
+## Debt Tracking Policy
+
+- Known structural debt should be tracked in .claude/lintgate.yaml exemptions with ticket references.
+- Exemptions should target specific files and codes instead of global severity downgrades.
+- New exemptions require a concrete rationale and a remediation ticket.
+
+## Deep Reference
+
+- Architecture of Inquiry protocol: `.claude/rules/inquiry.md`
+- Tool reference by cognitive mode: `AGENTS.md`
+- Design deep dive: `docs/design.md`

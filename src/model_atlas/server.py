@@ -213,10 +213,12 @@ def navigate_models(
     try:
         stats = db.network_stats(conn)
         if stats["total_models"] == 0:
-            return json.dumps({
-                "error": "Semantic network is empty. Run hf_build_index first.",
-                "network_models": 0,
-            })
+            return json.dumps(
+                {
+                    "error": "Semantic network is empty. Run hf_build_index first.",
+                    "network_models": 0,
+                }
+            )
 
         sq = StructuredQuery(
             architecture=architecture,
@@ -358,9 +360,7 @@ def hf_build_index(
             return _build_index_ollama(conn, category, limit)
         elif source == "all":
             # Index from all available sources
-            hf_result = _build_index_huggingface(
-                conn, category, task, limit, min_likes
-            )
+            hf_result = _build_index_huggingface(conn, category, task, limit, min_likes)
             ollama_result = _build_index_ollama(conn, category, limit)
             stats = db.network_stats(conn)
             return json.dumps(
@@ -406,7 +406,9 @@ def _build_index_huggingface(
     stats = db.network_stats(conn)
 
     # Identify models needing vibes
-    vibes_needed = _find_models_without_vibes(conn, [m["model_id"] for m in model_dicts])
+    vibes_needed = _find_models_without_vibes(
+        conn, [m["model_id"] for m in model_dicts]
+    )
 
     result = {
         "status": "indexed",
@@ -455,7 +457,9 @@ def _build_index_ollama(
             extract_and_store(conn, inp)
             count += 1
         except Exception:
-            logger.warning("Failed to index Ollama model: %s", r.model_id, exc_info=True)
+            logger.warning(
+                "Failed to index Ollama model: %s", r.model_id, exc_info=True
+            )
 
     conn.commit()
     stats = db.network_stats(conn)
@@ -525,7 +529,8 @@ def search_models(
         task: Task filter (only applies to sources that support it)
         author: Author filter (only applies to sources that support it)
     """
-    from .sources import get_source, list_sources as _list_sources
+    from .sources import get_source
+    from .sources import list_sources as _list_sources
 
     filters = {}
     if task:
@@ -629,9 +634,7 @@ def set_model_vibe(
                     "SELECT bank FROM anchors WHERE label = ?", (label,)
                 ).fetchone()
                 bank = existing["bank"] if existing else "CAPABILITY"
-                anchor_id = db.get_or_create_anchor(
-                    conn, label, bank, source="vibes"
-                )
+                anchor_id = db.get_or_create_anchor(conn, label, bank, source="vibes")
                 db.link_anchor(conn, model_id, anchor_id, confidence=0.5)
                 anchors_added.append(label)
 

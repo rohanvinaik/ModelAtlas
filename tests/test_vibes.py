@@ -106,6 +106,7 @@ class TestBackwardCompat:
         """The old stub still returns empty for pipeline compatibility."""
         assert extract_vibe_summary("test/Model") == ""
         assert extract_vibe_summary("test/Model", card_text="some text") == ""
-        assert extract_vibe_summary(
-            "test/Model", pipeline_tag="text-gen", author="test"
-        ) == ""
+        assert (
+            extract_vibe_summary("test/Model", pipeline_tag="text-gen", author="test")
+            == ""
+        )

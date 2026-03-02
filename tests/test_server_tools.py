@@ -44,12 +44,18 @@ class TestSetModelVibe:
             )
         )
         assert result["status"] == "updated"
-        assert result["vibe_summary"] == "A versatile 8B instruct model excelling at general tasks."
+        assert (
+            result["vibe_summary"]
+            == "A versatile 8B instruct model excelling at general tasks."
+        )
 
         # Verify stored in metadata
         model = db.get_model(populated_conn, "meta-llama/Llama-3.1-8B-Instruct")
         vibe_meta = model["metadata"].get("vibe_summary", {})
-        assert vibe_meta["value"] == "A versatile 8B instruct model excelling at general tasks."
+        assert (
+            vibe_meta["value"]
+            == "A versatile 8B instruct model excelling at general tasks."
+        )
 
     def test_set_vibe_with_extra_anchors(self, populated_conn, monkeypatch):
         _patch_db(monkeypatch, populated_conn)

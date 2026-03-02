@@ -64,8 +64,16 @@ def _insert_ingest_model(
            (model_id, source, likes, phase_a_done, phase_b_done, phase_c_done,
             raw_json, fetched_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (model_id, source, likes, phase_a, phase_b, phase_c,
-         json.dumps(raw), _now_iso()),
+        (
+            model_id,
+            source,
+            likes,
+            phase_a,
+            phase_b,
+            phase_c,
+            json.dumps(raw),
+            _now_iso(),
+        ),
     )
     conn.commit()
 
@@ -142,7 +150,9 @@ class TestPhaseB:
         """Phase B handles models from different sources."""
         _insert_ingest_model(ingest_conn, "test/HFModel", source="huggingface")
         _insert_ingest_model(
-            ingest_conn, "ollama/llama3:8b", source="ollama",
+            ingest_conn,
+            "ollama/llama3:8b",
+            source="ollama",
             raw={
                 "model_id": "ollama/llama3:8b",
                 "author": "",

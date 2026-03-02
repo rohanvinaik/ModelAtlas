@@ -68,14 +68,27 @@ def spread(
 
         # Channel 1: Link neighbors (Layer 1)
         _spread_links(
-            conn, model_id, current_act, depth, decay,
-            neighbor_slice, activation, pq,
+            conn,
+            model_id,
+            current_act,
+            depth,
+            decay,
+            neighbor_slice,
+            activation,
+            pq,
         )
 
         # Channel 2: Anchor co-occurrence (Layer 2)
         _spread_anchors(
-            conn, model_id, current_act, depth, decay,
-            anchor_slice, banks, activation, pq,
+            conn,
+            model_id,
+            current_act,
+            depth,
+            decay,
+            anchor_slice,
+            banks,
+            activation,
+            pq,
         )
 
     return activation

@@ -50,7 +50,10 @@ _CAPABILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\blong[\s_.-]?context\b|\b\d+k\b", "long-context"),
     (r"\bstruct\w*?[\s_.-]?output\b|\bjson\b", "structured-output"),
     (r"json[\s_-]?mode|structured[\s_-]?output|json[\s_-]?schema", "schema-following"),
-    (r"\boutlines\b|\bguidance\b|\blmql\b|grammar[\s_-]?constrained", "constrained-generation"),
+    (
+        r"\boutlines\b|\bguidance\b|\blmql\b|grammar[\s_-]?constrained",
+        "constrained-generation",
+    ),
     (r"theorem[\s_-]?prov|formal[\s_-]?math|lean4?|coq|isabelle", "proof-level-math"),
     (r"olympiad|competition[\s_-]?math|imo|aime|putnam", "olympiad-math"),
 ]

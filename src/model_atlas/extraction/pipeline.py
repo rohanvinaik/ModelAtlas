@@ -65,12 +65,18 @@ def extract_and_store(
 
     # Write anchors (deduplicated from both tiers, with provenance)
     _store_anchors(
-        conn, inp.model_id, det.anchors,
-        source="deterministic", confidence=1.0,
+        conn,
+        inp.model_id,
+        det.anchors,
+        source="deterministic",
+        confidence=1.0,
     )
     _store_anchors(
-        conn, inp.model_id, pat.anchors,
-        source="pattern", confidence=0.8,
+        conn,
+        inp.model_id,
+        pat.anchors,
+        source="pattern",
+        confidence=0.8,
     )
 
     # Write metadata (deterministic + pattern)
@@ -131,7 +137,10 @@ def _store_anchors(
             continue
         seen.add(label)
         anchor_id = db.get_or_create_anchor(
-            conn, label, bank_name, source=source,
+            conn,
+            label,
+            bank_name,
+            source=source,
         )
         db.link_anchor(conn, model_id, anchor_id, confidence=confidence)
 

@@ -85,9 +85,7 @@ class TestBuildSearchableStrings:
         assert "instruct" in result["tags"]
 
     def test_pipeline_tag_lowered(self):
-        result = _build_searchable_strings(
-            "test/Model", [], "Text-Generation", ""
-        )
+        result = _build_searchable_strings("test/Model", [], "Text-Generation", "")
         assert result["pipeline_tag"] == "text-generation"
 
     def test_card_text_truncated(self):
