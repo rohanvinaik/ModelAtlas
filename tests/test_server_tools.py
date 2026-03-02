@@ -208,6 +208,12 @@ class TestNavigateModels:
         assert result["query"]["similar_to"] == "meta-llama/Llama-3.1-8B-Instruct"
         assert result["result_count"] >= 1
 
+    def test_training_parameter(self, populated_conn, monkeypatch):
+        _patch_db(monkeypatch, populated_conn)
+        result = json.loads(navigate_models(training=1))
+        assert result["query"]["banks"]["TRAINING"] == 1
+        assert result["result_count"] >= 1
+
     def test_limit_respected(self, populated_conn, monkeypatch):
         _patch_db(monkeypatch, populated_conn)
         result = json.loads(navigate_models(limit=2))

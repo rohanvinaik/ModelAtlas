@@ -34,6 +34,7 @@ def populated_conn(conn):
     db.set_position(conn, "meta-llama/Llama-3.1-8B-Instruct", "QUALITY", 1, 2)
     db.set_position(conn, "meta-llama/Llama-3.1-8B-Instruct", "DOMAIN", 0, 0)
     db.set_position(conn, "meta-llama/Llama-3.1-8B-Instruct", "COMPATIBILITY", 0, 0)
+    db.set_position(conn, "meta-llama/Llama-3.1-8B-Instruct", "TRAINING", 1, 2)
     for label in [
         "decoder-only",
         "instruction-following",
@@ -56,6 +57,7 @@ def populated_conn(conn):
     db.set_position(conn, "Qwen/Qwen2.5-Coder-1.5B", "QUALITY", 1, 1)
     db.set_position(conn, "Qwen/Qwen2.5-Coder-1.5B", "DOMAIN", 1, 1)
     db.set_position(conn, "Qwen/Qwen2.5-Coder-1.5B", "COMPATIBILITY", 0, 0)
+    db.set_position(conn, "Qwen/Qwen2.5-Coder-1.5B", "TRAINING", 0, 0)
     for label in [
         "decoder-only",
         "code-generation",
@@ -76,6 +78,7 @@ def populated_conn(conn):
     db.set_position(conn, "TheBloke/Llama-3.1-8B-Instruct-GGUF", "QUALITY", 0, 0)
     db.set_position(conn, "TheBloke/Llama-3.1-8B-Instruct-GGUF", "DOMAIN", 0, 0)
     db.set_position(conn, "TheBloke/Llama-3.1-8B-Instruct-GGUF", "COMPATIBILITY", 1, 2)
+    db.set_position(conn, "TheBloke/Llama-3.1-8B-Instruct-GGUF", "TRAINING", 0, 0)
     for label in [
         "decoder-only",
         "instruction-following",
@@ -101,6 +104,7 @@ def populated_conn(conn):
     db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "QUALITY", 0, 0)
     db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "DOMAIN", 1, 2)
     db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "COMPATIBILITY", 0, 0)
+    db.set_position(conn, "medicalai/BioMedGPT-LM-7B", "TRAINING", 1, 1)
     for label in [
         "decoder-only",
         "instruction-following",

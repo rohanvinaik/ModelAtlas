@@ -142,6 +142,7 @@ def navigate_models(
     lineage: int | None = None,
     domain: int | None = None,
     quality: int | None = None,
+    training: int | None = None,
     require_anchors: list[str] | None = None,
     prefer_anchors: list[str] | None = None,
     avoid_anchors: list[str] | None = None,
@@ -181,6 +182,10 @@ def navigate_models(
                       0=established mainstream
                      +1=trending/rising momentum
 
+      training:      -1=simpler methods (LoRA, adapter, distillation)
+                      0=standard supervised fine-tuning (SFT)
+                     +1=complex alignment (RLHF, DPO, multi-stage)
+
     ANCHOR TARGETING:
       require_anchors: Model MUST have ALL of these (hard filter).
         Examples: "code-generation", "instruction-following", "Llama-family",
@@ -203,6 +208,7 @@ def navigate_models(
         lineage: Bank direction for LINEAGE (-1, 0, or +1)
         domain: Bank direction for DOMAIN (-1, 0, or +1)
         quality: Bank direction for QUALITY (-1, 0, or +1)
+        training: Bank direction for TRAINING (-1, 0, or +1)
         require_anchors: Anchors the model MUST have (hard filter)
         prefer_anchors: Anchors that boost score (soft, IDF-weighted)
         avoid_anchors: Anchors that penalize score
@@ -228,6 +234,7 @@ def navigate_models(
             lineage=lineage,
             domain=domain,
             quality=quality,
+            training=training,
             require_anchors=require_anchors or [],
             prefer_anchors=prefer_anchors or [],
             avoid_anchors=avoid_anchors or [],
@@ -273,7 +280,7 @@ def navigate_models(
 def hf_get_model_detail(model_id: str) -> str:
     """Get detailed information about a specific model.
 
-    Returns full semantic network profile (all 7 bank positions, anchor set,
+    Returns full semantic network profile (all 8 bank positions, anchor set,
     lineage links, overflow metadata) if indexed. Falls back to HF API.
 
     Args:

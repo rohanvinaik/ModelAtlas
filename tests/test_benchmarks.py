@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from model_atlas.extraction.benchmarks import extract_benchmarks
+from model_atlas.extraction.benchmarks import derive_benchmark_anchors, extract_benchmarks
 
 
 class TestExtractBenchmarks:
@@ -78,3 +78,53 @@ class TestExtractBenchmarks:
 """
         results = extract_benchmarks(card)
         assert "benchmark:hella-swag" in results
+
+
+class TestDeriveBenchmarkAnchors:
+    def test_high_mmlu(self):
+        benchmarks = {"benchmark:mmlu": ("75.2", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        labels = {a.label for a in anchors}
+        assert "high-mmlu" in labels
+
+    def test_below_threshold(self):
+        benchmarks = {"benchmark:mmlu": ("45.0", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        assert anchors == []
+
+    def test_strong_humaneval(self):
+        benchmarks = {"benchmark:humaneval": ("55.3%", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        labels = {a.label for a in anchors}
+        assert "strong-humaneval" in labels
+
+    def test_strong_gsm8k(self):
+        benchmarks = {"benchmark:gsm8k": ("68.0", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        labels = {a.label for a in anchors}
+        assert "strong-gsm8k" in labels
+
+    def test_unknown_benchmark_ignored(self):
+        benchmarks = {"benchmark:winogrande": ("80.0", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        assert anchors == []
+
+    def test_multiple_thresholds(self):
+        benchmarks = {
+            "benchmark:mmlu": ("72.5", "str"),
+            "benchmark:gsm8k": ("65.0", "str"),
+            "benchmark:humaneval": ("30.0", "str"),  # below threshold
+        }
+        anchors = derive_benchmark_anchors(benchmarks)
+        labels = {a.label for a in anchors}
+        assert "high-mmlu" in labels
+        assert "strong-gsm8k" in labels
+        assert "strong-humaneval" not in labels
+
+    def test_empty_benchmarks(self):
+        assert derive_benchmark_anchors({}) == []
+
+    def test_confidence_075(self):
+        benchmarks = {"benchmark:mmlu": ("75.0", "str")}
+        anchors = derive_benchmark_anchors(benchmarks)
+        assert anchors[0].confidence == 0.75

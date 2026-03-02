@@ -108,6 +108,15 @@ class TestBankAlignment:
         results = navigate(populated_conn, StructuredQuery(compatibility=1))
         assert results[0].model_id == "TheBloke/Llama-3.1-8B-Instruct-GGUF"
 
+    def test_training_positive_prefers_aligned(self, populated_conn):
+        """training=+1 should rank RLHF-trained Llama highest."""
+        results = navigate(populated_conn, StructuredQuery(training=1))
+        # Llama has TRAINING (1, 2), medical has (1, 1), others at (0, 0)
+        llama = next(
+            r for r in results if r.model_id == "meta-llama/Llama-3.1-8B-Instruct"
+        )
+        assert llama.bank_alignment == 1.0
+
     def test_multi_bank_multiplicative(self, populated_conn):
         """Multiple bank constraints multiply — model must satisfy both."""
         # Small + domain-specialized: only Qwen is small, only medical is domain-specialized

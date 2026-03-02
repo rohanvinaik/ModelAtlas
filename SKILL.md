@@ -17,7 +17,7 @@ Use this tool when you need to:
 
 ## How It Works
 
-Models are positioned in a **7-bank semantic space**. Each bank is an orthogonal dimension with a meaningful zero state. Queries navigate this space rather than filtering flat columns.
+Models are positioned in an **8-bank semantic space**. Each bank is an orthogonal dimension with a meaningful zero state. Queries navigate this space rather than filtering flat columns.
 
 ### The Banks
 
@@ -30,6 +30,7 @@ Models are positioned in a **7-bank semantic space**. Each bank is an orthogonal
 | **LINEAGE** | Base model of a family | Family tree. Predecessors (negative) ↔ derivatives (positive) |
 | **DOMAIN** | General knowledge | Specialization depth. General ↔ ultra-narrow |
 | **QUALITY** | Established, mainstream | Community signals. Legacy ↔ trending |
+| **TRAINING** | Standard supervised (SFT) | Training methodology. Simpler (LoRA, distill) ↔ complex (RLHF, DPO) |
 
 ### Anchors
 
@@ -41,7 +42,7 @@ Models link to shared characteristics from an **anchor dictionary** ("instructio
 ## Available MCP Tools
 
 1. **hf_search_models** — Primary navigational search. Combines bank-position constraints with anchor similarity. Always start here.
-2. **hf_get_model_detail** — Full network position for one model: all 7 bank positions, anchor set, lineage links, overflow metadata.
+2. **hf_get_model_detail** — Full network position for one model: all 8 bank positions, anchor set, lineage links, overflow metadata.
 3. **hf_compare_models** — Structural comparison via anchor set operations and per-bank position deltas.
 4. **hf_build_index** — Fetch models from source, run through extraction pipeline, add to network. Additive — multiple calls enrich the same network.
 5. **hf_index_status** — Network stats: total models, bank breakdowns, anchor dictionary size.
@@ -85,7 +86,7 @@ hf_build_index(author="meta-llama", limit=500)  # Everything from Meta
 ### hf_get_model_detail
 
 Returns the full semantic profile of one model:
-- Position in all 7 banks (signed distance from each zero state)
+- Position in all 8 banks (signed distance from each zero state)
 - Complete anchor set (what characteristics it has)
 - Lineage links (what it's fine-tuned from, what's fine-tuned from it)
 - Overflow metadata (benchmark scores, exact dates, file sizes, license)

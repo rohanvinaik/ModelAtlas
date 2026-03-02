@@ -28,7 +28,7 @@ These aren't filter queries. They're **navigation** — and HuggingFace doesn't 
 
 ## The idea
 
-Every model has a position along seven independent dimensions, with signed hierarchical traversal from an assigned zero point. Take efficiency: 7B is a mainstream sweet spot, so 7B is set as "zero". Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
+Every model has a position along eight independent dimensions, with signed hierarchical traversal from an assigned zero point. Take efficiency: 7B is a mainstream sweet spot, so 7B is set as "zero". Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
 
 ```
 ARCHITECTURE    zero = transformer decoder       →  +novel (Mamba, MoE)
@@ -38,6 +38,7 @@ COMPATIBILITY   zero = PyTorch + transformers     →  +specific (GGUF, MLX)
 LINEAGE         zero = base/foundational model    →  +derived (fine-tune, quant)
 DOMAIN          zero = general knowledge           →  +specialized (code, medical)
 QUALITY         zero = established mainstream      →  +trending  / -legacy
+TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -simpler (LoRA, distill)
 ```
 
 Zero is defined as **the most common thing people look for**. Most queries resolve near the origin.
@@ -49,7 +50,7 @@ The LLM decomposes a user's question into coordinates and anchors. ModelAtlas do
 ## What this is not
 
 - **Not a vector store.** No embeddings. Similarity comes from shared structure.
-- **Not a database with 65 columns.** Seven signed dimensions and a label vocabulary replace flat attributes.
+- **Not a database with 65 columns.** Eight signed dimensions and a label vocabulary replace flat attributes.
 - **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose.
 - **Not a ranking system.** No "best model" score. Just "what's near here, and what path leads where you need."
 
@@ -93,7 +94,7 @@ navigate_models(
 |------|-------------|
 | `hf_search_models` | Natural language fallback — keyword parsing into bank constraints + fuzzy matching |
 | `hf_build_index` | Fetch models from HuggingFace/Ollama, extract positions and anchors, add to network |
-| `hf_get_model_detail` | Full semantic profile: all 7 bank positions, anchor set, lineage, metadata |
+| `hf_get_model_detail` | Full semantic profile: all 8 bank positions, anchor set, lineage, metadata |
 | `hf_compare_models` | Set operations on anchor sets: shared features, distinguishing features, Jaccard similarity |
 | `set_model_vibe` | LLM writes a one-sentence vibe summary after reading a model card |
 | `hf_index_status` | Network stats |
@@ -114,8 +115,26 @@ Execution of the query is done with *pure* symbolic processes. Jaccard similarit
 
 Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
 
+## Ingestion pipeline
+
+A multi-phase background pipeline populates the semantic network:
+
+| Phase | What | Scale |
+|-------|------|-------|
+| **A: Fetch** | Stream HF API, cache raw JSON + config.json + model cards | ~40K models |
+| **B: Extract** | Deterministic + pattern matching (Tier 1+2) | ~38K extracted |
+| **C1: Summarize** | Smol-Hub-tldr (360M) on card text | ~7K models, ~1 hour |
+| **C2: Structure** | qwen2.5:3b via Ollama — summary + anchors | ~38K models, ~3 days |
+| **C3: Quality gate** | Blind review of generated outputs | ~38K models, ~3 days |
+| **C4: Validate** | Offline comparison vs ground truth datasets | Seconds |
+
+C1 and C2 run in parallel on different resources (transformers vs Ollama). Summary selection prefers Smol-Hub-tldr summaries when available (purpose-built for model cards) and falls back to qwen2.5:3b output. All workers are standalone scripts deployable to any machine via scp.
+
+See [`docs/pipeline.md`](docs/pipeline.md) for the full operational reference.
+
 ## Design reference
 
 - Theory and design: [`docs/DESIGN.md`](docs/DESIGN.md)
+- Pipeline reference: [`docs/pipeline.md`](docs/pipeline.md)
 - Architectural spec: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
 - Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)

@@ -32,8 +32,8 @@ class TestExtractAndStore:
         assert model["model_id"] == "meta-llama/Llama-3.1-8B-Instruct"
         assert model["author"] == "meta-llama"
 
-    def test_all_seven_banks_populated(self, conn):
-        """All 7 semantic banks should get a position after full extraction."""
+    def test_all_eight_banks_populated(self, conn):
+        """All 8 semantic banks should get a position after full extraction."""
         inp = ModelInput(
             model_id="test/Model-7B-Instruct",
             author="test",

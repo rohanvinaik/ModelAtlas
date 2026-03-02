@@ -1,12 +1,15 @@
-"""Benchmark table extraction from model card text.
+"""Benchmark table extraction and anchor derivation from model card text.
 
 Parses markdown pipe-delimited tables that contain benchmark results,
 returning metadata entries for each recognized benchmark score.
+Also derives QUALITY anchors when benchmark scores exceed thresholds.
 """
 
 from __future__ import annotations
 
 import re
+
+from .deterministic import AnchorTag
 
 # Keywords that indicate a benchmark table header
 _BENCHMARK_KEYWORDS = re.compile(
@@ -73,3 +76,39 @@ def extract_benchmarks(card_text: str) -> dict[str, tuple[str, str]]:
             i += 1
 
     return results
+
+
+# Thresholds for deriving QUALITY anchors from benchmark scores
+_BENCHMARK_THRESHOLDS: dict[str, tuple[str, float]] = {
+    "mmlu": ("high-mmlu", 70.0),
+    "humaneval": ("strong-humaneval", 40.0),
+    "gsm8k": ("strong-gsm8k", 60.0),
+}
+
+
+def _parse_score(raw: str) -> float | None:
+    """Extract a numeric score from a raw benchmark value string."""
+    match = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def derive_benchmark_anchors(
+    benchmarks: dict[str, tuple[str, str]],
+) -> list[AnchorTag]:
+    """Derive QUALITY anchors from benchmark scores exceeding thresholds.
+
+    Returns AnchorTag list with confidence=0.75 for each threshold met.
+    """
+    anchors: list[AnchorTag] = []
+    for bench_key, (raw_score, _) in benchmarks.items():
+        # bench_key is like "benchmark:mmlu"
+        name = bench_key.split(":", 1)[-1] if ":" in bench_key else bench_key
+        if name not in _BENCHMARK_THRESHOLDS:
+            continue
+        anchor_label, threshold = _BENCHMARK_THRESHOLDS[name]
+        score = _parse_score(raw_score)
+        if score is not None and score >= threshold:
+            anchors.append(AnchorTag(anchor_label, "QUALITY", 0.75))
+    return anchors

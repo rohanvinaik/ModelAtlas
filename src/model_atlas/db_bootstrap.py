@@ -1,6 +1,6 @@
 """Bootstrap anchor dictionary for the semantic network.
 
-Initial vocabulary across all 7 semantic banks, seeded into the anchors
+Initial vocabulary across all 8 semantic banks, seeded into the anchors
 table on first init_db() call.
 """
 
@@ -27,8 +27,6 @@ BOOTSTRAP_ANCHORS: list[tuple[str, str, str]] = [
     # CAPABILITY
     ("instruction-following", "CAPABILITY", "training"),
     ("chat", "CAPABILITY", "training"),
-    ("RLHF-tuned", "CAPABILITY", "training"),
-    ("DPO-tuned", "CAPABILITY", "training"),
     ("tool-calling", "CAPABILITY", "skill"),
     ("function-calling", "CAPABILITY", "skill"),
     ("code-generation", "CAPABILITY", "skill"),
@@ -136,4 +134,26 @@ BOOTSTRAP_ANCHORS: list[tuple[str, str, str]] = [
     ("official-release", "QUALITY", "signal"),
     ("experimental", "QUALITY", "signal"),
     ("deprecated", "QUALITY", "signal"),
+    ("high-mmlu", "QUALITY", "benchmark"),
+    ("strong-humaneval", "QUALITY", "benchmark"),
+    ("strong-gsm8k", "QUALITY", "benchmark"),
+    ("safety-tested", "QUALITY", "benchmark"),
+    ("red-teamed", "QUALITY", "benchmark"),
+    # TRAINING
+    ("sft-trained", "TRAINING", "method"),
+    ("rlhf-trained", "TRAINING", "method"),
+    ("dpo-trained", "TRAINING", "method"),
+    ("ppo-trained", "TRAINING", "method"),
+    ("orpo-trained", "TRAINING", "method"),
+    ("kto-trained", "TRAINING", "method"),
+    ("lora-adapted", "TRAINING", "method"),
+    ("qlora-adapted", "TRAINING", "method"),
+    ("adapter-tuned", "TRAINING", "method"),
+    ("distilled", "TRAINING", "method"),
+    ("quantization-aware-trained", "TRAINING", "method"),
+    ("trained-on-synthetic-data", "TRAINING", "data"),
+    ("trained-on-human-feedback", "TRAINING", "data"),
+    ("multi-stage-alignment", "TRAINING", "process"),
+    ("curriculum-trained", "TRAINING", "process"),
+    ("continual-pretrained", "TRAINING", "process"),
 ]

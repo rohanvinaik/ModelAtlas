@@ -72,6 +72,7 @@ class StructuredQuery:
     lineage: int | None = None
     domain: int | None = None
     quality: int | None = None
+    training: int | None = None
 
     # Anchor targeting
     require_anchors: list[str] = field(default_factory=list)
@@ -94,6 +95,7 @@ class StructuredQuery:
             "LINEAGE": self.lineage,
             "DOMAIN": self.domain,
             "QUALITY": self.quality,
+            "TRAINING": self.training,
         }
         return {k: v for k, v in mapping.items() if v is not None}
 

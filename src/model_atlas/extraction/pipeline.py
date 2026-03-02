@@ -18,7 +18,7 @@ from .deterministic import (
 from .deterministic import (
     extract as extract_deterministic,
 )
-from .benchmarks import extract_benchmarks
+from .benchmarks import derive_benchmark_anchors, extract_benchmarks
 from .patterns import PatternResult
 from .patterns import extract as extract_patterns
 from .vibes import extract_vibe_summary
@@ -58,11 +58,14 @@ def extract_and_store(
     param_count = param_b[0] + "B" if param_b else "unknown"
     family = "unknown"
     capabilities: list[str] = []
+    training_methods: list[str] = []
     for anchor in pat.anchors:
         if anchor.bank == "LINEAGE" and anchor.label.endswith("-family"):
             family = anchor.label
         elif anchor.bank == "CAPABILITY":
             capabilities.append(anchor.label)
+        elif anchor.bank == "TRAINING":
+            training_methods.append(anchor.label)
 
     # Tier 3: Vibes
     vibe = extract_vibe_summary(
@@ -74,6 +77,7 @@ def extract_and_store(
         param_count=param_count,
         family=family,
         capabilities=capabilities,
+        training_method=", ".join(training_methods) if training_methods else "unknown",
     )
 
     # Write bank positions (merge deterministic + pattern results)
@@ -111,6 +115,41 @@ def extract_and_store(
         for key, (value, value_type) in benchmarks.items():
             db.set_metadata(conn, inp.model_id, key, value, value_type)
 
+        # Derive QUALITY anchors from benchmark thresholds
+        bench_anchors = derive_benchmark_anchors(benchmarks)
+        _store_anchors(
+            conn,
+            inp.model_id,
+            bench_anchors,
+            source="benchmark",
+            default_confidence=0.75,
+        )
+
+        # Card quality score
+        from .patterns import _compute_card_quality
+
+        card_quality = _compute_card_quality(card_text)
+        if card_quality > 0:
+            db.set_metadata(
+                conn, inp.model_id, "card_quality", str(card_quality), "float"
+            )
+
+    # Inference hardware requirement estimate
+    if param_b:
+        param_val = float(param_b[0])
+        quant = pat.metadata.get("quantization_level", ("", ""))[0]
+        if quant and any(q in quant.upper() for q in ("Q4", "Q5", "Q3", "Q2")):
+            hw_req = "consumer-GPU" if param_val <= 13 else "high-end-GPU"
+        elif param_val <= 3:
+            hw_req = "consumer-GPU"
+        elif param_val <= 13:
+            hw_req = "mid-range-GPU"
+        elif param_val <= 70:
+            hw_req = "high-end-GPU"
+        else:
+            hw_req = "multi-GPU"
+        db.set_metadata(conn, inp.model_id, "inference_hardware_req", hw_req, "str")
+
     # Store lineage links for all detected base models
     for base_id, relation in pat.base_models:
         db.add_link(conn, inp.model_id, base_id, relation)
@@ -122,7 +161,7 @@ def _store_positions(
     det: DeterministicResult,
     pat: PatternResult,
 ) -> None:
-    """Write all 7 bank positions to the database."""
+    """Write all 8 bank positions to the database."""
     db.set_position(
         conn,
         model_id,
@@ -143,6 +182,9 @@ def _store_positions(
     )
     db.set_position(conn, model_id, "LINEAGE", pat.lineage.sign, pat.lineage.depth)
     db.set_position(conn, model_id, "DOMAIN", pat.domain.sign, pat.domain.depth)
+    db.set_position(
+        conn, model_id, "TRAINING", pat.training.sign, pat.training.depth
+    )
 
 
 def _store_anchors(

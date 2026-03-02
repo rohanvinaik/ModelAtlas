@@ -1,6 +1,6 @@
 """SQLite database for the semantic network.
 
-Stores models positioned across 7 orthogonal semantic banks, connected
+Stores models positioned across 8 orthogonal semantic banks, connected
 through a shared anchor dictionary. This is the primary storage — the
 model_metadata table is overflow for data that doesn't decompose into
 the network.
@@ -16,7 +16,7 @@ from typing import Iterator
 from .config import NETWORK_DB_PATH
 from .db_bootstrap import BOOTSTRAP_ANCHORS
 
-# The seven semantic banks
+# The eight semantic banks
 BANKS = (
     "ARCHITECTURE",
     "CAPABILITY",
@@ -25,6 +25,7 @@ BANKS = (
     "LINEAGE",
     "DOMAIN",
     "QUALITY",
+    "TRAINING",
 )
 
 # Zero states for each bank (the semantic origin)
@@ -36,6 +37,7 @@ ZERO_STATES = {
     "LINEAGE": "base/foundational model",
     "DOMAIN": "general knowledge",
     "QUALITY": "established, mainstream adoption",
+    "TRAINING": "standard supervised fine-tuning",
 }
 
 _SCHEMA = """

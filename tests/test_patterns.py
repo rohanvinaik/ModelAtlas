@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from model_atlas.extraction.patterns import (
     PatternResult,
+    _compute_card_quality,
     _detect_capabilities,
     _detect_chat_template,
     _detect_compatibility,
@@ -15,6 +16,8 @@ from model_atlas.extraction.patterns import (
     _detect_language_tags,
     _detect_lineage,
     _detect_quantization_level,
+    _detect_training,
+    _detect_training_datasets,
     extract,
 )
 
@@ -25,12 +28,6 @@ class TestDetectCapabilities:
 
     def test_chat(self):
         assert "chat" in _detect_capabilities("model-chat-7b")
-
-    def test_rlhf(self):
-        assert "RLHF-tuned" in _detect_capabilities("trained with rlhf")
-
-    def test_dpo(self):
-        assert "DPO-tuned" in _detect_capabilities("dpo aligned model")
 
     def test_tool_calling(self):
         # Pattern: \btool.?(?:call|use)\b — requires "tool" + optional char + "call"/"use" as complete word
@@ -559,6 +556,112 @@ class TestDetectLanguageTags:
         assert "fr" in langs
 
 
+class TestDetectTraining:
+    def test_rlhf(self):
+        anchors, pos, _ = _detect_training("trained with rlhf alignment")
+        assert "rlhf-trained" in anchors
+        assert pos.sign == 1
+
+    def test_dpo(self):
+        anchors, pos, _ = _detect_training("dpo trained model")
+        assert "dpo-trained" in anchors
+        assert pos.sign == 1
+
+    def test_lora(self):
+        anchors, pos, _ = _detect_training("lora fine-tuned")
+        assert "lora-adapted" in anchors
+        assert pos.sign == -1
+
+    def test_qlora(self):
+        anchors, pos, _ = _detect_training("qlora adapted model")
+        assert "qlora-adapted" in anchors
+        assert pos.sign == -1
+
+    def test_sft(self):
+        anchors, pos, _ = _detect_training("sft trained model")
+        assert "sft-trained" in anchors
+        assert pos.sign == 0
+
+    def test_distilled(self):
+        anchors, pos, _ = _detect_training("distilled from larger model")
+        assert "distilled" in anchors
+        assert pos.sign == -1
+
+    def test_multi_stage(self):
+        anchors, pos, _ = _detect_training("multi-stage alignment process")
+        assert "multi-stage-alignment" in anchors
+        assert pos.sign == 1
+        assert pos.depth == 3
+
+    def test_no_signals(self):
+        anchors, pos, _ = _detect_training("generic language model")
+        assert anchors == []
+        assert pos.sign == 0
+        assert pos.depth == 0
+
+    def test_synthetic_data(self):
+        _, _, data_anchors = _detect_training("trained on synthetic data")
+        assert "trained-on-synthetic-data" in data_anchors
+
+    def test_human_feedback(self):
+        _, _, data_anchors = _detect_training("uses human feedback for training")
+        assert "trained-on-human-feedback" in data_anchors
+
+
+class TestDetectTrainingDatasets:
+    def test_dataset_tag(self):
+        datasets = _detect_training_datasets("", ["dataset:alpaca", "text-generation"])
+        assert "alpaca" in datasets
+
+    def test_keyword_matching(self):
+        datasets = _detect_training_datasets("trained on sharegpt and orca data", [])
+        assert "sharegpt" in datasets
+        assert "orca" in datasets
+
+    def test_no_datasets(self):
+        datasets = _detect_training_datasets("generic model", [])
+        assert datasets == []
+
+
+class TestCardQuality:
+    def test_full_card(self):
+        card = """
+## Description
+A great model.
+
+## Usage
+Use it like this.
+
+## Training
+Trained on data.
+
+## Evaluation
+Results here.
+
+## Limitations
+Some limitations.
+
+## License
+MIT
+"""
+        score = _compute_card_quality(card)
+        assert score == 1.0
+
+    def test_empty_card(self):
+        assert _compute_card_quality("") == 0.0
+
+    def test_partial_card(self):
+        card = """
+## Description
+A great model.
+
+## Evaluation
+Results here.
+"""
+        score = _compute_card_quality(card)
+        assert 0.0 < score < 1.0
+
+
 class TestExtractIntegration:
     """Tests for the top-level extract() function combining all detectors."""
 
@@ -647,3 +750,30 @@ class TestExtractIntegration:
             tags=["base_model:meta-llama/Llama-3.1-8B"],
         )
         assert result.base_model == "meta-llama/Llama-3.1-8B"
+
+    def test_training_bank_rlhf(self):
+        result = extract(
+            model_id="test/RLHF-Model",
+            tags=["rlhf", "text-generation"],
+        )
+        assert result.training.sign == 1
+        training_anchors = [a for a in result.anchors if a.bank == "TRAINING"]
+        labels = {a.label for a in training_anchors}
+        assert "rlhf-trained" in labels
+
+    def test_training_bank_lora(self):
+        result = extract(
+            model_id="test/LoRA-Model",
+            tags=["lora"],
+        )
+        assert result.training.sign == -1
+        training_anchors = [a for a in result.anchors if a.bank == "TRAINING"]
+        labels = {a.label for a in training_anchors}
+        assert "lora-adapted" in labels
+
+    def test_training_datasets_metadata(self):
+        result = extract(
+            model_id="test/Model",
+            tags=["dataset:alpaca", "text-generation"],
+        )
+        assert "training_datasets" in result.metadata

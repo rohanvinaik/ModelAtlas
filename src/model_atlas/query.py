@@ -50,6 +50,13 @@ _BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None, int]]] = {
     "novel": [("ARCHITECTURE", 1, None, 1)],
     "specialized": [("DOMAIN", 1, None, 1)],
     "general": [("DOMAIN", -1, 0, -1)],
+    "aligned": [("TRAINING", 1, None, 1)],
+    "rlhf": [("TRAINING", 1, None, 1)],
+    "dpo": [("TRAINING", 1, None, 1)],
+    "sft": [("TRAINING", None, 0, 0)],
+    "lora": [("TRAINING", None, -1, -1)],
+    "adapter": [("TRAINING", None, -1, -1)],
+    "distilled": [("TRAINING", None, -2, -1)],
 }
 
 _ANCHOR_KEYWORDS: dict[str, str] = {
@@ -78,6 +85,11 @@ _ANCHOR_KEYWORDS: dict[str, str] = {
     "legal": "legal-domain",
     "finance": "finance-domain",
     "science": "science-domain",
+    "rlhf": "rlhf-trained",
+    "dpo": "dpo-trained",
+    "lora": "lora-adapted",
+    "sft": "sft-trained",
+    "distill": "distilled",
 }
 
 # Pattern for "models like X" seed extraction

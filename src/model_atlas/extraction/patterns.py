@@ -1,8 +1,8 @@
 """Tier 2: Pattern matching on tags, model names, and file lists.
 
-Extracts CAPABILITY, COMPATIBILITY, LINEAGE, and DOMAIN bank positions
-plus anchors from signals that require heuristic matching rather than
-direct field mapping.
+Extracts CAPABILITY, COMPATIBILITY, LINEAGE, DOMAIN, and TRAINING bank
+positions plus anchors from signals that require heuristic matching
+rather than direct field mapping.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ class PatternResult:
     compatibility: BankPosition = field(default_factory=BankPosition)
     lineage: BankPosition = field(default_factory=BankPosition)
     domain: BankPosition = field(default_factory=BankPosition)
+    training: BankPosition = field(default_factory=BankPosition)
     anchors: list[AnchorTag] = field(default_factory=list)
     base_models: list[tuple[str, str]] = field(default_factory=list)  # (model_id, relation)
     metadata: dict[str, tuple[str, str]] = field(default_factory=dict)
@@ -37,8 +38,6 @@ class PatternResult:
 _CAPABILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\binstruct", "instruction-following"),
     (r"\bchat\b", "chat"),
-    (r"\brlhf\b", "RLHF-tuned"),
-    (r"\bdpo\b", "DPO-tuned"),
     (r"\btool[\s_.-]?(?:call|use)", "tool-calling"),
     (r"\bfunction[\s_.-]?call", "function-calling"),
     (r"\bcode\b", "code-generation"),
@@ -200,6 +199,104 @@ def _detect_domain(searchable: str) -> tuple[list[str], int]:
     return found, max_depth
 
 
+# Training method patterns -> (anchor, sign, depth)
+_TRAINING_PATTERNS: list[tuple[str, str, int, int]] = [
+    # (pattern, anchor, sign, depth)
+    (r"\brlhf\b", "rlhf-trained", 1, 2),
+    (r"\bdpo\b", "dpo-trained", 1, 1),
+    (r"\bppo\b", "ppo-trained", 1, 2),
+    (r"\borpo\b", "orpo-trained", 1, 1),
+    (r"\bkto\b", "kto-trained", 1, 1),
+    (r"\bsft\b|\bsupervised[\s_-]?fine[\s_-]?tun", "sft-trained", 0, 0),
+    (r"\blora\b(?!.*qlora)", "lora-adapted", -1, 1),
+    (r"\bqlora\b", "qlora-adapted", -1, 1),
+    (r"\badapter\b", "adapter-tuned", -1, 1),
+    (r"\bdistill", "distilled", -1, 2),
+    (r"\bquantization[\s_-]?aware", "quantization-aware-trained", -1, 2),
+    (r"\bmulti[\s_-]?stage[\s_-]?align", "multi-stage-alignment", 1, 3),
+    (r"\bcurriculum", "curriculum-trained", 1, 2),
+    (r"\bcontinual[\s_-]?pre[\s_-]?train", "continual-pretrained", 0, 1),
+    (r"\balign(?:ed|ment)\b", "rlhf-trained", 1, 1),
+]
+
+_TRAINING_DATA_PATTERNS: list[tuple[str, str]] = [
+    (r"\bsynthetic[\s_-]?data\b", "trained-on-synthetic-data"),
+    (r"\bhuman[\s_-]?feedback\b", "trained-on-human-feedback"),
+]
+
+_DATASET_KEYWORDS: set[str] = {
+    "alpaca", "sharegpt", "orca", "dolly", "oasst", "openassistant",
+    "ultrachat", "wildchat", "capybara", "slimorca", "hermes",
+    "platypus", "wizard", "evol-instruct", "metamath", "gsm8k",
+    "code-feedback", "magicoder", "openhermes", "deita",
+}
+
+
+@lru_cache(maxsize=256)
+def _detect_training(searchable: str) -> tuple[list[str], BankPosition, list[str]]:
+    """Detect training methodology signals.
+
+    Returns (method_anchors, bank_position, data_anchors).
+    """
+    method_anchors: list[str] = []
+    max_depth = 0
+    best_sign = 0
+
+    for pattern, anchor, sign, depth in _TRAINING_PATTERNS:
+        if re.search(pattern, searchable, re.IGNORECASE):
+            if anchor not in method_anchors:
+                method_anchors.append(anchor)
+            if depth > max_depth:
+                max_depth = depth
+                best_sign = sign
+
+    data_anchors: list[str] = []
+    for pattern, anchor in _TRAINING_DATA_PATTERNS:
+        if re.search(pattern, searchable, re.IGNORECASE):
+            data_anchors.append(anchor)
+
+    return method_anchors, BankPosition(sign=best_sign, depth=max_depth), data_anchors
+
+
+def _detect_training_datasets(searchable: str, tags: list[str]) -> list[str]:
+    """Extract training dataset names from tags and text."""
+    datasets: list[str] = []
+
+    # Check dataset: tags
+    for tag in tags:
+        if tag.startswith("dataset:"):
+            datasets.append(tag[len("dataset:"):].strip())
+
+    # Keyword matching in searchable text
+    searchable_lower = searchable.lower()
+    for keyword in _DATASET_KEYWORDS:
+        if keyword in searchable_lower:
+            datasets.append(keyword)
+
+    return list(set(datasets))
+
+
+def _compute_card_quality(card_text: str) -> float:
+    """Compute a completeness score (0-1) for a model card.
+
+    Checks for presence of key sections: description, usage, training,
+    evaluation, limitations, license.
+    """
+    if not card_text:
+        return 0.0
+
+    sections = [
+        r"(?:##?\s*(?:description|about|overview|introduction))",
+        r"(?:##?\s*(?:usage|how to use|getting started|quick start))",
+        r"(?:##?\s*(?:training|fine-?tuning|methodology))",
+        r"(?:##?\s*(?:evaluation|benchmark|results|performance))",
+        r"(?:##?\s*(?:limitation|bias|risk|ethical))",
+        r"(?:##?\s*(?:license|citation|acknowledgment))",
+    ]
+    found = sum(1 for s in sections if re.search(s, card_text, re.IGNORECASE))
+    return round(found / len(sections), 2)
+
+
 # base_model: tag subtype -> link relation
 _TAG_RELATION_MAP: dict[str, str] = {
     "finetune": "fine_tuned_from",
@@ -337,11 +434,19 @@ def extract(
     # Lineage
     base_models, lineage_anchors, lineage_pos = _detect_lineage(model_id, tags, author)
 
+    # Training methodology
+    training_anchors, training_pos, training_data_anchors = _detect_training(searchable)
+    training_datasets = _detect_training_datasets(searchable, tags)
+
     # Quantization level metadata
     metadata: dict[str, tuple[str, str]] = {}
     quant_level = _detect_quantization_level(model_id)
     if quant_level:
         metadata["quantization_level"] = (quant_level, "str")
+
+    # Training datasets metadata
+    if training_datasets:
+        metadata["training_datasets"] = (json.dumps(training_datasets), "json")
 
     # Chat template detection
     has_chat_template = _detect_chat_template(tags)
@@ -363,12 +468,16 @@ def extract(
     for a in lineage_anchors:
         conf = 0.95 if base_models else 0.70
         all_anchors.append(AnchorTag(a, "LINEAGE", conf))
+    # Training: method anchors get 0.85, data anchors get 0.75
+    all_anchors.extend(AnchorTag(a, "TRAINING", 0.85) for a in training_anchors)
+    all_anchors.extend(AnchorTag(a, "TRAINING", 0.75) for a in training_data_anchors)
 
     return PatternResult(
         capability=BankPosition(sign=cap_sign, depth=cap_depth),
         compatibility=BankPosition(sign=1 if compat_anchors else 0, depth=compat_depth),
         lineage=lineage_pos,
         domain=BankPosition(sign=1 if domain_anchors else 0, depth=domain_depth),
+        training=training_pos,
         anchors=all_anchors,
         base_models=base_models,
         metadata=metadata,

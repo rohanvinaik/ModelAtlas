@@ -64,6 +64,7 @@ Tags: {tags}
 Size: {param_count}
 Family: {family}
 Known capabilities: {capabilities}
+Training method: {training_method}
 
 Respond with JSON: {{"summary": "one sentence", "extra_anchors": ["tag1", "tag2"]}}"""
 
@@ -76,6 +77,7 @@ def build_vibe_prompt(
     param_count: str = "unknown",
     family: str = "unknown",
     capabilities: list[str] | None = None,
+    training_method: str = "unknown",
 ) -> str:
     """Build a structured prompt from pre-extracted Tier 1+2 data."""
     tag_str = ", ".join((tags or [])[:15]) or "none"
@@ -88,6 +90,7 @@ def build_vibe_prompt(
         param_count=param_count,
         family=family,
         capabilities=cap_str,
+        training_method=training_method,
     )
 
 
@@ -153,6 +156,7 @@ def extract_vibe_summary(
     param_count: str = "unknown",
     family: str = "unknown",
     capabilities: list[str] | None = None,
+    training_method: str = "unknown",
 ) -> str:
     """Return empty string — vibes are delegated to Phase C / set_model_vibe.
 
