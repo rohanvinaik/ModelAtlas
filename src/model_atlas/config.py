@@ -54,3 +54,15 @@ INGEST_MIN_LIKES = 5
 INGEST_VIBE_MIN_LIKES = 50
 VIBE_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 VIBE_MAX_RETRIES = 3
+
+# Phase C export/merge work directories
+PHASE_C_WORK_DIR = CACHE_DIR / "phase_c_work"
+PHASE_C1_WORK_DIR = CACHE_DIR / "phase_c1_work"
+PHASE_C3_WORK_DIR = CACHE_DIR / "phase_c3_work"
+
+# Phase C Ollama settings
+VIBE_OLLAMA_MODEL = "qwen2.5:3b"
+VIBE_OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
+# Phase C3 quality gate threshold
+QUALITY_GATE_MIN_SCORE = 0.5

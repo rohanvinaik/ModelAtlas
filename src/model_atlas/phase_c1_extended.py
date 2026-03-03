@@ -875,7 +875,7 @@ def _run_tier1(model, tokenizer, device: str, fout, skip_set: set[str],
     tier_count = 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
-    models_iter = api.list_models(sort="created", direction=-1)
+    models_iter = api.list_models(sort="createdAt")
     chunk: list = []
 
     for model_info in models_iter:
@@ -2603,7 +2603,7 @@ def _run_tier3(model, tokenizer, device: str, fout, skip_set: set[str],
     errors = 0
     tier_count = 0
 
-    models_iter = api.list_models(sort="created", direction=-1)
+    models_iter = api.list_models(sort="createdAt")
     chunk: list = []
 
     for model_info in models_iter:

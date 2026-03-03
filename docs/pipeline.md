@@ -144,7 +144,9 @@ python phase_c_worker.py --input shard_1.jsonl --output results_1.jsonl \
 
 The worker validates responses with `_parse_and_validate()`:
 - Checks for JSON object with non-empty `summary` string
-- Checks `extra_anchors` is a list with at least one non-empty string
+- Checks `extra_anchors` is a list with at least one valid tag
+- Filters out known placeholder strings (`tag1`, `tag2`, `example-tag`, etc.)
+- Enforces lowercase-hyphenated format (`^[a-z][a-z0-9-]+$`) and minimum length of 3
 - Truncates anchors to 5 maximum
 - On validation failure, writes an error record and continues
 
@@ -385,7 +387,7 @@ Error case:
 ### 4.4 C2 Results
 
 ```json
-{"model_id": "author/model", "summary": "...", "extra_anchors": ["tag1", "tag2"]}
+{"model_id": "author/model", "summary": "...", "extra_anchors": ["code-generation", "instruction-following"]}
 ```
 
 Error case:

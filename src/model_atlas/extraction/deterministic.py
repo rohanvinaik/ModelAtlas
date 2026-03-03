@@ -191,11 +191,28 @@ def _estimate_params_billions(
     return None
 
 
-def _extract_architecture(config: dict | None) -> BankPosition:
+_PIPELINE_TAG_ARCH_MAP: dict[str, tuple[int, int, list[str]]] = {
+    "object-detection": (1, 1, ["vision-transformer"]),
+    "image-classification": (1, 1, ["vision-transformer"]),
+    "text-to-image": (1, 2, ["diffusion"]),
+    "fill-mask": (-1, 1, ["encoder-only"]),
+    "token-classification": (-1, 1, ["encoder-only"]),
+    "sentence-similarity": (-1, 1, ["encoder-only"]),
+    "translation": (-1, 1, ["encoder-decoder"]),
+    "summarization": (-1, 1, ["encoder-decoder"]),
+    "automatic-speech-recognition": (-1, 1, ["encoder-decoder"]),
+}
+
+
+def _extract_architecture(
+    config: dict | None,
+    pipeline_tag: str = "",
+    library_name: str = "",
+) -> BankPosition:
     """Map model architecture class to ARCHITECTURE bank position.
 
     Tries architectures[0] in _ARCH_MAP first, then falls back to
-    model_type in _MODEL_TYPE_MAP for configs with unknown arch classes.
+    model_type in _MODEL_TYPE_MAP, then pipeline_tag heuristic.
     """
     arch_type = None
     if config and "architectures" in config:
@@ -214,7 +231,12 @@ def _extract_architecture(config: dict | None) -> BankPosition:
             sign, depth, nodes = _MODEL_TYPE_MAP[model_type]
             return BankPosition(sign=sign, depth=depth, nodes=list(nodes))
 
-    return BankPosition(sign=0, depth=0, nodes=["decoder-only"])
+    # Fallback: pipeline_tag heuristic
+    if pipeline_tag and pipeline_tag in _PIPELINE_TAG_ARCH_MAP:
+        sign, depth, nodes = _PIPELINE_TAG_ARCH_MAP[pipeline_tag]
+        return BankPosition(sign=sign, depth=depth, nodes=list(nodes))
+
+    return BankPosition(sign=0, depth=0, nodes=["unknown"])
 
 
 def _extract_efficiency(param_b: float | None) -> tuple[BankPosition, list[str]]:
@@ -473,7 +495,7 @@ def _collect_metadata(
 def extract(inp: ModelInput) -> DeterministicResult:
     """Extract deterministic signals from HF API model metadata."""
     # Architecture
-    arch = _extract_architecture(inp.config)
+    arch = _extract_architecture(inp.config, inp.pipeline_tag, inp.library_name)
 
     # Config-based signals
     cfg = _extract_from_config(inp.config)

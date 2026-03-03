@@ -595,6 +595,54 @@ def main() -> None:
         action="store_true",
         help="Show ingest progress and exit",
     )
+
+    # Phase C export/merge commands
+    parser.add_argument(
+        "--export-c1",
+        action="store_true",
+        help="Export model_ids for C1 (Smol-Hub-tldr) processing",
+    )
+    parser.add_argument(
+        "--merge-c1",
+        nargs="+",
+        metavar="FILE",
+        help="Merge C1 result JSONL files",
+    )
+    parser.add_argument(
+        "--export-c2",
+        type=int,
+        metavar="NUM_SHARDS",
+        help="Export C2 prompts to sharded JSONL",
+    )
+    parser.add_argument(
+        "--merge-c2",
+        nargs="+",
+        metavar="FILE",
+        help="Merge C2 vibe results",
+    )
+    parser.add_argument(
+        "--export-c3",
+        type=int,
+        metavar="NUM_SHARDS",
+        help="Export C3 quality gate items to sharded JSONL",
+    )
+    parser.add_argument(
+        "--merge-c3",
+        nargs="+",
+        metavar="FILE",
+        help="Merge C3 quality gate results",
+    )
+    parser.add_argument(
+        "--select-summaries",
+        action="store_true",
+        help="Pick best summary per model (smol > qwen)",
+    )
+    parser.add_argument(
+        "--validate-ground-truth",
+        action="store_true",
+        help="Run C4 offline validation (placeholder)",
+    )
+
     parser.add_argument(
         "--verbose",
         "-v",
@@ -614,6 +662,89 @@ def main() -> None:
         db_ingest.init_db(ingest_conn)
         print_status(ingest_conn)
         ingest_conn.close()
+
+        # Also show Phase C status from network DB
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        from .ingest_phase_c import print_phase_c_status
+
+        print_phase_c_status(network_conn)
+        network_conn.close()
+        return
+
+    # Phase C export/merge dispatch
+    if args.export_c1:
+        from .ingest_phase_c import export_c1
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        count = export_c1(network_conn)
+        network_conn.close()
+        print(f"Exported {count} model_ids for C1")
+        return
+
+    if args.merge_c1:
+        from .ingest_phase_c import merge_c1
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = merge_c1(network_conn, args.merge_c1)
+        network_conn.close()
+        print(f"C1 merge: {result}")
+        return
+
+    if args.export_c2 is not None:
+        from .ingest_phase_c import export_c2
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        count = export_c2(network_conn, num_shards=args.export_c2, min_likes=args.min_likes)
+        network_conn.close()
+        print(f"Exported {count} C2 prompts across {args.export_c2} shards")
+        return
+
+    if args.merge_c2:
+        from .ingest_phase_c import merge_c2
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = merge_c2(network_conn, args.merge_c2)
+        network_conn.close()
+        print(f"C2 merge: {result}")
+        return
+
+    if args.export_c3 is not None:
+        from .ingest_phase_c import export_c3
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        count = export_c3(network_conn, num_shards=args.export_c3)
+        network_conn.close()
+        print(f"Exported {count} C3 quality gate prompts across {args.export_c3} shards")
+        return
+
+    if args.merge_c3:
+        from .ingest_phase_c import merge_c3
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = merge_c3(network_conn, args.merge_c3)
+        network_conn.close()
+        print(f"C3 merge: {result}")
+        return
+
+    if args.select_summaries:
+        from .ingest_phase_c import select_summaries
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = select_summaries(network_conn)
+        network_conn.close()
+        print(f"Summary selection: {result}")
+        return
+
+    if args.validate_ground_truth:
+        print("C4 offline validation not yet implemented")
         return
 
     if args.seed is not None:

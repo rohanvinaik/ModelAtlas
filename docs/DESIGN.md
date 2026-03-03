@@ -92,10 +92,12 @@ Three tiers of increasing complexity extract structure from raw model data.
 
 Pure arithmetic on structured API fields. No ambiguity.
 
-- `parameter_count` → EFFICIENCY sign and depth (log-scale bucketing: <1B=-2, 1-3B=-1, 3-10B=0, 10-35B=+1, 35-100B=+2, >100B=+3)
-- `architecture_type` from config.json → ARCHITECTURE position
+- `parameter_count` → EFFICIENCY sign and depth (log-scale bucketing: <0.5B=−3, 0.5-1.5B=−2, 1.5-5B=−1, 5-10B=0, 10-20B=+1, 20-50B=+2, 50-100B=+3, 100B+=+4)
+- `architecture_type` from config.json → ARCHITECTURE position (three-tier fallback: config `architectures` → config `model_type` → `pipeline_tag` heuristic → `unknown`)
 - `downloads`, `likes`, `created_at` → QUALITY position (velocity-aware: high recent downloads on a new model = trending)
 - `license`, `sha`, `context_length` → overflow metadata
+
+Models with no config, no recognized `model_type`, and no informative `pipeline_tag` receive architecture `["unknown"]` rather than a false `decoder-only` default. The zero state "transformer decoder" still applies to models whose config confirms decoder-only architecture.
 
 **Input:** `ModelInput` dataclass (model_id, author, tags, pipeline_tag, parameter_count, config, etc.)
 **Output:** `DeterministicResult` with `BankPosition` objects and metadata key-value pairs.
@@ -297,20 +299,28 @@ Model data is mostly static. Parameter counts, architectures, and training data 
 
 ```
 src/model_atlas/
-├── server.py              MCP tool definitions (FastMCP)
+├── server.py              MCP tool definitions (9 tools via FastMCP)
 ├── query.py               Query engines: navigate(), search(), compare(), lineage()
 ├── query_types.py         Data classes: StructuredQuery, NavigationResult, SearchResult, ...
 ├── spreading.py           Bellman-Ford spreading activation
 ├── db.py                  SQLite schema, CRUD, batch queries, IDF computation
+├── db_bootstrap.py        159 bootstrap anchors across all 8 banks
+├── db_ingest.py           Ingest state DB schema and migration
 ├── config.py              All constants: weights, thresholds, paths
 ├── cache.py               Disk-based model card caching with TTL
 ├── ingest.py              Three-phase background ingestion daemon
+├── ingest_seed.py         Multi-pass HF streaming seeder (core/expand/niche)
+├── ingest_phase_c.py      Phase C export/merge orchestration
+├── ground_truth.py        C4: offline validation against reference datasets
 ├── _formatting.py         JSON response formatters for MCP tools
 ├── extraction/
 │   ├── deterministic.py   Tier 1: structured fields → positions + metadata
 │   ├── patterns.py        Tier 2: regex/heuristics → anchors + links
 │   ├── vibes.py           Tier 3: Outlines LLM → vibe_summary + extra anchors
 │   └── pipeline.py        Orchestrator: extract_and_store(), extract_batch()
+├── phase_c_worker.py      Standalone C2 worker (zero MA imports, scp-deployable)
+├── phase_c1_extended.py   Extended C1 worker (HF API + librarian-bots corpus)
+├── phase_c3_worker.py     Standalone C3 quality gate worker (zero MA imports)
 ├── search/
 │   ├── structured.py      Layer 1: HuggingFace Hub API search
 │   └── fuzzy.py           Layer 2: RapidFuzz token ratio scoring
@@ -338,8 +348,17 @@ All tunable constants live in `config.py`:
 | `DEFAULT_CANDIDATE_LIMIT` | 500 | HF API candidates per NL search |
 | `DEFAULT_RESULT_LIMIT` | 20 | Results returned to caller |
 | `INGEST_MIN_LIKES` | 5 | Minimum likes for Phase A/B |
+| `INGEST_BATCH_SIZE` | 50 | DB commit batch size during ingestion |
 | `INGEST_VIBE_MIN_LIKES` | 50 | Minimum likes for Phase C |
 | `VIBE_MODEL_NAME` | Qwen/Qwen2.5-0.5B-Instruct | Local LLM for vibe extraction |
+| `VIBE_MAX_RETRIES` | 3 | Max C2 attempts per model |
+| `VIBE_OLLAMA_MODEL` | qwen2.5:3b | Ollama model for C2 and C3 |
+| `VIBE_OLLAMA_BASE_URL` | http://localhost:11434/v1 | Default Ollama endpoint |
+| `QUALITY_GATE_MIN_SCORE` | 0.50 | C3 quality gate pass threshold |
+| `MAX_CARD_TEXT_LENGTH` | 2000 | Card text truncation (chars) |
+| `PHASE_C_WORK_DIR` | ~/.cache/model-atlas/phase_c_work | C2 shard directory |
+| `PHASE_C1_WORK_DIR` | ~/.cache/model-atlas/phase_c1_work | C1 export directory |
+| `PHASE_C3_WORK_DIR` | ~/.cache/model-atlas/phase_c3_work | C3 shard directory |
 
 ## 9. Invariants
 

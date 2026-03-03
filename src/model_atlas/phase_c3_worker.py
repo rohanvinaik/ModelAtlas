@@ -26,6 +26,11 @@ def _handle_signal(signum: int, frame: object) -> None:
     _shutdown = True
 
 
+_VALID_FLAGS = frozenset({
+    "generic", "hallucinated", "truncated", "repetitive",
+})
+
+
 def _parse_and_validate(text: str) -> dict:
     """Parse and validate quality gate JSON output."""
     data = json.loads(text)
@@ -45,6 +50,9 @@ def _parse_and_validate(text: str) -> dict:
 
     if not isinstance(flags, list):
         raise ValueError("'flags' must be a list")
+
+    # Filter to only known flag values
+    flags = [f for f in flags if isinstance(f, str) and f.strip().lower() in _VALID_FLAGS]
 
     specificity = int(specificity)
     coherence = int(coherence)

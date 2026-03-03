@@ -126,7 +126,7 @@ def _hf_model_to_input(model: object) -> ModelInput:
         created_at=str(model.created_at) if model.created_at else None,  # type: ignore[union-attr]
         license_str=getattr(model, "license", "") or "",
         safetensors_info=safetensors_info,
-        config=None,
+        config=getattr(model, "config", None),
         source="huggingface",
     )
 
@@ -143,10 +143,10 @@ def _open_hf_streams(pipeline_tags: list[str] | None) -> list:
     api = HfApi()
     if pipeline_tags:
         return [
-            api.list_models(full=True, sort="likes", pipeline_tag=tag)
+            api.list_models(full=True, sort="likes", pipeline_tag=tag, fetch_config=True)
             for tag in pipeline_tags
         ]
-    return [api.list_models(full=True, sort="likes")]
+    return [api.list_models(full=True, sort="likes", fetch_config=True)]
 
 
 def _passes_seed_filters(

@@ -42,11 +42,16 @@ VIBE_JSON_SCHEMA = {
     "properties": {
         "summary": {
             "type": "string",
+            "minLength": 20,
             "description": "One sentence: what makes this model distinctive",
         },
         "extra_anchors": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+                "type": "string",
+                "minLength": 3,
+                "pattern": "^[a-z][a-z0-9-]+$",
+            },
             "minItems": 1,
             "maxItems": 5,
             "description": "1-5 keyword tags not captured by Tier 1+2",
@@ -65,8 +70,13 @@ Size: {param_count}
 Family: {family}
 Known capabilities: {capabilities}
 Training method: {training_method}
+Existing anchors: {existing_anchors}
+Config: {config_summary}
+Card excerpt: {card_excerpt}
 
-Respond with JSON: {{"summary": "one sentence", "extra_anchors": ["tag1", "tag2"]}}"""
+Do NOT repeat tags already listed in Existing anchors.
+
+Respond with JSON: {{"summary": "one sentence", "extra_anchors": ["hyphenated-capability", "specific-technique"]}}"""
 
 
 def build_vibe_prompt(
@@ -78,10 +88,14 @@ def build_vibe_prompt(
     family: str = "unknown",
     capabilities: list[str] | None = None,
     training_method: str = "unknown",
+    existing_anchors: list[str] | None = None,
+    config_summary: str = "",
+    card_excerpt: str = "",
 ) -> str:
     """Build a structured prompt from pre-extracted Tier 1+2 data."""
     tag_str = ", ".join((tags or [])[:15]) or "none"
     cap_str = ", ".join(capabilities or []) or "none"
+    anchor_str = ", ".join(existing_anchors or []) or "none"
     return _PROMPT_TEMPLATE.format(
         model_id=model_id,
         author=author,
@@ -91,6 +105,42 @@ def build_vibe_prompt(
         family=family,
         capabilities=cap_str,
         training_method=training_method,
+        existing_anchors=anchor_str,
+        config_summary=config_summary or "none",
+        card_excerpt=card_excerpt or "none",
+    )
+
+
+_QUALITY_GATE_TEMPLATE = """You are a blind quality reviewer for ML model summaries. Given ONLY a model ID, its summary, and its tags, score the summary on three axes (0-3 each):
+
+- specificity: Does the summary mention concrete distinguishing details (architecture, dataset, size, technique)? 0=generic/boilerplate, 3=highly specific and informative.
+- coherence: Is the summary well-formed, grammatical, and internally consistent? 0=garbled/contradictory, 3=clear and professional.
+- artifacts: Does the summary contain LLM artifacts (repetition, hallucinated URLs, prompt leakage, filler phrases)? 0=severe artifacts, 3=clean.
+
+Also list any flags (empty list if none): "generic" (could apply to any model), "hallucinated" (claims not supported by tags), "truncated" (sentence cut off), "repetitive" (repeated phrases).
+
+Model: {model_id}
+Summary: {summary}
+Tags: {tags}
+
+Respond with JSON: {{"specificity": 0-3, "coherence": 0-3, "artifacts": 0-3, "flags": ["generic", "hallucinated"]}}"""
+
+
+def build_quality_gate_prompt(
+    model_id: str,
+    summary: str,
+    tags: list[str] | None = None,
+) -> str:
+    """Build a blind quality review prompt for Phase C3.
+
+    Only model_id, summary, and tags are provided — no source material.
+    This forces the reviewer to evaluate the summary on its own merits.
+    """
+    tag_str = ", ".join((tags or [])[:15]) or "none"
+    return _QUALITY_GATE_TEMPLATE.format(
+        model_id=model_id,
+        summary=summary,
+        tags=tag_str,
     )
 
 

@@ -26,6 +26,15 @@ def _handle_signal(signum: int, frame: object) -> None:
     _shutdown = True
 
 
+_PLACEHOLDER_PATTERNS = frozenset({
+    "tag1", "tag2", "tag3", "flag1",
+    "hyphenated-capability", "specific-technique",
+    "example", "example-tag",
+})
+
+_ANCHOR_PATTERN = __import__("re").compile(r"^[a-z][a-z0-9-]+$")
+
+
 def _parse_and_validate(text: str) -> dict:
     """Parse and validate vibe JSON output."""
     data = json.loads(text)
@@ -37,9 +46,18 @@ def _parse_and_validate(text: str) -> dict:
     extra_anchors = data.get("extra_anchors", [])
     if not isinstance(extra_anchors, list):
         raise ValueError("'extra_anchors' must be a list")
-    cleaned = [str(a).strip() for a in extra_anchors if isinstance(a, str) and a.strip()]
-    if not cleaned:
-        raise ValueError("'extra_anchors' must contain at least one non-empty string")
+    cleaned = []
+    for a in extra_anchors:
+        if not isinstance(a, str):
+            continue
+        a = a.strip().lower()
+        if len(a) < 3:
+            continue
+        if a in _PLACEHOLDER_PATTERNS:
+            continue
+        if not _ANCHOR_PATTERN.match(a):
+            continue
+        cleaned.append(a)
     return {"summary": summary.strip(), "extra_anchors": cleaned[:5]}
 
 

@@ -152,6 +152,12 @@ def extract_and_store(
 
     # Store lineage links for all detected base models
     for base_id, relation in pat.base_models:
+        # Ensure target model exists (create stub if not yet indexed)
+        existing = conn.execute(
+            "SELECT 1 FROM models WHERE model_id = ?", (base_id,)
+        ).fetchone()
+        if not existing:
+            db.insert_model(conn, base_id, source="stub")
         db.add_link(conn, inp.model_id, base_id, relation)
 
 

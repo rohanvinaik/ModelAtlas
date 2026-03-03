@@ -33,6 +33,9 @@ class TestBuildVibePrompt:
             param_count="8B parameters",
             family="Llama-family",
             capabilities=["instruction-following", "chat"],
+            existing_anchors=["decoder-only", "7B-class"],
+            config_summary="model_type=llama, num_layers=32",
+            card_excerpt="A large language model for chat.",
         )
         assert "meta-llama/Llama-3.1-8B-Instruct" in prompt
         assert "meta-llama" in prompt
@@ -40,6 +43,9 @@ class TestBuildVibePrompt:
         assert "8B parameters" in prompt
         assert "Llama-family" in prompt
         assert "instruction-following" in prompt
+        assert "decoder-only, 7B-class" in prompt
+        assert "model_type=llama" in prompt
+        assert "A large language model" in prompt
 
     def test_prompt_defaults(self):
         prompt = build_vibe_prompt(model_id="test/Model")
@@ -55,6 +61,19 @@ class TestBuildVibePrompt:
     def test_no_tags(self):
         prompt = build_vibe_prompt(model_id="test/Model", tags=[])
         assert "none" in prompt
+
+    def test_prompt_has_no_placeholder_strings(self):
+        """Prompt template must not contain literal placeholder strings."""
+        prompt = build_vibe_prompt(model_id="test/Model")
+        for placeholder in ["tag1", "tag2", "flag1"]:
+            assert placeholder not in prompt
+
+    def test_new_params_default_to_none(self):
+        """New params default gracefully when not provided."""
+        prompt = build_vibe_prompt(model_id="test/Model")
+        assert "Existing anchors: none" in prompt
+        assert "Config: none" in prompt
+        assert "Card excerpt: none" in prompt
 
 
 class TestVibeExtractor:
@@ -108,14 +127,14 @@ class TestVibeExtractor:
         # Return an object with attributes instead of a dict
         obj = MagicMock()
         obj.summary = "An object-style result"
-        obj.extra_anchors = ["tag1", "tag2"]
+        obj.extra_anchors = ["code-generation", "multi-language"]
         # Make isinstance check fail for dict
         mock_gen.return_value = obj
         extractor._generator = mock_gen
 
         result = extractor.extract("prompt")
         assert result.summary == "An object-style result"
-        assert result.extra_anchors == ["tag1", "tag2"]
+        assert result.extra_anchors == ["code-generation", "multi-language"]
 
     def test_extract_object_missing_attrs(self):
         """Object result with missing attributes uses defaults."""

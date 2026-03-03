@@ -176,6 +176,23 @@ class TestHfModelToInput:
         inp = _hf_model_to_input(model)
         assert inp.license_str == ""
 
+    def test_config_extracted_from_model(self):
+        """Config dict from HF model object is passed through."""
+        config = {"architectures": ["BertModel"], "model_type": "bert"}
+        model = _make_hf_model(config=config)
+        inp = _hf_model_to_input(model)
+        assert inp.config == config
+        assert inp.config["architectures"] == ["BertModel"]
+
+    def test_config_none_when_absent(self):
+        """Models without config attr get config=None."""
+        model = _make_hf_model()
+        # SimpleNamespace won't have 'config' unless we add it
+        if hasattr(model, "config"):
+            delattr(model, "config")
+        inp = _hf_model_to_input(model)
+        assert inp.config is None
+
 
 # ---------------------------------------------------------------------------
 # _passes_seed_filters

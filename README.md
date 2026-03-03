@@ -98,6 +98,8 @@ navigate_models(
 | `hf_compare_models` | Set operations on anchor sets: shared features, distinguishing features, Jaccard similarity |
 | `set_model_vibe` | LLM writes a one-sentence vibe summary after reading a model card |
 | `hf_index_status` | Network stats |
+| `search_models` | Search models across multiple sources (HuggingFace, Ollama, or all) |
+| `list_model_sources` | List available model sources and their connection status |
 
 ## How it works underneath
 
