@@ -52,15 +52,17 @@ VIBE_JSON_SCHEMA = {
                 "minLength": 3,
                 "pattern": "^[a-z][a-z0-9-]+$",
             },
-            "minItems": 1,
+            "minItems": 0,
             "maxItems": 5,
-            "description": "1-5 keyword tags not captured by Tier 1+2",
+            "description": "0-5 keyword tags not captured by Tier 1+2",
         },
     },
     "required": ["summary", "extra_anchors"],
 }
 
-_PROMPT_TEMPLATE = """Given this ML model metadata, write a one-sentence description of what makes it distinctive, and list any additional capability tags not already captured.
+_PROMPT_TEMPLATE = """You are a concise ML model analyst. Given metadata about a model, produce a JSON object with two keys:
+- "summary": one sentence about what makes this model distinctive
+- "extra_anchors": 1-5 NEW lowercase-hyphenated capability tags NOT already listed below
 
 Model: {model_id}
 Author: {author}
@@ -74,9 +76,13 @@ Existing anchors: {existing_anchors}
 Config: {config_summary}
 Card excerpt: {card_excerpt}
 
-Do NOT repeat tags already listed in Existing anchors.
+Rules for extra_anchors:
+- Each tag must be lowercase-hyphenated (letters, digits, hyphens only)
+- Do NOT repeat any tag from Existing anchors above
+- Tags should describe specific capabilities, techniques, or domains
+- If no new tags apply, use an empty array
 
-Respond with JSON: {{"summary": "one sentence", "extra_anchors": ["hyphenated-capability", "specific-technique"]}}"""
+Respond with valid JSON only."""
 
 
 def build_vibe_prompt(
@@ -123,7 +129,7 @@ Model: {model_id}
 Summary: {summary}
 Tags: {tags}
 
-Respond with JSON: {{"specificity": 0-3, "coherence": 0-3, "artifacts": 0-3, "flags": ["generic", "hallucinated"]}}"""
+Respond with valid JSON containing keys: "specificity" (int 0-3), "coherence" (int 0-3), "artifacts" (int 0-3), "flags" (array of strings, empty if none)."""
 
 
 def build_quality_gate_prompt(
