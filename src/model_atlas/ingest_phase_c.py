@@ -305,8 +305,8 @@ def export_c2(
 
             # Candidates = dictionary labels minus already-assigned
             existing_set = set(existing_anchors)
-            cap_candidates = [l for l in all_capability_labels if l not in existing_set]
-            dom_candidates = [l for l in all_domain_labels if l not in existing_set]
+            cap_candidates = [lb for lb in all_capability_labels if lb not in existing_set]
+            dom_candidates = [lb for lb in all_domain_labels if lb not in existing_set]
 
             prompt = build_vibe_prompt(
                 model_id=mid,
