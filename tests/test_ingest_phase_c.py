@@ -113,20 +113,6 @@ class TestExportC2:
         count = export_c2(network_conn, num_shards=1)
         assert count == 1
 
-    def test_prompt_includes_training_method(self, network_conn, tmp_path, monkeypatch):
-        """Vibe prompt includes training_method from TRAINING bank anchors."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
-        _add_model(network_conn, "test/rlhf-model")
-        _add_anchor(network_conn, "test/rlhf-model", "RLHF", bank="TRAINING")
-
-        export_c2(network_conn, num_shards=1)
-
-        lines = (tmp_path / "shard_0.jsonl").read_text().strip().split("\n")
-        item = json.loads(lines[0])
-        assert "RLHF" in item["prompt"]
-
     def test_prompt_includes_config_summary(self, network_conn, tmp_path, monkeypatch):
         """Vibe prompt includes config summary from metadata."""
         monkeypatch.setattr(
@@ -182,6 +168,65 @@ class TestExportC2:
         )
         count = export_c2(network_conn, num_shards=2)
         assert count == 0
+
+    def test_output_includes_valid_anchors(self, network_conn, tmp_path, monkeypatch):
+        """Each JSONL item includes valid_anchors from CAPABILITY+DOMAIN banks."""
+        monkeypatch.setattr(
+            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
+        )
+        _add_model(network_conn, "test/model-a")
+        # Add some dictionary anchors
+        db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(network_conn, "medical", "DOMAIN", source="seed")
+
+        export_c2(network_conn, num_shards=1)
+
+        lines = (tmp_path / "shard_0.jsonl").read_text().strip().split("\n")
+        item = json.loads(lines[0])
+        assert "valid_anchors" in item
+        assert "reasoning" in item["valid_anchors"]
+        assert "medical" in item["valid_anchors"]
+
+    def test_prompt_includes_candidate_lists(self, network_conn, tmp_path, monkeypatch):
+        """Prompt lists CAPABILITY and DOMAIN candidates for selection."""
+        monkeypatch.setattr(
+            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
+        )
+        _add_model(network_conn, "test/model-a")
+        db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(network_conn, "medical", "DOMAIN", source="seed")
+
+        export_c2(network_conn, num_shards=1)
+
+        lines = (tmp_path / "shard_0.jsonl").read_text().strip().split("\n")
+        item = json.loads(lines[0])
+        assert "reasoning" in item["prompt"]
+        assert "medical" in item["prompt"]
+
+    def test_candidates_exclude_already_assigned(self, network_conn, tmp_path, monkeypatch):
+        """Already-assigned anchors are excluded from candidate lists."""
+        monkeypatch.setattr(
+            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
+        )
+        _add_model(network_conn, "test/model-a")
+        # Add "reasoning" to dictionary AND link it to the model
+        _add_anchor(network_conn, "test/model-a", "reasoning", bank="CAPABILITY")
+        # Add "code-generation" to dictionary only (not linked)
+        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+
+        export_c2(network_conn, num_shards=1)
+
+        lines = (tmp_path / "shard_0.jsonl").read_text().strip().split("\n")
+        item = json.loads(lines[0])
+        # "reasoning" is already assigned, so should NOT be in CAPABILITY candidates section
+        # But it will be in the "Already assigned" section
+        # The candidate list in the prompt should have code-generation but not reasoning
+        prompt = item["prompt"]
+        cap_section_start = prompt.index("CAPABILITY anchors")
+        domain_section_start = prompt.index("DOMAIN anchors")
+        cap_section = prompt[cap_section_start:domain_section_start]
+        assert "code-generation" in cap_section
+        assert "reasoning" not in cap_section
 
 
 # ---------------------------------------------------------------------------
@@ -260,56 +305,84 @@ class TestMergeC1:
 
 
 class TestMergeC2:
-    def test_stores_summary_and_anchors(self, network_conn, tmp_path):
-        """Merges qwen_summary + extra_anchors."""
+    def test_stores_summary_and_links_dictionary_anchors(self, network_conn, tmp_path):
+        """Merges qwen_summary + links only anchors that exist in dictionary."""
         _add_model(network_conn, "test/model-a")
+        # Pre-seed dictionary anchors
+        db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
             json.dumps({
                 "model_id": "test/model-a",
                 "summary": "Fine-tuned for code",
-                "extra_anchors": ["vibe-unique-tag1", "vibe-unique-tag2"],
+                "selected_anchors": ["reasoning", "code-generation"],
             }) + "\n"
         )
 
         result = merge_c2(network_conn, [str(f)])
         assert result["merged"] == 1
+        assert result["anchors_linked"] == 2
 
         val = network_conn.execute(
             "SELECT value FROM model_metadata WHERE model_id = 'test/model-a' AND key = 'qwen_summary'"
         ).fetchone()
         assert val[0] == "Fine-tuned for code"
 
-        # Check anchors were linked (use confidence=0.5 as the vibe marker)
         anchors = network_conn.execute(
             """SELECT a.label FROM model_anchors ma
                JOIN anchors a ON ma.anchor_id = a.anchor_id
                WHERE ma.model_id = 'test/model-a' AND ma.confidence = 0.5"""
         ).fetchall()
         labels = {r[0] for r in anchors}
-        assert "vibe-unique-tag1" in labels
-        assert "vibe-unique-tag2" in labels
+        assert "reasoning" in labels
+        assert "code-generation" in labels
 
-    def test_caps_anchors_at_5(self, network_conn, tmp_path):
-        """Extra anchors are capped at 5."""
+    def test_rejects_anchors_not_in_dictionary(self, network_conn, tmp_path):
+        """Anchors not in the dictionary are silently dropped — no new anchors created."""
         _add_model(network_conn, "test/model-a")
+        # Only seed "reasoning", NOT "invented-tag"
+        db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
             json.dumps({
                 "model_id": "test/model-a",
                 "summary": "A model",
-                "extra_anchors": ["a", "b", "c", "d", "e", "f", "g"],
+                "selected_anchors": ["reasoning", "invented-tag"],
+            }) + "\n"
+        )
+
+        result = merge_c2(network_conn, [str(f)])
+        assert result["anchors_linked"] == 1
+
+        # "invented-tag" should NOT exist in anchors table
+        row = network_conn.execute(
+            "SELECT 1 FROM anchors WHERE label = 'invented-tag'"
+        ).fetchone()
+        assert row is None
+
+    def test_caps_anchors_at_5(self, network_conn, tmp_path):
+        """Selected anchors are capped at 5."""
+        _add_model(network_conn, "test/model-a")
+        for label in ["a-cap", "b-cap", "c-cap", "d-cap", "e-cap", "f-cap", "g-cap"]:
+            db.get_or_create_anchor(network_conn, label, "CAPABILITY", source="seed")
+
+        f = tmp_path / "c2_results.jsonl"
+        f.write_text(
+            json.dumps({
+                "model_id": "test/model-a",
+                "summary": "A model",
+                "selected_anchors": ["a-cap", "b-cap", "c-cap", "d-cap", "e-cap", "f-cap", "g-cap"],
             }) + "\n"
         )
 
         merge_c2(network_conn, [str(f)])
 
         anchors = network_conn.execute(
-            """SELECT COUNT(*) FROM model_anchors ma
-               JOIN anchors a ON ma.anchor_id = a.anchor_id
-               WHERE ma.model_id = 'test/model-a' AND a.source = 'vibe'"""
+            """SELECT COUNT(*) FROM model_anchors
+               WHERE model_id = 'test/model-a' AND confidence = 0.5"""
         ).fetchone()[0]
         assert anchors <= 5
 
@@ -324,9 +397,10 @@ class TestMergeC2:
         assert result["skipped"] == 1
         assert result["merged"] == 0
 
-    def test_idempotent(self, network_conn, tmp_path):
-        """Re-merging same data overwrites cleanly."""
+    def test_backward_compat_extra_anchors(self, network_conn, tmp_path):
+        """Falls back to extra_anchors field for old-format results."""
         _add_model(network_conn, "test/model-a")
+        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
@@ -334,6 +408,24 @@ class TestMergeC2:
                 "model_id": "test/model-a",
                 "summary": "Version 1",
                 "extra_anchors": ["code-generation"],
+            }) + "\n"
+        )
+
+        result = merge_c2(network_conn, [str(f)])
+        assert result["merged"] == 1
+        assert result["anchors_linked"] == 1
+
+    def test_idempotent(self, network_conn, tmp_path):
+        """Re-merging same data overwrites cleanly."""
+        _add_model(network_conn, "test/model-a")
+        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+
+        f = tmp_path / "c2_results.jsonl"
+        f.write_text(
+            json.dumps({
+                "model_id": "test/model-a",
+                "summary": "Version 1",
+                "selected_anchors": ["code-generation"],
             }) + "\n"
         )
 

@@ -64,6 +64,15 @@ def _get_anchors_by_bank(
     return [r[0] for r in rows]
 
 
+def _get_anchor_labels_by_bank(conn: sqlite3.Connection, bank: str) -> list[str]:
+    """All anchor labels in a bank (dictionary-wide, not per-model)."""
+    rows = conn.execute(
+        "SELECT label FROM anchors WHERE bank = ? ORDER BY label",
+        (bank,),
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
 def _get_metadata(
     conn: sqlite3.Connection, model_id: str, key: str
 ) -> str | None:
@@ -261,9 +270,10 @@ def export_c2(
 ) -> int:
     """Export C2 vibe prompts to sharded JSONL files.
 
-    Builds prompts from network DB data (author, pipeline_tag, anchors,
-    param_count, family, training_method) via build_vibe_prompt().
-    Writes round-robin to PHASE_C_WORK_DIR/shard_N.jsonl.
+    Builds selection prompts from network DB data. The worker selects
+    anchors from curated CAPABILITY/DOMAIN dictionary lists rather than
+    generating free-form tags. Each JSONL item includes valid_anchors
+    for worker-side validation.
     """
     model_ids = _models_without_metadata(conn, "qwen_summary", min_likes)
     if not model_ids:
@@ -271,6 +281,11 @@ def export_c2(
         return 0
 
     PHASE_C_WORK_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Cache dictionary labels once for the batch
+    all_capability_labels = _get_anchor_labels_by_bank(conn, "CAPABILITY")
+    all_domain_labels = _get_anchor_labels_by_bank(conn, "DOMAIN")
+    all_valid = sorted(set(all_capability_labels + all_domain_labels))
 
     # Open shard files
     shard_files = []
@@ -284,11 +299,14 @@ def export_c2(
             tags = _get_all_anchor_labels(conn, mid)
             param_count = _get_param_count(conn, mid)
             family = _get_family(conn, mid)
-            capabilities = _get_anchors_by_bank(conn, mid, "CAPABILITY")
-            training_method = _get_training_method(conn, mid)
             existing_anchors = tags  # all anchors already linked
             config_summary = _build_config_summary(conn, mid)
             card_excerpt = _get_metadata(conn, mid, "smol_summary") or ""
+
+            # Candidates = dictionary labels minus already-assigned
+            existing_set = set(existing_anchors)
+            cap_candidates = [l for l in all_capability_labels if l not in existing_set]
+            dom_candidates = [l for l in all_domain_labels if l not in existing_set]
 
             prompt = build_vibe_prompt(
                 model_id=mid,
@@ -297,16 +315,20 @@ def export_c2(
                 tags=tags,
                 param_count=param_count,
                 family=family,
-                capabilities=capabilities,
-                training_method=training_method,
                 existing_anchors=existing_anchors,
                 config_summary=config_summary,
                 card_excerpt=card_excerpt,
+                capability_candidates=cap_candidates,
+                domain_candidates=dom_candidates,
             )
 
             shard_idx = idx % num_shards
             shard_files[shard_idx].write(
-                json.dumps({"model_id": mid, "prompt": prompt}) + "\n"
+                json.dumps({
+                    "model_id": mid,
+                    "prompt": prompt,
+                    "valid_anchors": all_valid,
+                }) + "\n"
             )
     finally:
         for f in shard_files:
@@ -329,16 +351,18 @@ def export_c2(
 def merge_c2(conn: sqlite3.Connection, files: list[str]) -> dict[str, int]:
     """Merge C2 vibe results into network DB.
 
-    Reads JSONL with {"model_id", "summary", "extra_anchors"} records.
-    Stores qwen_summary metadata + up to 5 CAPABILITY anchors
-    (source="vibe", confidence=0.5).
-    Returns {"merged": N, "skipped": N, "errors": N}.
+    Reads JSONL with {"model_id", "summary", "selected_anchors"} records.
+    Stores qwen_summary metadata + links existing dictionary anchors
+    (confidence=0.5). Only anchors already in the DB are linked — no new
+    anchors are created from C2 output.
+    Returns {"merged": N, "skipped": N, "errors": N, "anchors_linked": N}.
     """
     from . import db
 
     merged = 0
     skipped = 0
     errors = 0
+    anchors_linked = 0
 
     for fpath in files:
         with open(fpath) as f:
@@ -368,25 +392,30 @@ def merge_c2(conn: sqlite3.Connection, files: list[str]) -> dict[str, int]:
 
                 db.set_metadata(conn, model_id, "qwen_summary", summary, "str")
 
-                # Store up to 5 extra anchors as CAPABILITY
-                extra_anchors = item.get("extra_anchors", [])
-                for anchor_label in extra_anchors[:5]:
+                # Link selected anchors — only if they exist in the dictionary
+                selected = item.get("selected_anchors") or item.get("extra_anchors") or []
+                for anchor_label in selected[:5]:
                     anchor_label = anchor_label.strip().lower()
-                    if anchor_label:
-                        anchor_id = db.get_or_create_anchor(
-                            conn, anchor_label, "CAPABILITY", source="vibe"
-                        )
+                    if not anchor_label:
+                        continue
+                    row = conn.execute(
+                        "SELECT anchor_id FROM anchors WHERE label = ?",
+                        (anchor_label,),
+                    ).fetchone()
+                    if row:
                         db.link_anchor(
-                            conn, model_id, anchor_id, confidence=0.5
+                            conn, model_id, row[0], confidence=0.5
                         )
+                        anchors_linked += 1
 
                 merged += 1
 
     conn.commit()
     logger.info(
-        "merge_c2: merged=%d skipped=%d errors=%d", merged, skipped, errors
+        "merge_c2: merged=%d skipped=%d errors=%d anchors_linked=%d",
+        merged, skipped, errors, anchors_linked,
     )
-    return {"merged": merged, "skipped": skipped, "errors": errors}
+    return {"merged": merged, "skipped": skipped, "errors": errors, "anchors_linked": anchors_linked}
 
 
 # ---------------------------------------------------------------------------

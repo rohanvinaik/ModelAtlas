@@ -14,13 +14,13 @@ from model_atlas.extraction.vibes import (
 
 class TestVibeOutput:
     def test_dataclass_fields(self):
-        v = VibeOutput(summary="A great model", extra_anchors=["fast", "small"])
+        v = VibeOutput(summary="A great model", selected_anchors=["fast", "small"])
         assert v.summary == "A great model"
-        assert v.extra_anchors == ["fast", "small"]
+        assert v.selected_anchors == ["fast", "small"]
 
     def test_empty_anchors(self):
-        v = VibeOutput(summary="Minimal model", extra_anchors=[])
-        assert v.extra_anchors == []
+        v = VibeOutput(summary="Minimal model", selected_anchors=[])
+        assert v.selected_anchors == []
 
 
 class TestBuildVibePrompt:
@@ -32,20 +32,22 @@ class TestBuildVibePrompt:
             tags=["text-generation", "llama"],
             param_count="8B parameters",
             family="Llama-family",
-            capabilities=["instruction-following", "chat"],
             existing_anchors=["decoder-only", "7B-class"],
             config_summary="model_type=llama, num_layers=32",
             card_excerpt="A large language model for chat.",
+            capability_candidates=["code-generation", "reasoning"],
+            domain_candidates=["medical", "legal"],
         )
         assert "meta-llama/Llama-3.1-8B-Instruct" in prompt
         assert "meta-llama" in prompt
         assert "text-generation" in prompt
         assert "8B parameters" in prompt
         assert "Llama-family" in prompt
-        assert "instruction-following" in prompt
         assert "decoder-only, 7B-class" in prompt
         assert "model_type=llama" in prompt
         assert "A large language model" in prompt
+        assert "code-generation" in prompt
+        assert "medical" in prompt
 
     def test_prompt_defaults(self):
         prompt = build_vibe_prompt(model_id="test/Model")
@@ -71,9 +73,25 @@ class TestBuildVibePrompt:
     def test_new_params_default_to_none(self):
         """New params default gracefully when not provided."""
         prompt = build_vibe_prompt(model_id="test/Model")
-        assert "Existing anchors: none" in prompt
+        assert "Already assigned: none" in prompt
         assert "Config: none" in prompt
         assert "Card excerpt: none" in prompt
+
+    def test_candidate_lists_in_prompt(self):
+        """Capability and domain candidates appear in prompt."""
+        prompt = build_vibe_prompt(
+            model_id="test/Model",
+            capability_candidates=["reasoning", "code-generation"],
+            domain_candidates=["medical"],
+        )
+        assert "reasoning, code-generation" in prompt
+        assert "medical" in prompt
+
+    def test_empty_candidates_show_none(self):
+        """Empty candidate lists show 'none' in prompt."""
+        prompt = build_vibe_prompt(model_id="test/Model")
+        assert "CAPABILITY anchors" in prompt
+        assert "DOMAIN anchors" in prompt
 
 
 class TestVibeExtractor:
@@ -91,7 +109,7 @@ class TestVibeExtractor:
         mock_generator = MagicMock()
         mock_generator.return_value = {
             "summary": "A versatile code model",
-            "extra_anchors": ["multi-language", "fast-inference"],
+            "selected_anchors": ["multi-language", "fast-inference"],
         }
 
         extractor = VibeExtractor(model_name="test/model")
@@ -103,22 +121,21 @@ class TestVibeExtractor:
         result = extractor.extract("test prompt")
         assert isinstance(result, VibeOutput)
         assert result.summary == "A versatile code model"
-        assert "multi-language" in result.extra_anchors
+        assert "multi-language" in result.selected_anchors
         mock_generator.assert_called_once_with("test prompt")
 
     def test_extract_truncates_anchors(self):
-        """Extra anchors capped at 5."""
+        """Selected anchors capped at 5."""
         extractor = VibeExtractor(model_name="test/model")
         mock_gen = MagicMock()
         mock_gen.return_value = {
             "summary": "test",
-            "extra_anchors": ["a", "b", "c", "d", "e", "f", "g"],
+            "selected_anchors": ["a", "b", "c", "d", "e", "f", "g"],
         }
         extractor._generator = mock_gen
 
         result = extractor.extract("prompt")
-        assert len(result.extra_anchors) <= 5
-
+        assert len(result.selected_anchors) <= 5
 
     def test_extract_object_result_fallback(self):
         """When Outlines returns an object instead of dict, attributes are extracted."""
@@ -127,14 +144,14 @@ class TestVibeExtractor:
         # Return an object with attributes instead of a dict
         obj = MagicMock()
         obj.summary = "An object-style result"
-        obj.extra_anchors = ["code-generation", "multi-language"]
+        obj.selected_anchors = ["code-generation", "multi-language"]
         # Make isinstance check fail for dict
         mock_gen.return_value = obj
         extractor._generator = mock_gen
 
         result = extractor.extract("prompt")
         assert result.summary == "An object-style result"
-        assert result.extra_anchors == ["code-generation", "multi-language"]
+        assert result.selected_anchors == ["code-generation", "multi-language"]
 
     def test_extract_object_missing_attrs(self):
         """Object result with missing attributes uses defaults."""
@@ -147,7 +164,7 @@ class TestVibeExtractor:
 
         result = extractor.extract("prompt")
         assert result.summary == ""
-        assert result.extra_anchors == []
+        assert result.selected_anchors == []
 
 
 class TestBackwardCompat:

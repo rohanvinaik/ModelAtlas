@@ -21,7 +21,9 @@ _BENCHMARK_KEYWORDS = re.compile(
 _TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
 
 # Matches the separator row: |---|---|
-_SEPARATOR_ROW = re.compile(r"^\s*\|[\s:]*-+[\s:|-]*\|\s*$")
+# Single character class avoids overlapping quantifiers (ReDoS-safe).
+# Lookahead requires at least one dash so we don't match empty pipes.
+_SEPARATOR_ROW = re.compile(r"^\s*\|(?=[-:\s|]*-)[-:\s|]+\|\s*$")
 
 
 def extract_benchmarks(card_text: str) -> dict[str, tuple[str, str]]:

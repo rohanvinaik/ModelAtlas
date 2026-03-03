@@ -33,7 +33,7 @@ class VibeOutput:
     """
 
     summary: str  # One sentence: what makes this model distinctive
-    extra_anchors: list[str]  # 1-5 keyword tags not captured by Tier 1+2
+    selected_anchors: list[str]  # 0-5 anchors selected from the dictionary
 
 
 # JSON schema for Outlines constrained generation (matches VibeOutput)
@@ -45,7 +45,7 @@ VIBE_JSON_SCHEMA = {
             "minLength": 20,
             "description": "One sentence: what makes this model distinctive",
         },
-        "extra_anchors": {
+        "selected_anchors": {
             "type": "array",
             "items": {
                 "type": "string",
@@ -54,15 +54,15 @@ VIBE_JSON_SCHEMA = {
             },
             "minItems": 0,
             "maxItems": 5,
-            "description": "0-5 keyword tags not captured by Tier 1+2",
+            "description": "0-5 anchors selected from the provided dictionary lists",
         },
     },
-    "required": ["summary", "extra_anchors"],
+    "required": ["summary", "selected_anchors"],
 }
 
-_PROMPT_TEMPLATE = """You are a concise ML model analyst. Given metadata about a model, produce a JSON object with two keys:
-- "summary": one sentence about what makes this model distinctive
-- "extra_anchors": 1-5 NEW lowercase-hyphenated capability tags NOT already listed below
+_PROMPT_TEMPLATE = """You are an ML model classifier. Given metadata about a model:
+1. Write a one-sentence summary of what makes this model distinctive.
+2. Select which additional anchors from the lists below apply to this model.
 
 Model: {model_id}
 Author: {author}
@@ -70,19 +70,19 @@ Task: {pipeline_tag}
 Tags: {tags}
 Size: {param_count}
 Family: {family}
-Known capabilities: {capabilities}
-Training method: {training_method}
-Existing anchors: {existing_anchors}
+Already assigned: {existing_anchors}
 Config: {config_summary}
 Card excerpt: {card_excerpt}
 
-Rules for extra_anchors:
-- Each tag must be lowercase-hyphenated (letters, digits, hyphens only)
-- Do NOT repeat any tag from Existing anchors above
-- Tags should describe specific capabilities, techniques, or domains
-- If no new tags apply, use an empty array
+Select from these CAPABILITY anchors (only ones NOT already assigned):
+{capability_candidates}
 
-Respond with valid JSON only."""
+Select from these DOMAIN anchors (only ones NOT already assigned):
+{domain_candidates}
+
+Respond with valid JSON:
+- "summary": one sentence
+- "selected_anchors": array of anchor labels from the lists above (empty if none apply)"""
 
 
 def build_vibe_prompt(
@@ -92,16 +92,21 @@ def build_vibe_prompt(
     tags: list[str] | None = None,
     param_count: str = "unknown",
     family: str = "unknown",
-    capabilities: list[str] | None = None,
-    training_method: str = "unknown",
     existing_anchors: list[str] | None = None,
     config_summary: str = "",
     card_excerpt: str = "",
+    capability_candidates: list[str] | None = None,
+    domain_candidates: list[str] | None = None,
 ) -> str:
-    """Build a structured prompt from pre-extracted Tier 1+2 data."""
+    """Build a selection prompt from pre-extracted Tier 1+2 data.
+
+    The model selects from curated CAPABILITY and DOMAIN anchor lists
+    rather than generating free-form tags.
+    """
     tag_str = ", ".join((tags or [])[:15]) or "none"
-    cap_str = ", ".join(capabilities or []) or "none"
     anchor_str = ", ".join(existing_anchors or []) or "none"
+    cap_cands = ", ".join(capability_candidates or []) or "none"
+    dom_cands = ", ".join(domain_candidates or []) or "none"
     return _PROMPT_TEMPLATE.format(
         model_id=model_id,
         author=author,
@@ -109,11 +114,11 @@ def build_vibe_prompt(
         tags=tag_str,
         param_count=param_count,
         family=family,
-        capabilities=cap_str,
-        training_method=training_method,
         existing_anchors=anchor_str,
         config_summary=config_summary or "none",
         card_excerpt=card_excerpt or "none",
+        capability_candidates=cap_cands,
+        domain_candidates=dom_cands,
     )
 
 
@@ -194,12 +199,12 @@ class VibeExtractor:
         if isinstance(result, dict):
             return VibeOutput(
                 summary=result.get("summary", ""),
-                extra_anchors=result.get("extra_anchors", [])[:5],
+                selected_anchors=result.get("selected_anchors", [])[:5],
             )
         # Fallback: if Outlines returns the object directly
         return VibeOutput(
             summary=str(getattr(result, "summary", "")),
-            extra_anchors=list(getattr(result, "extra_anchors", []))[:5],
+            selected_anchors=list(getattr(result, "selected_anchors", []))[:5],
         )
 
 

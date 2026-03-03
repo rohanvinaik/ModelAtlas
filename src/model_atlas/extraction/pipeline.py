@@ -217,7 +217,7 @@ def _store_anchors(
             source=source,
         )
         # Use per-anchor confidence if set, else fall back to default
-        conf = anchor.confidence if anchor.confidence != 1.0 else default_confidence
+        conf = anchor.confidence if anchor.confidence is not None else default_confidence
         db.link_anchor(conn, model_id, anchor_id, confidence=conf)
 
 

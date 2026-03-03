@@ -26,39 +26,33 @@ def _handle_signal(signum: int, frame: object) -> None:
     _shutdown = True
 
 
-_PLACEHOLDER_PATTERNS = frozenset({
-    "tag1", "tag2", "tag3", "flag1",
-    "hyphenated-capability", "specific-technique",
-    "example", "example-tag",
-})
+def _parse_and_validate(text: str, valid_anchors: set[str] | None = None) -> dict:
+    """Parse and validate vibe JSON output.
 
-_ANCHOR_PATTERN = __import__("re").compile(r"^[a-z][a-z0-9-]+$")
-
-
-def _parse_and_validate(text: str) -> dict:
-    """Parse and validate vibe JSON output."""
+    When valid_anchors is provided, returned anchors are filtered to only
+    those in the dictionary. This is the primary quality gate — dictionary
+    membership replaces free-form pattern checks.
+    """
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object, got {type(data).__name__}")
     summary = data.get("summary", "")
     if not isinstance(summary, str) or not summary.strip():
         raise ValueError("Missing or empty 'summary'")
-    extra_anchors = data.get("extra_anchors", [])
-    if not isinstance(extra_anchors, list):
-        raise ValueError("'extra_anchors' must be a list")
+    raw_anchors = data.get("selected_anchors") or data.get("extra_anchors") or []
+    if not isinstance(raw_anchors, list):
+        raise ValueError("'selected_anchors' must be a list")
     cleaned = []
-    for a in extra_anchors:
+    for a in raw_anchors:
         if not isinstance(a, str):
             continue
         a = a.strip().lower()
         if len(a) < 3:
             continue
-        if a in _PLACEHOLDER_PATTERNS:
-            continue
-        if not _ANCHOR_PATTERN.match(a):
+        if valid_anchors is not None and a not in valid_anchors:
             continue
         cleaned.append(a)
-    return {"summary": summary.strip(), "extra_anchors": cleaned[:5]}
+    return {"summary": summary.strip(), "selected_anchors": cleaned[:5]}
 
 
 def main() -> None:
@@ -97,6 +91,8 @@ def main() -> None:
 
             model_id = item.get("model_id", "")
             prompt = item.get("prompt", "")
+            valid_anchors_list = item.get("valid_anchors")
+            valid_anchors = set(valid_anchors_list) if valid_anchors_list else None
 
             try:
                 response = client.chat.completions.create(
@@ -106,7 +102,7 @@ def main() -> None:
                     temperature=0.3,
                 )
                 text = response.choices[0].message.content or ""
-                result = _parse_and_validate(text)
+                result = _parse_and_validate(text, valid_anchors=valid_anchors)
                 out = json.dumps({"model_id": model_id, **result})
             except Exception as e:
                 out = json.dumps({"model_id": model_id, "error": str(e)})
