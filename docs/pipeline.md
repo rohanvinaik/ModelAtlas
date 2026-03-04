@@ -290,15 +290,85 @@ Offline comparison of ModelAtlas outputs against curated reference datasets. No 
 python -m model_atlas.ingest --validate-ground-truth
 ```
 
-### 2.6 C5: Healing Pass (Future)
+### 2.6 Phase D: Post-Bootstrap Audit & Healing Pipeline
 
-Planned sub-phase to infer missing fields from structural signals and cross-references. Not yet implemented.
+A three-layer error correction pipeline where each layer is progressively more expensive and more capable.
 
-**Planned capabilities:**
-- Infer missing fields from structural signals (e.g., architecture from naming conventions when config.json is unavailable)
-- Cross-reference lineage using `parsed-model-cards` `base_model_mentions` field
-- Fill documentation gaps using the `transformers` `TrainingSummary` schema as a template
-- Leverage `librarian-bots/model_cards_with_metadata` daily-refreshed corpus for ongoing monitoring of new and updated model cards
+```
+D0: Schema & Provenance Layer
+    │   phase_d_runs, audit_findings, correction_events tables
+    ▼
+D1: Deterministic Audit ──── O(1) per model, reuses patterns.py matchers
+    │   Compare C2 anchors vs _CAPABILITY_PATTERNS / _DOMAIN_PATTERNS
+    │   Stable mismatch taxonomy: contradiction, gap, confidence-conflict
+    ▼
+D2: Dictionary Expansion ─── strict DSL, auto-link high-confidence only
+    │   Add missing domain labels (biology, music, chemistry, physics)
+    │   Boundary-aware matchers, AND/OR semantics
+    ▼
+D3: LLM Healing Pass ──── full C2-style responses from raw evidence
+    │   ├── D3a: Local (qwen2.5:3b) ── bulk corrections
+    │   └── D3b: Claude Code CLI ──── 0.1% inference tax per session
+    ▼
+D4: Fine-Tuning Data Export ── DPO format JSONL
+    │   From correction_events (prompt/chosen/rejected)
+    ▼
+Repeat: expand corpus → extract → C2 → D1 audit → D2 expand → D3 heal → D4 export
+```
+
+#### D0: Provenance Schema
+
+Three new tables in `network.db`:
+- `phase_d_runs` — tracks each D-phase run (UUID, phase, status, config JSON, summary JSON)
+- `audit_findings` — stores per-model mismatch findings (contradiction, gap, confidence_conflict)
+- `correction_events` — stores healing corrections with original + healed responses for DPO training
+
+#### D1: Deterministic Audit
+
+`phase_d_audit.py` re-runs `_CAPABILITY_PATTERNS` and `_DOMAIN_PATTERNS` from `extraction/patterns.py` against each model's searchable text, then compares against C2-assigned anchors (confidence=0.5):
+
+| Mismatch Type | Description | Example |
+|---------------|-------------|---------|
+| `contradiction` | C2 assigned X, deterministic says Y in same bank | Spark-TTS gets `code-domain` but patterns find `speech` signals |
+| `gap` | Deterministic found X but C2 missed it entirely | Model named "instruct-7b" missing `instruction-following` |
+| `confidence_conflict` | Same anchor, confidence gap > 0.3 | Both agree on `chat` but at 0.5 vs 0.9 confidence |
+
+Per-model `audit_score` (0.0-1.0) stored in metadata. Models below `AUDIT_MISMATCH_THRESHOLD` (0.7) become healing candidates.
+
+#### D2: Dictionary Expansion
+
+`phase_d_expand.py` reads YAML expansion specs with a strict DSL:
+
+```yaml
+expansions:
+  - label: "biology-domain"
+    bank: "DOMAIN"
+    mode: "auto_link"       # create_only | auto_link | queue_for_heal
+    match_rules:
+      operator: "OR"        # AND | OR
+      conditions:
+        - type: "tag_exact"
+          value: "biology"
+        - type: "name_regex"
+          value: "\\bbio(?:logy|med)\\b"
+      min_matches: 1
+    confidence: 0.7
+```
+
+Matcher types: `tag_exact`, `tag_regex`, `pipeline_tag_in`, `name_regex`, `metadata_equals`.
+
+#### D3: LLM Healing
+
+`phase_d_heal.py` follows the export/merge pattern from Phase C. Healing prompts include raw_json evidence, card excerpt, current anchors, audit findings, and the full valid anchor dictionary. Workers output complete C2-style responses (`{summary, selected_anchors}`), and merge computes diffs.
+
+`phase_d_worker.py` is a standalone worker (zero ModelAtlas imports) following the same pattern as `phase_c_worker.py`.
+
+#### D4: Training Data Export
+
+`phase_d_training.py` exports DPO-format JSONL from `correction_events`:
+```json
+{"prompt": "...", "chosen": "{healed}", "rejected": "{original}", "model_id": "...", "tier": "local"}
+```
 
 ---
 
@@ -522,7 +592,24 @@ python -m model_atlas.ingest <command>
 | `--ollama-url` | (from config) | Ollama API base URL override |
 | `-v`, `--verbose` | off | Enable DEBUG-level logging |
 
-### 8.6 Standalone Workers
+### 8.6 Phase D Commands
+
+| Flag | Arguments | Description |
+|------|-----------|-------------|
+| `--audit-c2` | (none) | Run D1 deterministic audit on C2 anchors |
+| `--expand-dictionary` | `SPEC_FILE` | D2: expand dictionary from YAML spec |
+| `--dry-run` | (none) | Preview expansion counts (with `--expand-dictionary`) |
+| `--export-d3` | `NUM_SHARDS` | D3: export healing prompts to sharded JSONL |
+| `--heal-tier` | `local\|claude` | D3: healing tier (default: local) |
+| `--heal-budget` | `N` | D3: max models to heal (default: 100) |
+| `--heal-seed` | `INT` | D3: random seed for reproducible selection (default: 42) |
+| `--merge-d3` | `FILE [FILE...]` | D3: merge healing result JSONL files |
+| `--run-id` | `RUN_ID` | D3: run_id for merge (from export output) |
+| `--export-training-data` | `OUTPUT_PATH` | D4: export DPO training data |
+| `--training-tier` | `local\|claude\|all` | D4: filter by tier (default: all) |
+| `--phase-d-status` | (none) | Show Phase D run history and stats |
+
+### 8.7 Standalone Workers
 
 Workers are separate scripts, not invoked through `python -m model_atlas.ingest`:
 
@@ -703,7 +790,47 @@ python phase_c3_worker.py --input quality_gate.jsonl --output results_c3.jsonl \
 
 - C1b continues processing extended corpus models as new cards appear in `librarian-bots/model_cards_with_metadata`
 - Periodic re-export of C2 picks up newly fetched models (Phase A incremental runs add new models above the likes threshold)
-- C5 healing pass (when implemented) addresses quality-gate failures and missing fields
+
+### Day 9+: Phase D Operations
+
+20. Run D1 audit on C2 results:
+    ```bash
+    python -m model_atlas.ingest --audit-c2
+    ```
+
+21. Expand dictionary with missing domain anchors:
+    ```bash
+    # Preview first
+    python -m model_atlas.ingest --expand-dictionary data/expansions/domain_specialization.yaml --dry-run
+    # Apply
+    python -m model_atlas.ingest --expand-dictionary data/expansions/domain_specialization.yaml
+    ```
+
+22. Export D3 healing work (local tier):
+    ```bash
+    python -m model_atlas.ingest --export-d3 2 --heal-tier local --heal-budget 100 --heal-seed 42
+    # Note the run_id in output
+    ```
+
+23. Run D3 worker on each shard:
+    ```bash
+    python phase_d_worker.py --input d3_local_shard_0.jsonl --output d3_results_0.jsonl
+    ```
+
+24. Merge D3 results:
+    ```bash
+    python -m model_atlas.ingest --merge-d3 d3_results_0.jsonl d3_results_1.jsonl --run-id <RUN_ID>
+    ```
+
+25. Export DPO training data:
+    ```bash
+    python -m model_atlas.ingest --export-training-data training_data.jsonl
+    ```
+
+26. Check Phase D status:
+    ```bash
+    python -m model_atlas.ingest --phase-d-status
+    ```
 
 ---
 
@@ -728,6 +855,11 @@ src/model_atlas/
 +-- phase_c_worker.py          Standalone C2 worker (zero MA imports)
 +-- phase_c1_worker.py         Standalone C1 worker (zero MA imports)
 +-- phase_c3_worker.py         Standalone C3 worker (zero MA imports)
++-- phase_d_audit.py           D1: deterministic audit of C2 anchors
++-- phase_d_expand.py          D2: dictionary expansion with strict DSL
++-- phase_d_heal.py            D3: healing export/merge orchestration
++-- phase_d_worker.py          Standalone D3 healing worker (zero MA imports)
++-- phase_d_training.py        D4: DPO training data export from corrections
 ```
 
 ---

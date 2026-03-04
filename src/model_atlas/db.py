@@ -98,6 +98,49 @@ CREATE INDEX IF NOT EXISTS idx_model_anchors_anchor ON model_anchors(anchor_id);
 CREATE INDEX IF NOT EXISTS idx_metadata_key ON model_metadata(key);
 """
 
+_PHASE_D_SCHEMA = """
+CREATE TABLE IF NOT EXISTS phase_d_runs (
+    run_id      TEXT PRIMARY KEY,
+    phase       TEXT NOT NULL,
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    config      TEXT,
+    status      TEXT DEFAULT 'running',
+    summary     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_findings (
+    finding_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT REFERENCES phase_d_runs(run_id),
+    model_id      TEXT REFERENCES models(model_id),
+    mismatch_type TEXT NOT NULL,
+    bank          TEXT,
+    c2_anchor     TEXT,
+    det_anchor    TEXT,
+    severity      REAL DEFAULT 0.5,
+    detail        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS correction_events (
+    event_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            TEXT REFERENCES phase_d_runs(run_id),
+    model_id          TEXT REFERENCES models(model_id),
+    tier              TEXT NOT NULL,
+    original_prompt   TEXT,
+    original_response TEXT,
+    healed_response   TEXT,
+    anchors_added     TEXT,
+    anchors_removed   TEXT,
+    rationale         TEXT,
+    created_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_model ON audit_findings(model_id);
+CREATE INDEX IF NOT EXISTS idx_audit_run ON audit_findings(run_id);
+CREATE INDEX IF NOT EXISTS idx_correction_model ON correction_events(model_id);
+CREATE INDEX IF NOT EXISTS idx_correction_run ON correction_events(run_id);
+"""
+
 
 def _ensure_db_dir() -> None:
     NETWORK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -148,6 +191,7 @@ def init_db(conn: sqlite3.Connection | None = None) -> None:
     """Create tables and bootstrap anchor dictionary."""
     with transaction(conn) as c:
         c.executescript(_SCHEMA)
+        c.executescript(_PHASE_D_SCHEMA)
         _migrate_schema(c)
         # Bootstrap anchors (skip duplicates)
         c.executemany(
@@ -286,6 +330,120 @@ def set_metadata(
     )
 
 
+# --- Phase D Helpers ---
+
+
+def create_phase_d_run(
+    conn: sqlite3.Connection,
+    phase: str,
+    config: dict | None = None,
+) -> str:
+    """Create a new Phase D run record. Returns run_id (UUID)."""
+    import uuid
+    from datetime import datetime, timezone
+
+    run_id = str(uuid.uuid4())
+    conn.execute(
+        """INSERT INTO phase_d_runs (run_id, phase, started_at, config, status)
+           VALUES (?, ?, ?, ?, 'running')""",
+        (
+            run_id,
+            phase,
+            datetime.now(timezone.utc).isoformat(),
+            json.dumps(config) if config else None,
+        ),
+    )
+    return run_id
+
+
+def finish_phase_d_run(
+    conn: sqlite3.Connection,
+    run_id: str,
+    status: str,
+    summary: dict | None = None,
+) -> None:
+    """Update a Phase D run with completion status."""
+    from datetime import datetime, timezone
+
+    conn.execute(
+        """UPDATE phase_d_runs
+           SET finished_at = ?, status = ?, summary = ?
+           WHERE run_id = ?""",
+        (
+            datetime.now(timezone.utc).isoformat(),
+            status,
+            json.dumps(summary) if summary else None,
+            run_id,
+        ),
+    )
+
+
+def insert_audit_finding(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    mismatch_type: str,
+    bank: str | None = None,
+    c2_anchor: str | None = None,
+    det_anchor: str | None = None,
+    severity: float = 0.5,
+    detail: dict | None = None,
+) -> int:
+    """Insert an audit finding. Returns finding_id."""
+    cursor = conn.execute(
+        """INSERT INTO audit_findings
+           (run_id, model_id, mismatch_type, bank, c2_anchor, det_anchor, severity, detail)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            model_id,
+            mismatch_type,
+            bank,
+            c2_anchor,
+            det_anchor,
+            severity,
+            json.dumps(detail) if detail else None,
+        ),
+    )
+    return cursor.lastrowid or 0
+
+
+def insert_correction_event(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    tier: str,
+    original_prompt: str | None = None,
+    original_response: str | None = None,
+    healed_response: str | None = None,
+    anchors_added: list[str] | None = None,
+    anchors_removed: list[str] | None = None,
+    rationale: str | None = None,
+) -> int:
+    """Insert a correction event. Returns event_id."""
+    from datetime import datetime, timezone
+
+    cursor = conn.execute(
+        """INSERT INTO correction_events
+           (run_id, model_id, tier, original_prompt, original_response,
+            healed_response, anchors_added, anchors_removed, rationale, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            run_id,
+            model_id,
+            tier,
+            original_prompt,
+            original_response,
+            healed_response,
+            json.dumps(anchors_added) if anchors_added else None,
+            json.dumps(anchors_removed) if anchors_removed else None,
+            rationale,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    return cursor.lastrowid or 0
+
+
 # --- Re-exports for backward compatibility ---
 from .db_ingest import (  # noqa: E402
     get_connection as get_ingest_connection,
@@ -324,4 +482,8 @@ __all__ = [
     "network_stats",
     "get_ingest_connection",
     "init_ingest_db",
+    "create_phase_d_run",
+    "finish_phase_d_run",
+    "insert_audit_finding",
+    "insert_correction_event",
 ]

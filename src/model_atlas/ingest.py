@@ -643,6 +643,73 @@ def main() -> None:
         help="Run C4 offline validation (placeholder)",
     )
 
+    # Phase D commands
+    parser.add_argument(
+        "--audit-c2",
+        action="store_true",
+        help="Run D1 deterministic audit on C2 anchors",
+    )
+    parser.add_argument(
+        "--expand-dictionary",
+        metavar="SPEC_FILE",
+        help="D2: expand anchor dictionary from YAML spec",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview expansion without writing (use with --expand-dictionary)",
+    )
+    parser.add_argument(
+        "--export-d3",
+        type=int,
+        metavar="NUM_SHARDS",
+        help="D3: export healing prompts to sharded JSONL",
+    )
+    parser.add_argument(
+        "--heal-tier",
+        choices=["local", "claude"],
+        default="local",
+        help="D3: healing tier (default: local)",
+    )
+    parser.add_argument(
+        "--heal-budget",
+        type=int,
+        default=100,
+        help="D3: max models to heal (default: 100)",
+    )
+    parser.add_argument(
+        "--heal-seed",
+        type=int,
+        default=42,
+        help="D3: random seed for reproducible selection (default: 42)",
+    )
+    parser.add_argument(
+        "--merge-d3",
+        nargs="+",
+        metavar="FILE",
+        help="D3: merge healing result JSONL files",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="D3: run_id for merge (from export output)",
+    )
+    parser.add_argument(
+        "--export-training-data",
+        metavar="OUTPUT_PATH",
+        help="D4: export DPO training data from corrections",
+    )
+    parser.add_argument(
+        "--training-tier",
+        choices=["local", "claude", "all"],
+        default="all",
+        help="D4: filter training data by tier (default: all)",
+    )
+    parser.add_argument(
+        "--phase-d-status",
+        action="store_true",
+        help="Show Phase D run history and stats",
+    )
+
     parser.add_argument(
         "--verbose",
         "-v",
@@ -745,6 +812,125 @@ def main() -> None:
 
     if args.validate_ground_truth:
         print("C4 offline validation not yet implemented")
+        return
+
+    # Phase D dispatch
+    if args.audit_c2:
+        from .phase_d_audit import audit_c2
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        ingest_conn = db_ingest.get_connection()
+        db_ingest.init_db(ingest_conn)
+        result = audit_c2(network_conn, ingest_conn)
+        network_conn.close()
+        ingest_conn.close()
+        print(
+            f"D1 audit: {result.total_audited} models, "
+            f"{result.total_mismatches} mismatches, "
+            f"types={result.per_type_counts}"
+        )
+        return
+
+    if args.expand_dictionary:
+        from .phase_d_expand import expand_dictionary
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = expand_dictionary(network_conn, args.expand_dictionary, dry_run=args.dry_run)
+        network_conn.close()
+        print(
+            f"D2 expansion{'(dry run)' if args.dry_run else ''}: "
+            f"{result.anchors_created} anchors created, "
+            f"{result.models_linked} models linked, "
+            f"{result.models_queued} queued"
+        )
+        for label, stats in result.per_label.items():
+            print(f"  {label}: matched={stats['matched']} linked={stats.get('linked', 0)} queued={stats.get('queued', 0)}")
+        return
+
+    if args.export_d3 is not None:
+        from .phase_d_heal import export_d3
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        ingest_conn = db_ingest.get_connection()
+        db_ingest.init_db(ingest_conn)
+        result = export_d3(
+            network_conn, ingest_conn,
+            tier=args.heal_tier,
+            budget=args.heal_budget,
+            num_shards=args.export_d3,
+            seed=args.heal_seed,
+        )
+        network_conn.close()
+        ingest_conn.close()
+        print(
+            f"D3 export: {result.total_exported} models across "
+            f"{result.num_shards} shards (tier={result.tier}, run_id={result.run_id})"
+        )
+        return
+
+    if args.merge_d3:
+        from .phase_d_heal import merge_d3
+
+        if not args.run_id:
+            print("Error: --merge-d3 requires --run-id")
+            return
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = merge_d3(network_conn, args.merge_d3, args.run_id)
+        network_conn.close()
+        print(f"D3 merge: {result}")
+        return
+
+    if args.export_training_data:
+        from .phase_d_training import export_training_data
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        stats = export_training_data(
+            network_conn, args.export_training_data, tier=args.training_tier
+        )
+        network_conn.close()
+        print(
+            f"D4 export: {stats.total_examples} examples to {stats.output_path} "
+            f"(by_tier={stats.by_tier})"
+        )
+        return
+
+    if args.phase_d_status:
+        from .phase_d_training import get_training_data_stats
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+
+        # Show run history
+        print("Phase D Run History")
+        print(f"{'=' * 60}")
+        rows = network_conn.execute(
+            "SELECT run_id, phase, status, started_at, summary FROM phase_d_runs ORDER BY started_at DESC LIMIT 20"
+        ).fetchall()
+        for r in rows:
+            print(f"  {r[0][:8]}... phase={r[1]} status={r[2]} started={r[3]}")
+            if r[4]:
+                import json as _json
+                try:
+                    s = _json.loads(r[4])
+                    print(f"    summary: {s}")
+                except (ValueError, TypeError):
+                    pass
+
+        # Show training data stats
+        stats = get_training_data_stats(network_conn)
+        print(f"\nTraining Data: {stats['total_corrections']} corrections, "
+              f"{stats['distinct_models']} models")
+        if stats["by_tier"]:
+            print(f"  by tier: {stats['by_tier']}")
+        if stats["by_mismatch_type"]:
+            print(f"  by mismatch: {stats['by_mismatch_type']}")
+
+        network_conn.close()
         return
 
     if args.seed is not None:

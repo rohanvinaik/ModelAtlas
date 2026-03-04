@@ -66,3 +66,12 @@ VIBE_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 
 # Phase C3 quality gate threshold
 QUALITY_GATE_MIN_SCORE = 0.5
+
+# Phase D work directories
+PHASE_D_WORK_DIR = CACHE_DIR / "phase_d_work"
+PHASE_D_TRAINING_DIR = CACHE_DIR / "phase_d_training"
+
+# Phase D audit and healing thresholds
+AUDIT_MISMATCH_THRESHOLD = 0.7  # audit_score below this → healing candidate
+HEAL_CLAUDE_BUDGET_FRACTION = 0.001  # 0.1% of corpus per session
+HEAL_DEFAULT_SEED = 42

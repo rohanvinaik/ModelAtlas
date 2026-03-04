@@ -1,0 +1,58 @@
+expansions:
+  - label: "biology-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
+        - type: "tag_exact"
+          value: "biology"
+        - type: "name_regex"
+          value: "\\b(?:bio(?:logy|med|informatics|gpt)|genomic|proteom|dna|rna|protein)\\b"
+      min_matches: 1
+    confidence: 0.7
+
+  - label: "chemistry-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
+        - type: "tag_exact"
+          value: "chemistry"
+        - type: "name_regex"
+          value: "\\b(?:chem|molecule|molecular|smiles|drug(?:like)?)\\b"
+      min_matches: 1
+    confidence: 0.7
+
+  - label: "physics-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
+        - type: "tag_exact"
+          value: "physics"
+        - type: "name_regex"
+          value: "\\b(?:physics|quantum|astro|cosmol)\\b"
+      min_matches: 1
+    confidence: 0.7
+
+  - label: "music-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
+        - type: "tag_exact"
+          value: "music"
+        - type: "name_regex"
+          value: "\\b(?:music|audio(?:gen|craft)|midi|melody)\\b"
+        - type: "pipeline_tag_in"
+          value: ["text-to-audio"]
+      min_matches: 1
+    confidence: 0.7

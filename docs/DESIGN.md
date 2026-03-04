@@ -84,6 +84,40 @@ model_metadata(model_id, key) → value, value_type
 
 Indices on `positions(bank)`, `links(source_id)`, `links(target_id)`, `model_anchors(model_id)`, `model_anchors(anchor_id)`, `metadata(key)`. The bidirectional anchor index is critical — "what models share this anchor?" must be fast.
 
+### 2.6 Anchor Lifecycle
+
+Anchors progress through a lifecycle of increasing confidence:
+
+```
+Bootstrap (seed dictionary, ~130 labels)
+    │
+    ▼
+Extract (Tier 1 deterministic + Tier 2 pattern, confidence 0.8-1.0)
+    │
+    ▼
+C2 Classify (3B LLM selects from dictionary, confidence 0.5)
+    │
+    ▼
+D1 Audit (deterministic re-check, produces audit_score per model)
+    │
+    ▼
+D2 Expand (add missing labels via strict DSL, confidence 0.7)
+    │
+    ▼
+D3 Heal (LLM correction from raw evidence, confidence 0.6)
+    │
+    ▼
+D4 Train (corrections → DPO JSONL for future C2 improvement)
+```
+
+Each stage has explicit provenance tracking:
+- `anchors.source`: `bootstrap`, `deterministic`, `pattern`, `vibe`, `expansion`
+- `model_anchors.confidence`: decreases with extraction tier uncertainty
+- `correction_events`: full audit trail of original → healed with rationale
+- `phase_d_runs`: every D-phase operation has a UUID, config, and summary
+
+The provenance layer (`phase_d_runs`, `audit_findings`, `correction_events`) makes every classification decision auditable and every correction a training example.
+
 ## 3. Extraction Pipeline
 
 Three tiers of increasing complexity extract structure from raw model data.
@@ -321,6 +355,11 @@ src/model_atlas/
 ├── phase_c_worker.py      Standalone C2 worker (zero MA imports, scp-deployable)
 ├── phase_c1_extended.py   Extended C1 worker (HF API + librarian-bots corpus)
 ├── phase_c3_worker.py     Standalone C3 quality gate worker (zero MA imports)
+├── phase_d_audit.py       D1: deterministic audit of C2 anchor assignments
+├── phase_d_expand.py      D2: dictionary expansion with strict DSL
+├── phase_d_heal.py        D3: healing export/merge orchestration
+├── phase_d_worker.py      Standalone D3 healing worker (zero MA imports)
+├── phase_d_training.py    D4: DPO training data export from corrections
 ├── search/
 │   ├── structured.py      Layer 1: HuggingFace Hub API search
 │   └── fuzzy.py           Layer 2: RapidFuzz token ratio scoring
@@ -359,6 +398,11 @@ All tunable constants live in `config.py`:
 | `PHASE_C_WORK_DIR` | ~/.cache/model-atlas/phase_c_work | C2 shard directory |
 | `PHASE_C1_WORK_DIR` | ~/.cache/model-atlas/phase_c1_work | C1 export directory |
 | `PHASE_C3_WORK_DIR` | ~/.cache/model-atlas/phase_c3_work | C3 shard directory |
+| `PHASE_D_WORK_DIR` | ~/.cache/model-atlas/phase_d_work | D3 healing shard directory |
+| `PHASE_D_TRAINING_DIR` | ~/.cache/model-atlas/phase_d_training | D4 training data directory |
+| `AUDIT_MISMATCH_THRESHOLD` | 0.70 | Audit score below this → healing candidate |
+| `HEAL_CLAUDE_BUDGET_FRACTION` | 0.001 | 0.1% of corpus per Claude session |
+| `HEAL_DEFAULT_SEED` | 42 | Default seed for reproducible selection |
 
 ## 9. Invariants
 
