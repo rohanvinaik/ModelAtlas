@@ -3,11 +3,23 @@
 from __future__ import annotations
 
 import json
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from model_atlas.phase_d_worker import _parse_and_validate, main
+from model_atlas.phase_d_worker import _parse_and_validate
+
+
+@pytest.fixture()
+def mock_openai():
+    """Inject a fake openai module so main() can import from it."""
+    fake_mod = types.ModuleType("openai")
+    mock_cls = MagicMock()
+    fake_mod.OpenAI = mock_cls  # type: ignore[attr-defined]
+    with patch.dict(sys.modules, {"openai": fake_mod}):
+        yield mock_cls
 
 
 class TestParseAndValidate:
@@ -111,18 +123,22 @@ class TestParseAndValidate:
 
 
 class TestWorkerMain:
-    def _make_mock_response(self, content):
-        """Create a mock OpenAI chat completion response."""
+    def _make_mock_client(self, content):
+        """Create a mock OpenAI client that returns content."""
         msg = MagicMock()
         msg.content = content
         choice = MagicMock()
         choice.message = msg
         resp = MagicMock()
         resp.choices = [choice]
-        return resp
+        client = MagicMock()
+        client.chat.completions.create.return_value = resp
+        return client
 
-    def test_processes_input_shard(self, tmp_path):
+    def test_processes_input_shard(self, tmp_path, mock_openai):
         """main() reads input JSONL, calls LLM, writes output JSONL."""
+        from model_atlas.phase_d_worker import main
+
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
@@ -140,13 +156,11 @@ class TestWorkerMain:
             "selected_anchors": ["reasoning"],
             "rationale": "Fixed classification",
         })
-
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = self._make_mock_response(llm_output)
+        mock_client = self._make_mock_client(llm_output)
+        mock_openai.return_value = mock_client
 
         with patch("sys.argv", ["worker", "--input", str(inp), "--output", str(out)]):
-            with patch("openai.OpenAI", return_value=mock_client):
-                main()
+            main()
 
         lines = out.read_text().strip().split("\n")
         assert len(lines) == 1
@@ -155,8 +169,10 @@ class TestWorkerMain:
         assert result["selected_anchors"] == ["reasoning"]
         assert result["summary"] == "A reasoning model"
 
-    def test_handles_llm_error(self, tmp_path):
+    def test_handles_llm_error(self, tmp_path, mock_openai):
         """main() writes error record when LLM call fails."""
+        from model_atlas.phase_d_worker import main
+
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
@@ -168,40 +184,41 @@ class TestWorkerMain:
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = RuntimeError("API down")
+        mock_openai.return_value = mock_client
 
         with patch("sys.argv", ["worker", "--input", str(inp), "--output", str(out)]):
-            with patch("openai.OpenAI", return_value=mock_client):
-                main()
+            main()
 
         result = json.loads(out.read_text().strip())
         assert result["model_id"] == "test/model-a"
         assert "error" in result
 
-    def test_skips_blank_lines(self, tmp_path):
+    def test_skips_blank_lines(self, tmp_path, mock_openai):
         """main() skips blank and invalid JSON lines."""
+        from model_atlas.phase_d_worker import main
+
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
         inp.write_text("\n\nnot-json\n")
 
         mock_client = MagicMock()
+        mock_openai.return_value = mock_client
 
         with patch("sys.argv", ["worker", "--input", str(inp), "--output", str(out)]):
-            with patch("openai.OpenAI", return_value=mock_client):
-                main()
+            main()
 
-        # No valid lines processed, output should be empty
         assert out.read_text().strip() == ""
         mock_client.chat.completions.create.assert_not_called()
 
-    def test_respects_shutdown_signal(self, tmp_path):
+    def test_respects_shutdown_signal(self, tmp_path, mock_openai):
         """main() stops processing on shutdown signal."""
         import model_atlas.phase_d_worker as worker_mod
+        from model_atlas.phase_d_worker import main
 
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
-        # Write two items
         for i in range(2):
             with open(inp, "a") as f:
                 f.write(json.dumps({
@@ -214,17 +231,14 @@ class TestWorkerMain:
             "summary": "A model",
             "selected_anchors": ["chat"],
         })
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = self._make_mock_response(llm_output)
+        mock_client = self._make_mock_client(llm_output)
+        mock_openai.return_value = mock_client
 
-        # Set shutdown flag before running — should stop after checking it
         worker_mod._shutdown = True
         try:
             with patch("sys.argv", ["worker", "--input", str(inp), "--output", str(out)]):
-                with patch("openai.OpenAI", return_value=mock_client):
-                    main()
+                main()
 
-            # Should have processed 0 items since shutdown was set before loop
             assert out.read_text().strip() == ""
         finally:
             worker_mod._shutdown = False
