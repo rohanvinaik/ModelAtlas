@@ -11,9 +11,9 @@ Two tiers:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import random
 import sqlite3
 from dataclasses import dataclass
 
@@ -123,6 +123,16 @@ def _get_audit_findings_for_model(
     return results
 
 
+def _deterministic_sample(items: list[str], n: int, seed: int) -> list[str]:
+    """Deterministic sample using hash-based scoring (no PRNG)."""
+    scored = []
+    for item in items:
+        h = hashlib.sha256(f"{seed}:{item}".encode()).hexdigest()
+        scored.append((h, item))
+    scored.sort()
+    return [item for _, item in scored[:n]]
+
+
 def select_healing_candidates(
     conn: sqlite3.Connection,
     ingest_conn: sqlite3.Connection | None,
@@ -135,8 +145,6 @@ def select_healing_candidates(
     Local tier: all models with audit_score < threshold.
     Claude tier: top N by downloads + random injection of high-error models.
     """
-    rng = random.Random(seed)  # NOSONAR — reproducible sampling, not security
-
     if tier == "local":
         rows = conn.execute(
             """SELECT model_id FROM model_metadata
@@ -177,13 +185,13 @@ def select_healing_candidates(
         if len(candidates) <= claude_budget:
             selected = candidates
         else:
-            # Top half by downloads, bottom half random from high-error
+            # Top half by downloads, bottom half deterministic sample from high-error
             top_n = claude_budget // 2
             selected = candidates[:top_n]
 
             remaining = candidates[top_n:]
             random_n = claude_budget - top_n
-            selected.extend(rng.sample(remaining, min(random_n, len(remaining))))
+            selected.extend(_deterministic_sample(remaining, random_n, seed))
 
         metadata = {
             "tier": tier,
@@ -191,7 +199,7 @@ def select_healing_candidates(
             "total_candidates": len(candidates),
             "selected": len(selected),
             "claude_budget": claude_budget,
-            "strategy": "top_downloads_plus_random_high_error",
+            "strategy": "top_downloads_plus_deterministic_high_error",
         }
 
     else:
