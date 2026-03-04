@@ -183,7 +183,7 @@ def _estimate_params_billions(
 
     # 2. Parse from model name (7B, 1.5B, 70b, 0.5b)
     for text in [model_id, *tags]:
-        match = re.search(r"(\d+(?:\.\d+)?)[bB]", text)
+        match = re.search(r"(\d+(?:\.\d+)?)[bB]", text)  # NOSONAR — linear regex, no backtracking risk
         if match:
             val = float(match.group(1))
             if 0.1 <= val <= 1000:

@@ -22,7 +22,7 @@ _TIMEOUT = 5  # seconds
 
 def _parse_param_size(size_str: str) -> float | None:
     """Parse Ollama parameter size string (e.g. '7B', '1.5B') to billions."""
-    match = re.search(r"(\d+(?:\.\d+)?)\s*([BMK])", size_str, re.IGNORECASE)
+    match = re.search(r"(\d+(?:\.\d+)?)\s*([BMK])", size_str, re.IGNORECASE)  # NOSONAR — linear regex
     if not match:
         return None
     val = float(match.group(1))

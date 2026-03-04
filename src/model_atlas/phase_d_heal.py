@@ -135,7 +135,7 @@ def select_healing_candidates(
     Local tier: all models with audit_score < threshold.
     Claude tier: top N by downloads + random injection of high-error models.
     """
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # NOSONAR — reproducible sampling, not security
 
     if tier == "local":
         rows = conn.execute(
@@ -346,7 +346,7 @@ def export_d3(
             c2_anchors = [
                 a["label"]
                 for a in current_anchors
-                if a["confidence"] == 0.5
+                if abs(a["confidence"] - 0.5) < 1e-9
             ]
             original_response = json.dumps({
                 "summary": qwen_row[0] if qwen_row else "",
