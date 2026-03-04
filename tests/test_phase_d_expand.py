@@ -211,6 +211,98 @@ class TestExpandDictionary:
         result = expand_dictionary(network_conn, spec)
         assert result.anchors_created == 0
 
+    def test_auto_link_tag_regex(self, network_conn, tmp_path):
+        """auto_link with tag_regex matches tags by regex."""
+        spec = _write_spec(tmp_path, [{
+            "label": "bio-regex",
+            "bank": "DOMAIN",
+            "mode": "auto_link",
+            "confidence": 0.7,
+            "match_rules": {
+                "operator": "OR",
+                "conditions": [{"type": "tag_regex", "value": r"\bbio"}],
+                "min_matches": 1,
+            },
+        }])
+        _add_model(network_conn, "test/model-a", tags=["biology", "science"])
+        _add_model(network_conn, "test/model-b", tags=["math"])
+
+        result = expand_dictionary(network_conn, spec)
+        assert result.models_linked == 1
+
+    def test_metadata_equals_match(self, network_conn, tmp_path):
+        """metadata_equals matches key=value in model_metadata."""
+        spec = _write_spec(tmp_path, [{
+            "label": "gen-domain",
+            "bank": "DOMAIN",
+            "mode": "auto_link",
+            "confidence": 0.7,
+            "match_rules": {
+                "operator": "OR",
+                "conditions": [{"type": "metadata_equals", "value": "pipeline_tag=text-generation"}],
+                "min_matches": 1,
+            },
+        }])
+        _add_model(network_conn, "test/gen-model", pipeline_tag="text-generation")
+        _add_model(network_conn, "test/cls-model", pipeline_tag="text-classification")
+
+        result = expand_dictionary(network_conn, spec)
+        assert result.models_linked == 1
+
+    def test_metadata_equals_missing_separator(self, network_conn, tmp_path):
+        """metadata_equals with missing '=' does not crash."""
+        spec = _write_spec(tmp_path, [{
+            "label": "bad-meta",
+            "bank": "DOMAIN",
+            "mode": "auto_link",
+            "confidence": 0.7,
+            "match_rules": {
+                "operator": "OR",
+                "conditions": [{"type": "metadata_equals", "value": "no_equals_here"}],
+                "min_matches": 1,
+            },
+        }])
+        _add_model(network_conn, "test/model-a")
+
+        result = expand_dictionary(network_conn, spec)
+        assert result.models_linked == 0
+
+    def test_invalid_regex_does_not_crash(self, network_conn, tmp_path):
+        """Invalid regex in name_regex is handled gracefully."""
+        spec = _write_spec(tmp_path, [{
+            "label": "bad-regex",
+            "bank": "DOMAIN",
+            "mode": "auto_link",
+            "confidence": 0.7,
+            "match_rules": {
+                "operator": "OR",
+                "conditions": [{"type": "name_regex", "value": "[invalid("}],
+                "min_matches": 1,
+            },
+        }])
+        _add_model(network_conn, "test/model-a")
+
+        result = expand_dictionary(network_conn, spec)
+        assert result.models_linked == 0
+
+    def test_invalid_tag_regex_does_not_crash(self, network_conn, tmp_path):
+        """Invalid regex in tag_regex is handled gracefully."""
+        spec = _write_spec(tmp_path, [{
+            "label": "bad-tag-regex",
+            "bank": "DOMAIN",
+            "mode": "auto_link",
+            "confidence": 0.7,
+            "match_rules": {
+                "operator": "OR",
+                "conditions": [{"type": "tag_regex", "value": "[bad("}],
+                "min_matches": 1,
+            },
+        }])
+        _add_model(network_conn, "test/model-a", tags=["something"])
+
+        result = expand_dictionary(network_conn, spec)
+        assert result.models_linked == 0
+
     def test_run_record_created(self, network_conn, tmp_path):
         """Expansion creates a phase_d_runs record."""
         spec = _write_spec(tmp_path, [{

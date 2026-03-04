@@ -291,14 +291,17 @@ def export_d3(
     dom_labels = _get_anchor_labels_by_bank(conn, "DOMAIN")
     all_valid = sorted(set(cap_labels + dom_labels))
 
-    # Open shard files
-    shard_files = []
-    for i in range(num_shards):
-        shard_files.append(
-            open(PHASE_D_WORK_DIR / f"d3_{tier}_shard_{i}.jsonl", "w")
-        )
+    # Open shard files using ExitStack for safe resource management
+    from contextlib import ExitStack
 
-    try:
+    with ExitStack() as stack:
+        shard_files = [
+            stack.enter_context(
+                open(PHASE_D_WORK_DIR / f"d3_{tier}_shard_{i}.jsonl", "w")
+            )
+            for i in range(num_shards)
+        ]
+
         for idx, model_id in enumerate(selected):
             # Get raw_json from ingest DB
             raw: dict = {}
@@ -361,9 +364,6 @@ def export_d3(
 
             shard_idx = idx % num_shards
             shard_files[shard_idx].write(json.dumps(item) + "\n")
-    finally:
-        for f in shard_files:
-            f.close()
 
     db.finish_phase_d_run(
         conn, run_id, "exported",

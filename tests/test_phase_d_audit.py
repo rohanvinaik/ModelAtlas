@@ -76,22 +76,26 @@ class TestAuditC2:
         # → gap for instruction-following
         assert result.total_mismatches >= 1
 
-    def test_confidence_conflict_detected(self, network_conn):
+    def test_confidence_conflict_detected(self, network_conn, monkeypatch):
         """Same anchor at very different confidences → confidence_conflict."""
+        from model_atlas import phase_d_audit
+
         _add_model(network_conn, "test/model-a")
         label = "code-generation"
         anchor_id = db.get_or_create_anchor(network_conn, label, "CAPABILITY")
-        # C2 at 0.5
         db.link_anchor(network_conn, "test/model-a", anchor_id, confidence=0.5)
-        # Also exists at high confidence from deterministic (0.9)
-        # We need a separate anchor entry for the det signal to show up in _get_det_anchors
-        # Actually link_anchor is INSERT OR REPLACE, so we can only have one entry
-        # Confidence conflict requires same label at both 0.5 and >=0.8
-        # This can't happen with one row. The mismatch taxonomy checks
-        # c2_anchors (conf=0.5) vs det_anchors (conf>=0.8) for the same label.
-        # With INSERT OR REPLACE, last write wins. So this test needs a different approach.
-        # Skip - confidence_conflict requires specific DB state that's hard to set up
-        # with INSERT OR REPLACE semantics.
+
+        # The confidence_conflict path compares _get_c2_anchors (conf=0.5) vs
+        # _get_det_anchors (conf>=0.8) for the same label. With INSERT OR REPLACE
+        # on (model_id, anchor_id), one row can't hold two confidences.
+        # Patch _get_det_anchors to return a high-confidence match for this label.
+        def _fake_det_anchors(conn, model_id):
+            return {"CAPABILITY": [(label, 0.9)]}
+
+        monkeypatch.setattr(phase_d_audit, "_get_det_anchors", _fake_det_anchors)
+
+        result = audit_c2(network_conn)
+        assert result.per_type_counts.get("confidence_conflict", 0) >= 1
 
     def test_audit_score_stored(self, network_conn):
         """Audit stores per-model audit_score in metadata."""

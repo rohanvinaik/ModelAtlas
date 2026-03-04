@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import sys
 
@@ -72,9 +73,8 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Input shard JSONL file")
     parser.add_argument("--output", required=True, help="Output results JSONL file")
     parser.add_argument("--model", default="qwen2.5:3b", help="Ollama model name")
-    parser.add_argument(
-        "--url", default="http://localhost:11434/v1", help="Ollama API base URL"
-    )
+    default_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    parser.add_argument("--url", default=default_url, help="Ollama API base URL")
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -82,7 +82,7 @@ def main() -> None:
 
     from openai import OpenAI
 
-    client = OpenAI(base_url=args.url, api_key="ollama")
+    client = OpenAI(base_url=args.url, api_key=os.environ.get("OLLAMA_API_KEY", "ollama"))
 
     count = 0
     errors = 0

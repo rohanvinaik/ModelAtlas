@@ -64,16 +64,27 @@ def _check_condition(
         return value in tags
 
     if ctype == "tag_regex":
-        compiled = re.compile(value, re.IGNORECASE)
+        try:
+            compiled = re.compile(value, re.IGNORECASE)
+        except re.error:
+            logger.warning("Invalid regex in tag_regex condition: %s", value)
+            return False
         return any(compiled.search(t) for t in tags)
 
     if ctype == "pipeline_tag_in":
         return pipeline_tag in value
 
     if ctype == "name_regex":
-        return bool(re.search(value, model_id, re.IGNORECASE))
+        try:
+            return bool(re.search(value, model_id, re.IGNORECASE))
+        except re.error:
+            logger.warning("Invalid regex in name_regex condition: %s", value)
+            return False
 
     if ctype == "metadata_equals":
+        if "=" not in value:
+            logger.warning("metadata_equals value missing '=': %s", value)
+            return False
         key, expected = value.split("=", 1)
         return metadata.get(key) == expected
 
