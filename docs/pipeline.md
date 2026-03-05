@@ -641,8 +641,8 @@ python phase_c3_worker.py --input quality_gate.jsonl --output results_c3.jsonl \
 
 2. Verify connectivity:
    ```bash
-   curl http://192.168.50.73:11434/v1/models   # macpro
-   curl http://192.168.50.17:11434/v1/models   # homebridge
+   curl http://<IP>/v1/models   # macpro
+   curl http://<IP>/v1/models   # homebridge
    ```
 
 3. Confirm Phase B is complete:
