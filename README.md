@@ -6,13 +6,46 @@
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 
-Have you ever spent a wasted afternoon digging though HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's burried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment. 
+Have you ever spent a wasted afternoon digging through HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's buried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment.
 
 Regardless, it's clear that the field is starting to suffer from its own success; the profusion of models that are small enough to fit on consumer hardware has made finding the *right* model almost impossible. HF's model search is...adequate. If you know what you're looking for. But if you *don't* know what you're looking for--if you're looking to *discover* a model that fits your specific requirements--you're left navigating a jungle of LLMs without a map.
 
-ModelAtlas is the map. 
+ModelAtlas is the map.
 
 A structured semantic network of ML models. Built with simple symbolic operations. Typed, structural data encoding of relative model characteristics, with a tiny footprint and searches executed at the speed of thought. All exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape itself. Get a subconscious "vibe" of model architectures, and help you find the models you didn't know you were searching for.
+
+### See the difference
+
+You want a small code model with tool-calling that runs on consumer hardware.
+
+**HuggingFace** gives you the most popular code models, regardless of size:
+
+```
+Qwen/Qwen2.5-Coder-32B-Instruct          847K downloads
+Qwen/Qwen3-Coder-480B-A35B-Instruct       75K downloads
+Qwen/Qwen3-Coder-Next                      1.1M downloads
+Phind/Phind-CodeLlama-34B-v2                2K downloads
+```
+
+32B. 480B. Not small. HuggingFace can filter by tag and sort by popularity, but it can't express "small" as a *direction* or "tool-calling" as a *capability* — so it gives you the biggest, most popular code models instead.
+
+**ModelAtlas** navigates to exactly what you asked for:
+
+```python
+navigate_models(efficiency=-1, capability=+1,
+                require_anchors=["code-generation"],
+                prefer_anchors=["instruction-following", "tool-calling"])
+```
+
+```
+LiquidAI/LFM2.5-1.2B-Instruct-GGUF        1B  | code-generation, function-calling, GGUF
+LocoreMind/LocoOperator-4B                  3B  | code-generation, function-calling, GGUF
+Manojb/Qwen3-4B-toolcalling-gguf-codex     3B  | code-generation, function-calling, GGUF
+adityakum667388/lumichat_coder-v2.1         3B  | code-generation, consumer-GPU-viable
+codelion/Llama-3.2-1B-Instruct-tool-calling 1B  | code-generation, function-calling
+```
+
+1B-3B models. Code generation. Tool-calling. Consumer-GPU-viable. GGUF-ready. Every result is a direct hit — not because of keyword matching, but because ModelAtlas has a coordinate system that knows what "small" and "capable" mean as *positions in model space*.
 
 ## The gap
 
@@ -21,7 +54,7 @@ HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and u
 There isn't an API call or a search bar that answers:
 
 - "What's the most general Llama base that supports tool-calling and fits on consumer GPU?"
-- "What are some models that arearchitecturally similar to Mamba, but with instruction tuning?"
+- "What are some models that are architecturally similar to Mamba, but with instruction tuning?"
 - "Can we find models like *this* one, but smaller and more code-focused?"
 
 These aren't filter queries. They're **navigation** — and HuggingFace doesn't have a coordinate system to navigate with.
@@ -98,7 +131,35 @@ Or manually: go to [Releases](https://github.com/rohanvinaik/ModelAtlas/releases
 uv run model-atlas
 ```
 
-MCP server — available in any model that follows the standard.
+**4. Add to your MCP client:**
+
+For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "model-atlas": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/ModelAtlas", "run", "model-atlas"]
+    }
+  }
+}
+```
+
+For Claude Code, add to `.mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "model-atlas": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/ModelAtlas", "run", "model-atlas"]
+    }
+  }
+}
+```
+
+That's it. Your LLM can now see the model landscape.
 
 Without the pre-built network, ModelAtlas starts with an empty database. You can build your own using `hf_build_index`, but the pre-built network includes 19K+ models with multi-tier extraction already applied.
 
@@ -150,7 +211,7 @@ navigate_models(
 
 **Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
 
-Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logmarithic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. 
+Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logarithmic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. 
 
 Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
 
