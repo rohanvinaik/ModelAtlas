@@ -1,0 +1,83 @@
+{
+  "materializer_version": "0.1.0",
+  "aggregate_hash": "1a5e8ef28c6e3d88",
+  "pages": [
+    {
+      "id": "architecture-data",
+      "title": "Architecture: Data Distribution & Versioning",
+      "path": "architecture-data.md",
+      "source_hash": "4035af9ea73748eb",
+      "spec_hash": "79741e360c5a6a5a",
+      "file_hash": "f483c4ef573ea779",
+      "sources": [
+        "docs/data-distribution.md"
+      ],
+      "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "architecture-pipeline",
+      "title": "Architecture: Extraction Pipeline",
+      "path": "architecture-pipeline.md",
+      "source_hash": "d71e71a070e02cfa",
+      "spec_hash": "37c297aca4939f71",
+      "file_hash": "8a1860fee8716acc",
+      "sources": [
+        "docs/pipeline.md"
+      ],
+      "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "architecture-server",
+      "title": "Architecture: MCP Server & Query Engine",
+      "path": "architecture-server.md",
+      "source_hash": "42e35429474ea311",
+      "spec_hash": "1e5142b9115a095c",
+      "file_hash": "d3cffbbfba41c270",
+      "sources": [
+        "docs/DESIGN.md"
+      ],
+      "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "home",
+      "title": "Home",
+      "path": "home.md",
+      "source_hash": "e3b0c44298fc1c14",
+      "spec_hash": "5e436c77598846fc",
+      "file_hash": "5d19dcf94bb7be90",
+      "sources": [],
+      "audience": "user",
+      "theory_scope": false
+    },
+    {
+      "id": "theory-overview",
+      "title": "Theory: Signed Hierarchies & Semantic Navigation",
+      "path": "theory-overview.md",
+      "source_hash": "66420f957e540e9c",
+      "spec_hash": "a7a7511f0bf718c9",
+      "file_hash": "0e16eab580b1d808",
+      "sources": [
+        "docs/DESIGN.md",
+        "README.md"
+      ],
+      "audience": "theory",
+      "theory_scope": false
+    },
+    {
+      "id": "user-guide",
+      "title": "User Guide: Installation & Usage",
+      "path": "user-guide.md",
+      "source_hash": "fe625fdc9c58f780",
+      "spec_hash": "b442a02451288ea0",
+      "file_hash": "096e979dea81ca5a",
+      "sources": [
+        "README.md"
+      ],
+      "audience": "user",
+      "theory_scope": false
+    }
+  ]
+}

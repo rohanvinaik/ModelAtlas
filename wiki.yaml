@@ -1,0 +1,61 @@
+materializer_version: "0.1.0"
+
+defaults:
+  theory_scope: false
+  audience: user
+
+pages:
+  - id: home
+    title: "Home"
+    audience: user
+    sources: []
+    auto_index: true
+
+  - id: theory-overview
+    title: "Theory: Signed Hierarchies & Semantic Navigation"
+    audience: theory
+    sources:
+      - path: docs/DESIGN.md
+        sections:
+          - "1. Core Thesis"
+          - "2. Data Model"
+      - path: README.md
+        sections:
+          - "The gap"
+          - "The idea"
+          - "What this is not"
+
+  - id: architecture-server
+    title: "Architecture: MCP Server & Query Engine"
+    audience: operator
+    sources:
+      - path: docs/DESIGN.md
+        sections:
+          - "4. Query Engines"
+          - "5. Source Adapters"
+
+  - id: architecture-pipeline
+    title: "Architecture: Extraction Pipeline"
+    audience: operator
+    sources:
+      - path: docs/pipeline.md
+        sections: all
+
+  - id: architecture-data
+    title: "Architecture: Data Distribution & Versioning"
+    audience: operator
+    sources:
+      - path: docs/data-distribution.md
+        sections: all
+
+  - id: user-guide
+    title: "User Guide: Installation & Usage"
+    audience: user
+    sources:
+      - path: README.md
+        sections:
+          - "Beta status"
+          - "Quick start"
+          - "Usage"
+
+promotions: []
