@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import WikiConfig
-from .manifest import Manifest, compute_file_hash, compute_source_hash, load_manifest
+from .manifest import compute_file_hash, compute_source_hash, load_manifest
 
 
 @dataclass

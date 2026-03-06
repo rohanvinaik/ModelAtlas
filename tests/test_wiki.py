@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
-from model_atlas.wiki.config import PageConfig, SourceSpec, WikiConfig, load_config
+from model_atlas.wiki.config import SourceSpec, WikiConfig, load_config
 from model_atlas.wiki.drift import check_drift
 from model_atlas.wiki.extractor import extract_sections
 from model_atlas.wiki.manifest import (
     Manifest,
     PageEntry,
     compute_file_hash,
-    compute_hash,
     compute_source_hash,
     load_manifest,
     save_manifest,
@@ -214,7 +212,7 @@ class TestDrift:
     def test_orphaned_page_detected(self, wiki_config: WikiConfig, wiki_tree: Path):
         """A page in manifest but removed from config is orphaned."""
         out = wiki_tree / ".wiki"
-        manifest = materialize(wiki_config, wiki_tree, out)
+        materialize(wiki_config, wiki_tree, out)
 
         # Remove last page from config
         removed = wiki_config.pages.pop()
