@@ -74,12 +74,33 @@ The network is directionally correct and dense enough for the core use case: giv
 
 ## Quick start
 
+**1. Install:**
+
 ```bash
 uv sync
+```
+
+**2. Download the pre-built network:**
+
+The semantic network is distributed as a SQLite file attached to [GitHub Releases](https://github.com/rohanvinaik/ModelAtlas/releases). Download the latest `network.db` and place it in the cache directory:
+
+```bash
+# Download latest release (update URL for current version)
+curl -L -o ~/.cache/model-atlas/network.db \
+  https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
+```
+
+Or manually: go to [Releases](https://github.com/rohanvinaik/ModelAtlas/releases), download `network.db`, and move it to `~/.cache/model-atlas/`.
+
+**3. Run:**
+
+```bash
 uv run model-atlas
 ```
 
 MCP server — available in any model that follows the standard.
+
+Without the pre-built network, ModelAtlas starts with an empty database. You can build your own using `hf_build_index`, but the pre-built network includes 19K+ models with multi-tier extraction already applied.
 
 ## Usage
 
@@ -150,9 +171,20 @@ C1 and C2 run in parallel on different resources (transformers vs Ollama). Summa
 
 See [`docs/pipeline.md`](docs/pipeline.md) for the full operational reference.
 
+## Data distribution
+
+The semantic network (`network.db`) is distributed separately from the code. The database is ~80MB and contains the full model graph, anchor dictionary, and metadata.
+
+**GitHub Releases** (current): Each beta release includes `network.db` as a release asset. Download once, place in `~/.cache/model-atlas/`, and the MCP server picks it up automatically. New releases are cut as the correction pipeline improves accuracy and coverage.
+
+**HuggingFace Dataset** (planned): The network will also be published as a HuggingFace dataset for discoverability within the ML community. This gives download stats, versioned snapshots, and a familiar interface for ML practitioners. The dataset will include `network.db` plus a metadata card documenting anchor dictionary coverage, validation metrics, and extraction provenance.
+
+See [`docs/data-distribution.md`](docs/data-distribution.md) for release procedures and versioning policy.
+
 ## Design reference
 
 - Theory and design: [`docs/DESIGN.md`](docs/DESIGN.md)
 - Pipeline reference: [`docs/pipeline.md`](docs/pipeline.md)
+- Data distribution: [`docs/data-distribution.md`](docs/data-distribution.md)
 - Architectural spec: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
 - Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
