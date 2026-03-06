@@ -40,7 +40,7 @@ pages:
 
   - id: architecture-server
     title: "Architecture: MCP Server & Query Engine"
-    audience: developer
+    audience: operator
     sources:
       - path: docs/DESIGN.md
         sections:
@@ -84,15 +84,15 @@ Every materialized page traces to specific source files and sections. If a page 
 
 ### 1.2 Deterministic Materializer
 
-Same inputs → byte-identical outputs. This means:
+Same inputs → byte-identical outputs. This applies to all generated artifacts: page files, manifest, and frontmatter. This means:
 
-- No timestamps in output (provenance uses content hashes, not dates)
-- No non-deterministic ordering (sections rendered in config-declared order)
+- No timestamps anywhere in generated output (provenance uses content hashes, not dates)
+- No non-deterministic ordering (sections rendered in config-declared order, manifest pages sorted by `id`)
 - Source content is read, hashed, then rendered through templates
 - Hash algorithm: SHA-256, hex-encoded, truncated to 16 chars for readability
 - Materializer version is pinned in config and stamped in output
 
-Determinism is testable: run materializer twice on same inputs, diff outputs, expect zero differences.
+Determinism is testable: run materializer twice on same inputs, diff all outputs (pages + manifest), expect zero differences.
 
 ### 1.3 Provenance Frontmatter
 
@@ -104,8 +104,9 @@ generated: true
 generated_from:
   - docs/DESIGN.md
   - README.md
-source_hash: a1b2c3d4e5f6g7h8    # SHA-256 of concatenated source content
-page_hash: h8g7f6e5d4c3b2a1      # SHA-256 of page body (excluding frontmatter)
+source_hash: a1b2c3d4e5f60718    # SHA-256 of concatenated source content
+spec_hash: 9f8e7d6c5b4a3021      # SHA-256 of this page's config entry + template identity
+file_hash: 3c4d5e6f7a8b9012      # SHA-256 of entire file (frontmatter + body)
 materializer_version: "0.1.0"
 theory_scope: false
 audience: theory
@@ -117,10 +118,11 @@ Fields:
 - `generated`: always `true` — identifies machine-generated pages
 - `generated_from`: list of source file paths (relative to repo root)
 - `source_hash`: hash of all source content that produced this page — changes when sources change
-- `page_hash`: hash of the generated body — changes when rendering logic changes
+- `spec_hash`: hash of this page's normalized config entry from `wiki.yaml` (title, sections, audience, sources, template identity) — changes when the page spec changes, even without a version bump
+- `file_hash`: hash of the entire generated file including frontmatter — the single authoritative hash for drift detection
 - `materializer_version`: from `wiki.yaml` — changes when the materializer itself changes
 - `theory_scope`: `false` by default — only `true` for explicitly promoted pages
-- `audience`: `user`, `operator`, `developer`, or `theory`
+- `audience`: `user`, `operator`, or `theory`
 - `page_id`: stable identifier matching `wiki.yaml`
 
 ### 1.4 Manifest as Source of Truth
@@ -130,15 +132,15 @@ One manifest file (`.wiki/manifest.json`) captures the full state:
 ```json
 {
   "materializer_version": "0.1.0",
-  "generated_at": "2026-03-06T12:00:00Z",
-  "aggregate_hash": "f1e2d3c4b5a6...",
+  "aggregate_hash": "f1e2d3c4b5a60918",
   "pages": [
     {
       "id": "theory-overview",
       "title": "Theory: Signed Hierarchies & Semantic Navigation",
       "path": ".wiki/theory-overview.md",
-      "source_hash": "a1b2c3d4e5f6g7h8",
-      "page_hash": "h8g7f6e5d4c3b2a1",
+      "source_hash": "a1b2c3d4e5f60718",
+      "spec_hash": "9f8e7d6c5b4a3021",
+      "file_hash": "3c4d5e6f7a8b9012",
       "sources": ["docs/DESIGN.md", "README.md"],
       "audience": "theory",
       "theory_scope": false
@@ -147,9 +149,9 @@ One manifest file (`.wiki/manifest.json`) captures the full state:
 }
 ```
 
-The `aggregate_hash` is the hash of all `page_hash` values sorted by `id`. This allows a single comparison to detect any drift across the entire wiki.
+The `aggregate_hash` is the hash of all `file_hash` values sorted by `id`. This allows a single comparison to detect any drift across the entire wiki.
 
-The manifest is the only file that contains a timestamp (`generated_at`). Page files themselves are timestamp-free for determinism.
+The manifest contains no timestamps. All state is expressed through content hashes, keeping the entire output deterministic.
 
 ### 1.5 Drift Detection
 
@@ -177,12 +179,14 @@ Exit code: 1
 ```
 
 Drift is detected by:
-1. Read manifest
-2. For each page: hash current source files, compare to `source_hash` in manifest
-3. If source hash differs → STALE (source changed, page not regenerated)
-4. If page file missing → STALE (page deleted or never generated)
-5. If page file exists but not in manifest → ORPHANED (page was manually created or config changed)
-6. If materializer version in config differs from manifest → ALL STALE (rendering logic changed)
+1. Read manifest and current `wiki.yaml`
+2. If materializer version in config differs from manifest → ALL STALE (rendering logic changed)
+3. For each page in config:
+   a. Hash current source files, compare to `source_hash` in manifest → STALE if different (source content changed)
+   b. Hash current page config entry, compare to `spec_hash` in manifest → STALE if different (title, sections, audience, or other config changed)
+   c. Hash page file on disk, compare to `file_hash` in manifest → STALE if different (file was manually edited or corrupted)
+   d. If page file missing → STALE (page deleted or never generated)
+4. If page file exists in `.wiki/` but not in manifest → ORPHANED (page was manually created or config removed it)
 
 ### 1.6 Explicit Promotion Path
 
@@ -258,7 +262,8 @@ The publish adapter is a separate module that reads `.wiki/` and pushes to a rem
 ```
 src/model_atlas/
   wiki/
-    __init__.py           # CLI entry point (materialize, drift, status)
+    __init__.py           # Package init, public API
+    __main__.py           # CLI entry point for `python -m model_atlas.wiki`
     config.py             # Source map parser, wiki.yaml schema
     extractor.py          # Section extraction from markdown/Python files
     renderer.py           # Page assembly, frontmatter generation
