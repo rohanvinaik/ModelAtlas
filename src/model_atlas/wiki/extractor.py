@@ -68,11 +68,12 @@ def _parse_headings(lines: list[str]) -> list[tuple[int, str, int, int]]:
     headings: list[tuple[int, str, int]] = []
 
     for i, line in enumerate(lines):
-        match = re.match(r"^(#{1,6})\s+(.+)$", line)
-        if match:
-            level = len(match.group(1))
-            title = match.group(2).strip()
-            headings.append((level, title, i))
+        stripped = line.lstrip("#")
+        hashes = len(line) - len(stripped)
+        if 1 <= hashes <= 6 and stripped and stripped[0] == " ":
+            title = stripped.strip()
+            if title:
+                headings.append((hashes, title, i))
 
     result = []
     for idx, (level, title, start) in enumerate(headings):
