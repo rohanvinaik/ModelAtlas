@@ -1,19 +1,3 @@
----
-generated: true
-generated_from: 
-  - docs/wiki/home.md
-source_hash: eb3c16f8fe7e2d1b
-spec_hash: 3c1072128a7ca651
-file_hash: 55bf0b989d774db1
-materializer_version: "0.2.0"
-theory_scope: false
-audience: user
-page_id: home
----
-
-# Home
-
-
 # ModelAtlas
 
 **By reading this wiki, you will understand why model discovery is a navigation problem — and how ModelAtlas solves it with signed hierarchies and anchor-based similarity. No embeddings, no GPU at query time. Just integers and set intersections.**

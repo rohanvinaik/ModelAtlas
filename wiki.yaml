@@ -1,61 +1,104 @@
-materializer_version: "0.1.0"
+materializer_version: "0.2.0"
 
 defaults:
   theory_scope: false
   audience: user
 
 pages:
+  # --- Home ---
   - id: home
     title: "Home"
     audience: user
-    sources: []
-    auto_index: true
-
-  - id: theory-overview
-    title: "Theory: Signed Hierarchies & Semantic Navigation"
-    audience: theory
     sources:
-      - path: docs/DESIGN.md
-        sections:
-          - "1. Core Thesis"
-          - "2. Data Model"
-      - path: README.md
-        sections:
-          - "The gap"
-          - "The idea"
-          - "What this is not"
-
-  - id: architecture-server
-    title: "Architecture: MCP Server & Query Engine"
-    audience: operator
-    sources:
-      - path: docs/DESIGN.md
-        sections:
-          - "4. Query Engines"
-          - "5. Source Adapters"
-
-  - id: architecture-pipeline
-    title: "Architecture: Extraction Pipeline"
-    audience: operator
-    sources:
-      - path: docs/pipeline.md
+      - path: docs/wiki/home.md
         sections: all
 
-  - id: architecture-data
-    title: "Architecture: Data Distribution & Versioning"
-    audience: operator
-    sources:
-      - path: docs/data-distribution.md
-        sections: all
-
-  - id: user-guide
-    title: "User Guide: Installation & Usage"
+  # --- Getting Value Fast ---
+  - id: getting-started
+    title: "Getting Started"
     audience: user
     sources:
-      - path: README.md
-        sections:
-          - "Beta status"
-          - "Quick start"
-          - "Usage"
+      - path: docs/wiki/getting-started.md
+        sections: all
+
+  - id: query-examples
+    title: "Query Examples"
+    audience: user
+    sources:
+      - path: docs/wiki/query-examples.md
+        sections: all
+
+  # --- How It Works ---
+  - id: system-overview
+    title: "System Overview"
+    audience: operator
+    sources:
+      - path: docs/wiki/system-overview.md
+        sections: all
+
+  - id: query-engine
+    title: "Query Engine"
+    audience: operator
+    sources:
+      - path: docs/wiki/query-engine.md
+        sections: all
+
+  - id: extraction-pipeline
+    title: "Extraction Pipeline"
+    audience: operator
+    sources:
+      - path: docs/wiki/extraction-pipeline.md
+        sections: all
+
+  - id: data-model
+    title: "Data Model"
+    audience: operator
+    sources:
+      - path: docs/wiki/data-model.md
+        sections: all
+
+  - id: data-distribution
+    title: "Data Distribution"
+    audience: operator
+    sources:
+      - path: docs/wiki/data-distribution.md
+        sections: all
+
+  # --- Why It Is Designed This Way ---
+  - id: the-gap
+    title: "The Gap"
+    audience: theory
+    sources:
+      - path: docs/wiki/the-gap.md
+        sections: all
+
+  - id: signed-hierarchies
+    title: "Signed Hierarchies"
+    audience: theory
+    sources:
+      - path: docs/wiki/signed-hierarchies.md
+        sections: all
+
+  - id: emergent-similarity
+    title: "Emergent Similarity"
+    audience: theory
+    sources:
+      - path: docs/wiki/emergent-similarity.md
+        sections: all
+
+  - id: navigation-geometry
+    title: "Navigation Geometry"
+    audience: theory
+    sources:
+      - path: docs/wiki/navigation-geometry.md
+        sections: all
+
+  # --- Reference ---
+  - id: glossary
+    title: "Glossary"
+    audience: user
+    sources:
+      - path: docs/wiki/glossary.md
+        sections: all
 
 promotions: []

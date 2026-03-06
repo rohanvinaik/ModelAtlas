@@ -1,82 +1,174 @@
 {
-  "materializer_version": "0.1.0",
-  "aggregate_hash": "1a5e8ef28c6e3d88",
+  "materializer_version": "0.2.0",
+  "aggregate_hash": "7f06b82546d18077",
   "pages": [
     {
-      "id": "architecture-data",
-      "title": "Architecture: Data Distribution & Versioning",
-      "path": "architecture-data.md",
-      "source_hash": "4035af9ea73748eb",
-      "spec_hash": "79741e360c5a6a5a",
-      "file_hash": "f483c4ef573ea779",
+      "id": "data-distribution",
+      "title": "Data Distribution",
+      "path": "data-distribution.md",
+      "source_hash": "64f9330a57a91fc5",
+      "spec_hash": "aeed6c906144c173",
+      "file_hash": "32f5180cc61435f2",
       "sources": [
-        "docs/data-distribution.md"
+        "docs/wiki/data-distribution.md"
       ],
       "audience": "operator",
       "theory_scope": false
     },
     {
-      "id": "architecture-pipeline",
-      "title": "Architecture: Extraction Pipeline",
-      "path": "architecture-pipeline.md",
-      "source_hash": "d71e71a070e02cfa",
-      "spec_hash": "37c297aca4939f71",
-      "file_hash": "8a1860fee8716acc",
+      "id": "data-model",
+      "title": "Data Model",
+      "path": "data-model.md",
+      "source_hash": "f5ad91eb238c2399",
+      "spec_hash": "5afa75521a895cf1",
+      "file_hash": "3171d01f779ebdfe",
       "sources": [
-        "docs/pipeline.md"
+        "docs/wiki/data-model.md"
       ],
       "audience": "operator",
       "theory_scope": false
     },
     {
-      "id": "architecture-server",
-      "title": "Architecture: MCP Server & Query Engine",
-      "path": "architecture-server.md",
-      "source_hash": "42e35429474ea311",
-      "spec_hash": "1e5142b9115a095c",
-      "file_hash": "d3cffbbfba41c270",
+      "id": "emergent-similarity",
+      "title": "Emergent Similarity",
+      "path": "emergent-similarity.md",
+      "source_hash": "fdaf537c58e046ae",
+      "spec_hash": "bfbb62b96f8e3def",
+      "file_hash": "d12a1c7da135fe13",
       "sources": [
-        "docs/DESIGN.md"
+        "docs/wiki/emergent-similarity.md"
+      ],
+      "audience": "theory",
+      "theory_scope": false
+    },
+    {
+      "id": "extraction-pipeline",
+      "title": "Extraction Pipeline",
+      "path": "extraction-pipeline.md",
+      "source_hash": "ad50a92c30df2d68",
+      "spec_hash": "ea1290146758166b",
+      "file_hash": "706fc41535b2801f",
+      "sources": [
+        "docs/wiki/extraction-pipeline.md"
       ],
       "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "path": "getting-started.md",
+      "source_hash": "1dfabf2db93a0cc6",
+      "spec_hash": "2269df565a64aefb",
+      "file_hash": "7877cd9e40093b8d",
+      "sources": [
+        "docs/wiki/getting-started.md"
+      ],
+      "audience": "user",
+      "theory_scope": false
+    },
+    {
+      "id": "glossary",
+      "title": "Glossary",
+      "path": "glossary.md",
+      "source_hash": "42b03114da7b737c",
+      "spec_hash": "4fd343ddd73ba9a0",
+      "file_hash": "9f17cc78ada31cbc",
+      "sources": [
+        "docs/wiki/glossary.md"
+      ],
+      "audience": "user",
       "theory_scope": false
     },
     {
       "id": "home",
       "title": "Home",
       "path": "home.md",
-      "source_hash": "e3b0c44298fc1c14",
-      "spec_hash": "5e436c77598846fc",
-      "file_hash": "5d19dcf94bb7be90",
-      "sources": [],
+      "source_hash": "eb3c16f8fe7e2d1b",
+      "spec_hash": "3c1072128a7ca651",
+      "file_hash": "ed2ef8b9387e54d2",
+      "sources": [
+        "docs/wiki/home.md"
+      ],
       "audience": "user",
       "theory_scope": false
     },
     {
-      "id": "theory-overview",
-      "title": "Theory: Signed Hierarchies & Semantic Navigation",
-      "path": "theory-overview.md",
-      "source_hash": "66420f957e540e9c",
-      "spec_hash": "a7a7511f0bf718c9",
-      "file_hash": "0e16eab580b1d808",
+      "id": "navigation-geometry",
+      "title": "Navigation Geometry",
+      "path": "navigation-geometry.md",
+      "source_hash": "35d69b7b28b5bad6",
+      "spec_hash": "20c497717ee610e0",
+      "file_hash": "68d664c1ea2c5909",
       "sources": [
-        "docs/DESIGN.md",
-        "README.md"
+        "docs/wiki/navigation-geometry.md"
       ],
       "audience": "theory",
       "theory_scope": false
     },
     {
-      "id": "user-guide",
-      "title": "User Guide: Installation & Usage",
-      "path": "user-guide.md",
-      "source_hash": "fe625fdc9c58f780",
-      "spec_hash": "b442a02451288ea0",
-      "file_hash": "096e979dea81ca5a",
+      "id": "query-engine",
+      "title": "Query Engine",
+      "path": "query-engine.md",
+      "source_hash": "c389a1fdb0e9ed4d",
+      "spec_hash": "41ac3796d7230dc1",
+      "file_hash": "84ec1ef480b2c1f4",
       "sources": [
-        "README.md"
+        "docs/wiki/query-engine.md"
+      ],
+      "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "query-examples",
+      "title": "Query Examples",
+      "path": "query-examples.md",
+      "source_hash": "fffbe0b5f019962c",
+      "spec_hash": "e0a1da3350ce52a1",
+      "file_hash": "5b89be954800070c",
+      "sources": [
+        "docs/wiki/query-examples.md"
       ],
       "audience": "user",
+      "theory_scope": false
+    },
+    {
+      "id": "signed-hierarchies",
+      "title": "Signed Hierarchies",
+      "path": "signed-hierarchies.md",
+      "source_hash": "91f7e2abc335ef35",
+      "spec_hash": "2afc1aa246bc1dfa",
+      "file_hash": "1a54aa1f87454fac",
+      "sources": [
+        "docs/wiki/signed-hierarchies.md"
+      ],
+      "audience": "theory",
+      "theory_scope": false
+    },
+    {
+      "id": "system-overview",
+      "title": "System Overview",
+      "path": "system-overview.md",
+      "source_hash": "689fac7a7c5772f2",
+      "spec_hash": "dae094b67d844729",
+      "file_hash": "177b4d7da2aa25e3",
+      "sources": [
+        "docs/wiki/system-overview.md"
+      ],
+      "audience": "operator",
+      "theory_scope": false
+    },
+    {
+      "id": "the-gap",
+      "title": "The Gap",
+      "path": "the-gap.md",
+      "source_hash": "c6dace1f898c9e44",
+      "spec_hash": "f6f88cf140e3b48a",
+      "file_hash": "f9b4bf5ed99e394a",
+      "sources": [
+        "docs/wiki/the-gap.md"
+      ],
+      "audience": "theory",
       "theory_scope": false
     }
   ]
