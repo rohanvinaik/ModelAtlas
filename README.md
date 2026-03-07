@@ -5,6 +5,7 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
+[![Docs](https://img.shields.io/badge/docs-rohanv.me%2FModelAtlas-blue)](https://rohanv.me/ModelAtlas/)
 
 Have you ever spent a wasted afternoon digging through HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's buried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment.
 
@@ -89,27 +90,12 @@ The LLM decomposes a user's question into coordinates and anchors. ModelAtlas do
 
 The entire thing is a SQLite file, a few thousand anchor labels, and signed integers. No GPU at query time. No vector store in the background. No running services. Full semantic decomposition was done at home with spare compute. At query time, it's simply multiplication and set intersection.
 
-## Beta status
-
-ModelAtlas is in active beta. The semantic network contains **19,498 models** with **166 anchors** across all 8 banks and **128K+ model-anchor links**. The top-downloaded models on HuggingFace are all present and enriched.
-
-**What works today:**
-- Navigation queries return meaningfully different results than keyword search. "Small code models with tool-calling" surfaces LiquidAI LFM-1.2B, Qwen3-4B tool-calling variants, and Llama-3.2-1B function-calling adapters — real answers to a query HuggingFace can't express.
-- The 8-bank coordinate system captures structural relationships that tags and filters miss. Signed directions, anchor set intersections, and IDF-weighted similarity all function as described.
-- ~7,300 models have LLM-generated enrichment (summaries + capability anchors) beyond deterministic extraction. The remaining ~12K have full Tier 1+2 structural data.
-
-**Validation:**
-- ~3,000 models independently validated by Gemini against raw HuggingFace metadata.
-- A multi-phase correction pipeline (deterministic audit, dictionary expansion, LLM healing) is actively improving anchor accuracy, with a target of 90-95%+ in the final network.
-
-**What this means for users:**
-The network is directionally correct and dense enough for the core use case: giving an LLM a structural sense of model space it doesn't have in its weights. Popular models are well-covered. The long tail is still being refined. Expect anchor accuracy to improve steadily as the correction pipeline converges.
-
 ## Quick start
 
 **1. Install:**
 
 ```bash
+git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas
 uv sync
 ```
 
@@ -118,20 +104,14 @@ uv sync
 The semantic network is distributed as a SQLite file attached to [GitHub Releases](https://github.com/rohanvinaik/ModelAtlas/releases). Download the latest `network.db` and place it in the cache directory:
 
 ```bash
-# Download latest release (update URL for current version)
+mkdir -p ~/.cache/model-atlas
 curl -L -o ~/.cache/model-atlas/network.db \
   https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
 ```
 
 Or manually: go to [Releases](https://github.com/rohanvinaik/ModelAtlas/releases), download `network.db`, and move it to `~/.cache/model-atlas/`.
 
-**3. Run:**
-
-```bash
-uv run model-atlas
-```
-
-**4. Add to your MCP client:**
+**3. Add to your MCP client:**
 
 For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -211,41 +191,35 @@ navigate_models(
 
 **Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
 
-Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logarithmic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference. 
+Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logarithmic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference.
 
 Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
 
-## Ingestion pipeline
+## Beta status
 
-A multi-phase background pipeline populates the semantic network:
+ModelAtlas is in active beta. The semantic network contains **19,498 models** with **166 anchors** across all 8 banks and **128K+ model-anchor links**. The top-downloaded models on HuggingFace are all present and enriched.
 
-| Phase | What | Scale |
-|-------|------|-------|
-| **A: Fetch** | Stream HF API, cache raw JSON + config.json + model cards | ~40K models |
-| **B: Extract** | Deterministic + pattern matching (Tier 1+2) | ~38K extracted |
-| **C1: Summarize** | Smol-Hub-tldr (360M) on card text | ~7K models, ~1 hour |
-| **C2: Structure** | qwen2.5:3b via Ollama — summary + anchors | ~38K models, ~3 days |
-| **C3: Quality gate** | Blind review of generated outputs | ~38K models, ~3 days |
-| **C4: Validate** | Offline comparison vs ground truth datasets | Seconds |
+**What works today:**
+- Navigation queries return meaningfully different results than keyword search. "Small code models with tool-calling" surfaces LiquidAI LFM-1.2B, Qwen3-4B tool-calling variants, and Llama-3.2-1B function-calling adapters — real answers to a query HuggingFace can't express.
+- The 8-bank coordinate system captures structural relationships that tags and filters miss. Signed directions, anchor set intersections, and IDF-weighted similarity all function as described.
+- ~7,300 models have LLM-generated enrichment (summaries + capability anchors) beyond deterministic extraction. The remaining ~12K have full Tier 1+2 structural data.
 
-C1 and C2 run in parallel on different resources (transformers vs Ollama). Summary selection prefers Smol-Hub-tldr summaries when available (purpose-built for model cards) and falls back to qwen2.5:3b output. All workers are standalone scripts deployable to any machine via scp.
+**Validation:**
+- ~3,000 models independently validated by Gemini against raw HuggingFace metadata.
+- A multi-phase correction pipeline (deterministic audit, dictionary expansion, LLM healing) is actively improving anchor accuracy, with a target of 90-95%+ in the final network.
 
-See [`docs/pipeline.md`](docs/pipeline.md) for the full operational reference.
+**What this means for users:**
+The network is directionally correct and dense enough for the core use case: giving an LLM a structural sense of model space it doesn't have in its weights. Popular models are well-covered. The long tail is still being refined. Expect anchor accuracy to improve steadily as the correction pipeline converges.
 
-## Data distribution
+## Deep dive
 
-The semantic network (`network.db`) is distributed separately from the code. The database is ~80MB and contains the full model graph, anchor dictionary, and metadata.
+The full conceptual documentation — theory, architecture, design rationale — lives at **[rohanv.me/ModelAtlas](https://rohanv.me/ModelAtlas/)**:
 
-**GitHub Releases** (current): Each beta release includes `network.db` as a release asset. Download once, place in `~/.cache/model-atlas/`, and the MCP server picks it up automatically. New releases are cut as the correction pipeline improves accuracy and coverage.
+| If you want to... | Start here |
+|---|---|
+| Use it | [Getting Started](https://rohanv.me/ModelAtlas/getting-started/) → [Query Examples](https://rohanv.me/ModelAtlas/query-examples/) |
+| Understand the architecture | [System Overview](https://rohanv.me/ModelAtlas/system-overview/) → [Query Engine](https://rohanv.me/ModelAtlas/query-engine/) → [Data Model](https://rohanv.me/ModelAtlas/data-model/) |
+| Understand the design theory | [The Gap](https://rohanv.me/ModelAtlas/the-gap/) → [Signed Hierarchies](https://rohanv.me/ModelAtlas/signed-hierarchies/) → [Navigation Geometry](https://rohanv.me/ModelAtlas/navigation-geometry/) |
+| Look up a concept | [Glossary](https://rohanv.me/ModelAtlas/glossary/) · [Concept Map](https://rohanv.me/ModelAtlas/concept-map/) |
 
-**HuggingFace Dataset** (planned): The network will also be published as a HuggingFace dataset for discoverability within the ML community. This gives download stats, versioned snapshots, and a familiar interface for ML practitioners. The dataset will include `network.db` plus a metadata card documenting anchor dictionary coverage, validation metrics, and extraction provenance.
-
-See [`docs/data-distribution.md`](docs/data-distribution.md) for release procedures and versioning policy.
-
-## Design reference
-
-- Theory and design: [`docs/DESIGN.md`](docs/DESIGN.md)
-- Pipeline reference: [`docs/pipeline.md`](docs/pipeline.md)
-- Data distribution: [`docs/data-distribution.md`](docs/data-distribution.md)
-- Architectural spec: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
-- Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
+Pipeline reference: [`docs/pipeline.md`](docs/pipeline.md) | Design deep dive: [`docs/DESIGN.md`](docs/DESIGN.md) | Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
