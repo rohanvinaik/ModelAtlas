@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{title}} - ModelAtlas</title>
+  <meta name="description" content="{{description}}">
+  <meta property="og:title" content="{{title}} - ModelAtlas">
+  <meta property="og:type" content="article">
+  <meta property="og:description" content="{{description}}">
+  <link rel="canonical" href="">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="site-title">ModelAtlas <span class="site-subtitle">docs</span></a>
+      <button id="theme-toggle" aria-label="Toggle dark mode">
+        <span class="theme-icon-light">&#9788;</span>
+        <span class="theme-icon-dark">&#9790;</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar">
+      <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">&#9776;</button>
+      <div class="sidebar-content">
+        {{sidebar}}
+      </div>
+    </nav>
+
+    <main class="content">
+      <article>
+        {{content}}
+      </article>
+
+      {{prev_next}}
+
+      <footer class="page-footer">
+        <hr>
+        <a href="../">Home</a> &middot;
+        <a href="../glossary/">Glossary</a> &middot;
+        <a href="../getting-started/">Getting Started</a> &middot;
+        <a href="https://github.com/rohanvinaik/ModelAtlas">GitHub</a>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../script.js"></script>
+</body>
+</html>

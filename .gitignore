@@ -28,4 +28,7 @@ mutants/
 .DS_Store
 Thumbs.db
 
+# Generated site
+_site/
+
 # Project caches (stored in ~/.cache, not here)

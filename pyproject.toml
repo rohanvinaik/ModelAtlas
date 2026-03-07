@@ -7,6 +7,7 @@ dependencies = [
     "mcp[cli]>=1.0.0",
     "huggingface-hub>=0.20.0",
     "rapidfuzz>=3.0.0",
+    "markdown>=3.10.2",
 ]
 
 [project.optional-dependencies]
