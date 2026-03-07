@@ -5,7 +5,6 @@
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
-[![Docs](https://img.shields.io/badge/docs-rohanv.me%2FModelAtlas-blue)](https://rohanv.me/ModelAtlas/)
 
 Have you ever spent a wasted afternoon digging through HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's buried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment.
 
