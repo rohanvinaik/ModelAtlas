@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/data-model.md
-source_hash: f5ad91eb238c2399
+source_hash: 703d942d2cd1c1a8
 spec_hash: 5afa75521a895cf1
-file_hash: 80f5cfd62ea8c7ff
+file_hash: 00eafcc36372e363
 materializer_version: "0.2.0"
 theory_scope: false
 audience: operator
@@ -16,7 +16,7 @@ page_id: data-model
 
 # Data Model
 
-**Six tables, eight [banks](Glossary#bank), ~170 [anchors](Glossary#anchor), and a flat metadata overflow. Everything queryable. Everything with provenance.**
+**Six tables, eight [banks](Glossary#bank), ~{{anchor_count}} [anchors](Glossary#anchor), and a flat metadata overflow. Everything queryable. Everything with provenance.**
 
 ---
 
@@ -92,13 +92,13 @@ The bidirectional anchor index is critical — "what models share this anchor?" 
 
 | Metric | Count |
 |--------|-------|
-| Models | 19,498 |
-| Bank positions | ~80,000 |
-| Anchors | 166 |
+| Models | {{model_count}} |
+| Bank positions | {{position_count}} |
+| Anchors | {{anchor_count_exact}} |
 | Model-anchor links | 128,000+ |
-| Model-to-model links | ~2,000 |
-| Metadata entries | ~60,000 |
-| Database size | ~80 MB |
+| Model-to-model links | {{model_link_count}} |
+| Metadata entries | {{metadata_count}} |
+| Database size | {{db_size_mb}} |
 
 The entire semantic network fits in a single SQLite file. No external services at query time.
 

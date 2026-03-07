@@ -1,14 +1,27 @@
 {
   "materializer_version": "0.2.0",
-  "aggregate_hash": "7f06b82546d18077",
+  "aggregate_hash": "85c1fac9bc5d637f",
   "pages": [
+    {
+      "id": "concept-map",
+      "title": "Concept Map",
+      "path": "concept-map.md",
+      "source_hash": "bc5fd2de19780a21",
+      "spec_hash": "00dabc9cc59164af",
+      "file_hash": "9202308c4eead926",
+      "sources": [
+        "docs/wiki/concept-map.md"
+      ],
+      "audience": "user",
+      "theory_scope": false
+    },
     {
       "id": "data-distribution",
       "title": "Data Distribution",
       "path": "data-distribution.md",
-      "source_hash": "64f9330a57a91fc5",
+      "source_hash": "78885f50e0eb51af",
       "spec_hash": "aeed6c906144c173",
-      "file_hash": "32f5180cc61435f2",
+      "file_hash": "6e9e75629dec005c",
       "sources": [
         "docs/wiki/data-distribution.md"
       ],
@@ -19,9 +32,9 @@
       "id": "data-model",
       "title": "Data Model",
       "path": "data-model.md",
-      "source_hash": "f5ad91eb238c2399",
+      "source_hash": "703d942d2cd1c1a8",
       "spec_hash": "5afa75521a895cf1",
-      "file_hash": "3171d01f779ebdfe",
+      "file_hash": "fff59a5f9a5c64c0",
       "sources": [
         "docs/wiki/data-model.md"
       ],
@@ -32,9 +45,9 @@
       "id": "emergent-similarity",
       "title": "Emergent Similarity",
       "path": "emergent-similarity.md",
-      "source_hash": "fdaf537c58e046ae",
+      "source_hash": "26ccfea419dc07c0",
       "spec_hash": "bfbb62b96f8e3def",
-      "file_hash": "d12a1c7da135fe13",
+      "file_hash": "08f731e65933d427",
       "sources": [
         "docs/wiki/emergent-similarity.md"
       ],
@@ -45,9 +58,9 @@
       "id": "extraction-pipeline",
       "title": "Extraction Pipeline",
       "path": "extraction-pipeline.md",
-      "source_hash": "ad50a92c30df2d68",
+      "source_hash": "9c0a4c02d5c96bad",
       "spec_hash": "ea1290146758166b",
-      "file_hash": "706fc41535b2801f",
+      "file_hash": "007f3de19b428d28",
       "sources": [
         "docs/wiki/extraction-pipeline.md"
       ],
@@ -58,9 +71,9 @@
       "id": "getting-started",
       "title": "Getting Started",
       "path": "getting-started.md",
-      "source_hash": "1dfabf2db93a0cc6",
+      "source_hash": "04b483eb1b4ed5fc",
       "spec_hash": "2269df565a64aefb",
-      "file_hash": "7877cd9e40093b8d",
+      "file_hash": "fc1b66c8d267372b",
       "sources": [
         "docs/wiki/getting-started.md"
       ],
@@ -71,9 +84,9 @@
       "id": "glossary",
       "title": "Glossary",
       "path": "glossary.md",
-      "source_hash": "42b03114da7b737c",
+      "source_hash": "0eb8f1b2ee0b7938",
       "spec_hash": "4fd343ddd73ba9a0",
-      "file_hash": "9f17cc78ada31cbc",
+      "file_hash": "7806c25b8f29dfd8",
       "sources": [
         "docs/wiki/glossary.md"
       ],
@@ -84,9 +97,9 @@
       "id": "home",
       "title": "Home",
       "path": "home.md",
-      "source_hash": "eb3c16f8fe7e2d1b",
+      "source_hash": "8b02c51540b1a879",
       "spec_hash": "3c1072128a7ca651",
-      "file_hash": "ed2ef8b9387e54d2",
+      "file_hash": "c5bdefd1547b2c04",
       "sources": [
         "docs/wiki/home.md"
       ],
@@ -149,9 +162,9 @@
       "id": "system-overview",
       "title": "System Overview",
       "path": "system-overview.md",
-      "source_hash": "689fac7a7c5772f2",
+      "source_hash": "c474292cba9c1846",
       "spec_hash": "dae094b67d844729",
-      "file_hash": "177b4d7da2aa25e3",
+      "file_hash": "57796d08ed6818fd",
       "sources": [
         "docs/wiki/system-overview.md"
       ],

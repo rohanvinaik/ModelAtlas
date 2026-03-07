@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/glossary.md
-source_hash: 42b03114da7b737c
+source_hash: 0eb8f1b2ee0b7938
 spec_hash: 4fd343ddd73ba9a0
-file_hash: fc376b0bebfd0b91
+file_hash: 5e8e789c3695fef7
 materializer_version: "0.2.0"
 theory_scope: false
 audience: user
@@ -22,7 +22,7 @@ page_id: glossary
 
 ## anchor
 
-A semantic label from a shared vocabulary of ~170 terms. Each anchor belongs to one [bank](#bank) and describes a characteristic of a model: `instruction-following`, `GGUF-available`, `Llama-family`, `code-generation`.
+A semantic label from a shared vocabulary of ~{{anchor_count}} terms. Each anchor belongs to one [bank](#bank) and describes a characteristic of a model: `instruction-following`, `GGUF-available`, `Llama-family`, `code-generation`.
 
 Models link to the anchors that describe them. Two models sharing many anchors are semantically related without an explicit edge — similarity is [emergent](Emergent-Similarity), not stored.
 

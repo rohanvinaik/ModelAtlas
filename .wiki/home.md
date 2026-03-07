@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/home.md
-source_hash: eb3c16f8fe7e2d1b
+source_hash: 8b02c51540b1a879
 spec_hash: 3c1072128a7ca651
-file_hash: 55bf0b989d774db1
+file_hash: 7b10708f2710b8e2
 materializer_version: "0.2.0"
 theory_scope: false
 audience: user
@@ -26,7 +26,7 @@ HuggingFace Hub has a million models and roughly ten structured fields per model
 
 ModelAtlas extracts that information and encodes it as **positions in a structured semantic space**. The result is a navigable network where queries are movements through space ("toward smaller and more code-focused"), not WHERE clauses ("parameter_count < 3B AND tags LIKE '%code%'").
 
-The entire system is a SQLite file, a vocabulary of ~170 [anchor](Glossary#anchor) labels, and signed integers. No GPU at query time. No vector store in the background. No running services.
+The entire system is a SQLite file, a vocabulary of ~{{anchor_count}} [anchor](Glossary#anchor) labels, and signed integers. No GPU at query time. No vector store in the background. No running services.
 
 ---
 
@@ -71,7 +71,7 @@ The intelligence is in the interaction — the LLM decomposes the question, Mode
 
 ## Current State
 
-ModelAtlas is in active beta. The network contains **19,498 models** with **166 anchors** across 8 [banks](Glossary#bank), **128K+ model-anchor links**, and a multi-phase correction pipeline actively improving accuracy. See [Data Distribution](Data-Distribution) for how to get the pre-built network.
+ModelAtlas is in active beta. The network contains **{{model_count}} models** with **{{anchor_count_exact}} anchors** across 8 [banks](Glossary#bank), **{{anchor_link_count}} model-anchor links**, and a multi-phase correction pipeline actively improving accuracy. See [Data Distribution](Data-Distribution) for how to get the pre-built network.
 
 ---
 

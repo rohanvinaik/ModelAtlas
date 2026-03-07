@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/system-overview.md
-source_hash: 689fac7a7c5772f2
+source_hash: c474292cba9c1846
 spec_hash: dae094b67d844729
-file_hash: 8f9408af8ae49543
+file_hash: 2fb30dc7370bd554
 materializer_version: "0.2.0"
 theory_scope: false
 audience: operator
@@ -45,9 +45,9 @@ ModelAtlas splits the intelligence across two systems. The LLM handles decomposi
 │  Query Engine (navigate_models)                  │
 │       ↓  4 batch SQL queries                    │
 │  SQLite Database (network.db)                    │
-│       • 19K+ models                             │
+│       • {{model_count_short}} models                             │
 │       • 8 banks × signed positions              │
-│       • 170 anchors × 128K links                │
+│       • {{anchor_count}} anchors × 128K links                │
 │       • explicit model-to-model links           │
 │       • overflow metadata                       │
 └─────────────────────────────────────────────────┘
@@ -92,7 +92,7 @@ The entire build pipeline exists to produce `network.db`. At query time, no LLM 
 ## Evidence: What's in the Database
 
 ```
-models                 19,498 entries
+models                 {{model_count}} entries
 bank_positions         ~80K  (8 banks × models with positions)
 anchors                  166  labels across 8 banks
 model_anchors         128K+  model-anchor links with confidence
@@ -100,7 +100,7 @@ model_links            ~2K   explicit relationships (fine_tuned_from, etc.)
 model_metadata         ~60K  key-value pairs (summaries, scores, hashes)
 ```
 
-The database is ~80MB. No external services required at query time. The entire semantic network is local.
+The database is ~{{db_size_mb}}. No external services required at query time. The entire semantic network is local.
 
 ---
 

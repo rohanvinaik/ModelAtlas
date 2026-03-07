@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/data-distribution.md
-source_hash: 64f9330a57a91fc5
+source_hash: 78885f50e0eb51af
 spec_hash: aeed6c906144c173
-file_hash: 225820574ad63d45
+file_hash: 53ac1120ad915b36
 materializer_version: "0.2.0"
 theory_scope: false
 audience: operator
@@ -90,7 +90,7 @@ Or incrementally through MCP tools (`hf_build_index`). But the pre-built network
 
 - **Not a streaming service.** The database is a static file. Updates come as new releases, not real-time sync.
 - **Not locked to GitHub.** The HuggingFace dataset provides an alternative distribution channel. The SQLite file is the canonical format regardless of host.
-- **Not large.** ~80MB is smaller than most npm dependency trees. It fits comfortably in memory on any modern machine.
+- **Not large.** ~{{db_size_mb}} is smaller than most npm dependency trees. It fits comfortably in memory on any modern machine.
 
 ---
 

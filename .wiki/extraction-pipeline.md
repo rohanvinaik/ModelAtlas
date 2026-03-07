@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/extraction-pipeline.md
-source_hash: ad50a92c30df2d68
+source_hash: 9c0a4c02d5c96bad
 spec_hash: ea1290146758166b
-file_hash: 22cb12a771d6494d
+file_hash: 901925d694ca937f
 materializer_version: "0.2.0"
 theory_scope: false
 audience: operator
@@ -53,7 +53,7 @@ Each phase has explicit state tracking. Every model records which phases it has 
 
 Stream model metadata from HuggingFace Hub API. Enrich with `config.json` (architecture details, layer counts, attention heads) and model card text (capabilities, training data, limitations). Cache everything as raw JSON.
 
-**Output:** 19,498 enriched model records.
+**Output:** {{model_count}} enriched model records.
 
 ### Phase B: Deterministic Extraction
 

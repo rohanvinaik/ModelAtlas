@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/emergent-similarity.md
-source_hash: fdaf537c58e046ae
+source_hash: 26ccfea419dc07c0
 spec_hash: bfbb62b96f8e3def
-file_hash: b7bc461199df01c9
+file_hash: 6b65c8875e4b6d27
 materializer_version: "0.2.0"
 theory_scope: false
 audience: theory
@@ -36,7 +36,7 @@ Anchor-based similarity takes a third path: similarity that's both **scalable** 
 
 ### The Anchor Dictionary
 
-A shared vocabulary of ~170 semantic labels. Each anchor belongs to one [bank](Glossary#bank) and has a provenance (`bootstrap`, `deterministic`, `pattern`, `vibe`, `expansion`).
+A shared vocabulary of ~{{anchor_count}} semantic labels. Each anchor belongs to one [bank](Glossary#bank) and has a provenance (`bootstrap`, `deterministic`, `pattern`, `vibe`, `expansion`).
 
 | Bank | Example Anchors |
 |------|----------------|

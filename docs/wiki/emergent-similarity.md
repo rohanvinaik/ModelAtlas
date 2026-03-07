@@ -20,7 +20,7 @@ Anchor-based similarity takes a third path: similarity that's both **scalable** 
 
 ### The Anchor Dictionary
 
-A shared vocabulary of ~170 semantic labels. Each anchor belongs to one [bank](Glossary#bank) and has a provenance (`bootstrap`, `deterministic`, `pattern`, `vibe`, `expansion`).
+A shared vocabulary of ~{{anchor_count}} semantic labels. Each anchor belongs to one [bank](Glossary#bank) and has a provenance (`bootstrap`, `deterministic`, `pattern`, `vibe`, `expansion`).
 
 | Bank | Example Anchors |
 |------|----------------|

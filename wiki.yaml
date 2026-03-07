@@ -4,8 +4,18 @@ defaults:
   theory_scope: false
   audience: user
 
+rails:
+  getting-value-fast:
+    name: "Getting Value Fast"
+  how-it-works:
+    name: "How It Works"
+  why-designed-this-way:
+    name: "Why It Is Designed This Way"
+  reference:
+    name: "Reference"
+
 pages:
-  # --- Home ---
+  # --- Home (no rail) ---
   - id: home
     title: "Home"
     audience: user
@@ -17,6 +27,9 @@ pages:
   - id: getting-started
     title: "Getting Started"
     audience: user
+    rail: getting-value-fast
+    chapter: 1
+    prerequisites: []
     sources:
       - path: docs/wiki/getting-started.md
         sections: all
@@ -24,6 +37,9 @@ pages:
   - id: query-examples
     title: "Query Examples"
     audience: user
+    rail: getting-value-fast
+    chapter: 2
+    prerequisites: [getting-started]
     sources:
       - path: docs/wiki/query-examples.md
         sections: all
@@ -32,6 +48,9 @@ pages:
   - id: system-overview
     title: "System Overview"
     audience: operator
+    rail: how-it-works
+    chapter: 1
+    prerequisites: []
     sources:
       - path: docs/wiki/system-overview.md
         sections: all
@@ -39,6 +58,9 @@ pages:
   - id: query-engine
     title: "Query Engine"
     audience: operator
+    rail: how-it-works
+    chapter: 2
+    prerequisites: [system-overview]
     sources:
       - path: docs/wiki/query-engine.md
         sections: all
@@ -46,6 +68,9 @@ pages:
   - id: extraction-pipeline
     title: "Extraction Pipeline"
     audience: operator
+    rail: how-it-works
+    chapter: 3
+    prerequisites: [system-overview]
     sources:
       - path: docs/wiki/extraction-pipeline.md
         sections: all
@@ -53,6 +78,9 @@ pages:
   - id: data-model
     title: "Data Model"
     audience: operator
+    rail: how-it-works
+    chapter: 4
+    prerequisites: [system-overview]
     sources:
       - path: docs/wiki/data-model.md
         sections: all
@@ -60,6 +88,9 @@ pages:
   - id: data-distribution
     title: "Data Distribution"
     audience: operator
+    rail: how-it-works
+    chapter: 5
+    prerequisites: []
     sources:
       - path: docs/wiki/data-distribution.md
         sections: all
@@ -68,6 +99,9 @@ pages:
   - id: the-gap
     title: "The Gap"
     audience: theory
+    rail: why-designed-this-way
+    chapter: 1
+    prerequisites: []
     sources:
       - path: docs/wiki/the-gap.md
         sections: all
@@ -75,6 +109,9 @@ pages:
   - id: signed-hierarchies
     title: "Signed Hierarchies"
     audience: theory
+    rail: why-designed-this-way
+    chapter: 2
+    prerequisites: [the-gap]
     sources:
       - path: docs/wiki/signed-hierarchies.md
         sections: all
@@ -82,6 +119,9 @@ pages:
   - id: emergent-similarity
     title: "Emergent Similarity"
     audience: theory
+    rail: why-designed-this-way
+    chapter: 3
+    prerequisites: [signed-hierarchies]
     sources:
       - path: docs/wiki/emergent-similarity.md
         sections: all
@@ -89,6 +129,9 @@ pages:
   - id: navigation-geometry
     title: "Navigation Geometry"
     audience: theory
+    rail: why-designed-this-way
+    chapter: 4
+    prerequisites: [emergent-similarity]
     sources:
       - path: docs/wiki/navigation-geometry.md
         sections: all
@@ -97,8 +140,21 @@ pages:
   - id: glossary
     title: "Glossary"
     audience: user
+    rail: reference
+    chapter: 1
+    prerequisites: []
     sources:
       - path: docs/wiki/glossary.md
+        sections: all
+
+  - id: concept-map
+    title: "Concept Map"
+    audience: user
+    rail: reference
+    chapter: 2
+    prerequisites: []
+    sources:
+      - path: docs/wiki/concept-map.md
         sections: all
 
 promotions: []

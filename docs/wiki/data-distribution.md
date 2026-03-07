@@ -74,7 +74,7 @@ Or incrementally through MCP tools (`hf_build_index`). But the pre-built network
 
 - **Not a streaming service.** The database is a static file. Updates come as new releases, not real-time sync.
 - **Not locked to GitHub.** The HuggingFace dataset provides an alternative distribution channel. The SQLite file is the canonical format regardless of host.
-- **Not large.** ~80MB is smaller than most npm dependency trees. It fits comfortably in memory on any modern machine.
+- **Not large.** ~{{db_size_mb}} is smaller than most npm dependency trees. It fits comfortably in memory on any modern machine.
 
 ---
 

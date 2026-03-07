@@ -37,7 +37,7 @@ Each phase has explicit state tracking. Every model records which phases it has 
 
 Stream model metadata from HuggingFace Hub API. Enrich with `config.json` (architecture details, layer counts, attention heads) and model card text (capabilities, training data, limitations). Cache everything as raw JSON.
 
-**Output:** 19,498 enriched model records.
+**Output:** {{model_count}} enriched model records.
 
 ### Phase B: Deterministic Extraction
 

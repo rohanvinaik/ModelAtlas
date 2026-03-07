@@ -2,9 +2,9 @@
 generated: true
 generated_from: 
   - docs/wiki/getting-started.md
-source_hash: 1dfabf2db93a0cc6
+source_hash: 04b483eb1b4ed5fc
 spec_hash: 2269df565a64aefb
-file_hash: f55cf51f5a1bf597
+file_hash: 1ef84d3ef6bffa34
 materializer_version: "0.2.0"
 theory_scope: false
 audience: user
@@ -16,7 +16,7 @@ page_id: getting-started
 
 # Getting Started
 
-**In five minutes you will have a navigable semantic network of 19K+ ML models running locally, queryable through any MCP-compatible client.**
+**In five minutes you will have a navigable semantic network of {{model_count_short}} ML models running locally, queryable through any MCP-compatible client.**
 
 ---
 
@@ -24,7 +24,7 @@ page_id: getting-started
 
 HuggingFace Hub is a file host with search. You can filter by task, sort by downloads, and grep model cards. But you cannot ask "what's similar to this model but smaller and more code-focused?" — that requires structural understanding that HuggingFace doesn't encode.
 
-ModelAtlas adds that structure. The pre-built network contains positions across 8 semantic dimensions, 170 anchor labels, and explicit model-to-model links — all queryable through a local MCP server.
+ModelAtlas adds that structure. The pre-built network contains positions across 8 semantic dimensions, {{anchor_count}} anchor labels, and explicit model-to-model links — all queryable through a local MCP server.
 
 ---
 
@@ -38,7 +38,7 @@ uv sync
 
 ## Download the Pre-Built Network
 
-The semantic network is a ~80MB SQLite file distributed via [GitHub Releases](https://github.com/rohanvinaik/ModelAtlas/releases):
+The semantic network is a ~{{db_size_mb}} SQLite file distributed via [GitHub Releases](https://github.com/rohanvinaik/ModelAtlas/releases):
 
 ```bash
 mkdir -p ~/.cache/model-atlas

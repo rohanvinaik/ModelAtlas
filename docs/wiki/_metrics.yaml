@@ -1,0 +1,14 @@
+# Single source of truth for volatile metrics.
+# Publish script interpolates {{key}} placeholders in wiki pages.
+# Update this file when the database changes; all pages stay in sync.
+
+model_count: "19,498"
+model_count_short: "19K+"
+anchor_count: "170"
+anchor_count_exact: "166"
+anchor_link_count: "128K+"
+db_size_mb: "~80MB"
+bank_count: "8"
+model_link_count: "~2,000"
+metadata_count: "~60,000"
+position_count: "~80,000"

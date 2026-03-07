@@ -6,7 +6,7 @@
 
 ## anchor
 
-A semantic label from a shared vocabulary of ~170 terms. Each anchor belongs to one [bank](#bank) and describes a characteristic of a model: `instruction-following`, `GGUF-available`, `Llama-family`, `code-generation`.
+A semantic label from a shared vocabulary of ~{{anchor_count}} terms. Each anchor belongs to one [bank](#bank) and describes a characteristic of a model: `instruction-following`, `GGUF-available`, `Llama-family`, `code-generation`.
 
 Models link to the anchors that describe them. Two models sharing many anchors are semantically related without an explicit edge — similarity is [emergent](Emergent-Similarity), not stored.
 
