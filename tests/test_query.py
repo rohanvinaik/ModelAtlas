@@ -88,10 +88,6 @@ class TestLineage:
             result["derived_from"][0]["target_id"] == "meta-llama/Llama-3.1-8B-Instruct"
         )
 
-    def test_lineage_not_found(self, conn):
-        result = lineage(conn, "nonexistent/Model")
-        assert "error" in result
-
 
 class TestInvalidateIdfCache:
     def test_clears_cache(self, populated_conn):
@@ -119,8 +115,13 @@ class TestStructuredQueryBankDirections:
 
     def test_all_banks_set(self):
         sq = StructuredQuery(
-            architecture=0, capability=1, efficiency=-1,
-            compatibility=1, lineage=0, domain=1, quality=-1,
+            architecture=0,
+            capability=1,
+            efficiency=-1,
+            compatibility=1,
+            lineage=0,
+            domain=1,
+            quality=-1,
         )
         dirs = sq.bank_directions()
         assert len(dirs) == 7

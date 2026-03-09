@@ -1,13 +1,8 @@
 """D1: Deterministic audit of C2 anchor assignments.
 
 Compares C2-assigned anchors (confidence=0.5) against deterministic signals
-from extraction/patterns.py. Produces a stable mismatch taxonomy stored in
-the audit_findings table.
-
-Mismatch types:
-  - contradiction: C2 assigned anchor X, deterministic says anchor Y in same bank
-  - gap: deterministic found anchor X (confidence>=0.8) but C2 missed it
-  - confidence_conflict: both agree on anchor but confidence gap > 0.3
+from extraction/patterns.py. Mismatch types: contradiction, gap,
+confidence_conflict, unsupported.
 """
 
 from __future__ import annotations
@@ -92,38 +87,24 @@ def _get_det_anchors(
     return by_bank
 
 
-def _build_searchable(
-    model_id: str,
-    raw: dict,
-    pipeline_tag: str,
-) -> str:
+def _build_searchable(model_id: str, raw: dict, pipeline_tag: str) -> str:
     """Build searchable text from raw_json and metadata."""
-    parts = [
-        model_id,
-        raw.get("author", ""),
-        pipeline_tag,
-    ]
-    parts.extend(raw.get("tags", []))
+    parts = [model_id, raw.get("author", ""), pipeline_tag, *raw.get("tags", [])]
     return " ".join(parts).lower()
 
 
-def _audit_single_model(
+def _get_model_context(
     conn: sqlite3.Connection,
     ingest_conn: sqlite3.Connection | None,
-    run_id: str,
     model_id: str,
-) -> int:
-    """Audit one model. Returns number of findings."""
-    findings = 0
-
-    # Get pipeline_tag from metadata
+) -> tuple[str, dict]:
+    """Retrieve pipeline_tag and raw_json for a model."""
     row = conn.execute(
         "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'pipeline_tag'",
         (model_id,),
     ).fetchone()
     pipeline_tag = row[0] if row else ""
 
-    # Get raw_json from ingest DB if available
     raw: dict = {}
     if ingest_conn is not None:
         row = ingest_conn.execute(
@@ -136,52 +117,52 @@ def _audit_single_model(
             except (json.JSONDecodeError, TypeError):
                 pass
 
-    searchable = _build_searchable(model_id, raw, pipeline_tag)
+    return pipeline_tag, raw
 
-    # Get C2 anchors (confidence=0.5) and deterministic anchors (confidence>=0.8)
-    c2_anchors = _get_c2_anchors(conn, model_id)
-    det_anchors = _get_det_anchors(conn, model_id)
 
-    # Re-run patterns for fresh deterministic signal
-    det_cap = set(_run_capability_patterns(searchable))
-    det_dom = {label for label, _ in _run_domain_patterns(searchable)}
+def _check_contradictions(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    pipeline_tag: str,
+    bank_pairs: list[tuple[str, set[str], set[str]]],
+) -> int:
+    """Flag C2 anchors not supported by deterministic signals."""
+    findings = 0
+    for bank, c2_set, det_set in bank_pairs:
+        if not (det_set and c2_set):
+            continue
+        sorted_det = sorted(det_set)
+        for c2_label in c2_set - det_set:
+            db.insert_audit_finding(
+                conn,
+                run_id=run_id,
+                model_id=model_id,
+                mismatch_type="contradiction",
+                bank=bank,
+                c2_anchor=c2_label,
+                det_anchor=None,
+                severity=0.7,
+                detail={
+                    "pipeline_tag": pipeline_tag,
+                    "det_found": sorted_det,
+                },
+            )
+            findings += 1
+    return findings
 
-    c2_cap = {label for label, _ in c2_anchors.get("CAPABILITY", [])}
-    c2_dom = {label for label, _ in c2_anchors.get("DOMAIN", [])}
 
-    # --- Contradiction: C2 assigned anchor not supported by deterministic ---
-    for bank, c2_set, det_set in [
-        ("CAPABILITY", c2_cap, det_cap),
-        ("DOMAIN", c2_dom, det_dom),
-    ]:
-        # C2 assigned anchors that deterministic disagrees with
-        if det_set and c2_set:
-            for c2_label in c2_set - det_set:
-                # Only flag as contradiction if deterministic found *something*
-                # in the same bank (not just empty)
-                db.insert_audit_finding(
-                    conn,
-                    run_id=run_id,
-                    model_id=model_id,
-                    mismatch_type="contradiction",
-                    bank=bank,
-                    c2_anchor=c2_label,
-                    det_anchor=None,
-                    severity=0.7,
-                    detail={
-                        "pipeline_tag": pipeline_tag,
-                        "det_found": sorted(det_set),
-                    },
-                )
-                findings += 1
-
-    # --- Gap: deterministic found anchor but C2 missed it ---
-    for bank, c2_set, det_set in [
-        ("CAPABILITY", c2_cap, det_cap),
-        ("DOMAIN", c2_dom, det_dom),
-    ]:
+def _check_gaps(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    pipeline_tag: str,
+    bank_pairs: list[tuple[str, set[str], set[str]]],
+) -> int:
+    """Flag deterministic anchors that C2 missed."""
+    findings = 0
+    for bank, c2_set, det_set in bank_pairs:
         for det_label in det_set - c2_set:
-            # Check if the model has this anchor at any confidence
             existing = conn.execute(
                 """SELECT ma.confidence FROM model_anchors ma
                    JOIN anchors a ON ma.anchor_id = a.anchor_id
@@ -189,7 +170,7 @@ def _audit_single_model(
                 (model_id, det_label),
             ).fetchone()
             if existing and existing[0] >= 0.5:
-                continue  # Already linked at reasonable confidence
+                continue
             db.insert_audit_finding(
                 conn,
                 run_id=run_id,
@@ -202,8 +183,18 @@ def _audit_single_model(
                 detail={"pipeline_tag": pipeline_tag},
             )
             findings += 1
+    return findings
 
-    # --- Confidence conflict: same anchor, large confidence gap ---
+
+def _check_confidence_conflicts(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    c2_anchors: dict[str, list[tuple[str, float]]],
+    det_anchors: dict[str, list[tuple[str, float]]],
+) -> int:
+    """Flag same anchor with large confidence gap between C2 and deterministic."""
+    findings = 0
     for bank in ("CAPABILITY", "DOMAIN"):
         c2_map = {label: conf for label, conf in c2_anchors.get(bank, [])}
         det_map = {label: conf for label, conf in det_anchors.get(bank, [])}
@@ -225,8 +216,145 @@ def _audit_single_model(
                     },
                 )
                 findings += 1
-
     return findings
+
+
+def _check_unsupported(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_id: str,
+    pipeline_tag: str,
+    bank_tuples: list[tuple[str, set[str], set[str], set[str]]],
+) -> int:
+    """Flag C2 anchors in a bank where det found nothing but found signals elsewhere."""
+    findings = 0
+    for bank, c2_set, det_set, other_det in bank_tuples:
+        if not (c2_set and not det_set and other_det):
+            continue
+        sorted_other = sorted(other_det)
+        for c2_label in c2_set:
+            db.insert_audit_finding(
+                conn,
+                run_id=run_id,
+                model_id=model_id,
+                mismatch_type="unsupported",
+                bank=bank,
+                c2_anchor=c2_label,
+                det_anchor=None,
+                severity=0.6,
+                detail={
+                    "pipeline_tag": pipeline_tag,
+                    "other_bank_det": sorted_other,
+                },
+            )
+            findings += 1
+    return findings
+
+
+def _audit_single_model(
+    conn: sqlite3.Connection,
+    ingest_conn: sqlite3.Connection | None,
+    run_id: str,
+    model_id: str,
+) -> int:
+    """Audit one model. Returns number of findings."""
+    pipeline_tag, raw = _get_model_context(conn, ingest_conn, model_id)
+    searchable = _build_searchable(model_id, raw, pipeline_tag)
+
+    c2_anchors = _get_c2_anchors(conn, model_id)
+    det_anchors = _get_det_anchors(conn, model_id)
+
+    det_cap = set(_run_capability_patterns(searchable))
+    det_dom = {label for label, _ in _run_domain_patterns(searchable)}
+    c2_cap = {label for label, _ in c2_anchors.get("CAPABILITY", [])}
+    c2_dom = {label for label, _ in c2_anchors.get("DOMAIN", [])}
+
+    bank_pairs = [
+        ("CAPABILITY", c2_cap, det_cap),
+        ("DOMAIN", c2_dom, det_dom),
+    ]
+
+    findings = 0
+    findings += _check_contradictions(conn, run_id, model_id, pipeline_tag, bank_pairs)
+    findings += _check_gaps(conn, run_id, model_id, pipeline_tag, bank_pairs)
+    findings += _check_confidence_conflicts(
+        conn, run_id, model_id, c2_anchors, det_anchors
+    )
+    findings += _check_unsupported(
+        conn,
+        run_id,
+        model_id,
+        pipeline_tag,
+        [
+            ("CAPABILITY", c2_cap, det_cap, det_dom),
+            ("DOMAIN", c2_dom, det_dom, det_cap),
+        ],
+    )
+    return findings
+
+
+def _finalize_audit(
+    conn: sqlite3.Connection,
+    run_id: str,
+    model_ids: list[str],
+    num_models: int,
+    total_mismatches: int,
+) -> AuditResult:
+    """Compute summary stats, score models, and finalize the audit run."""
+    type_counts: dict[str, int] = {}
+    for row in conn.execute(
+        "SELECT mismatch_type, COUNT(*) FROM audit_findings WHERE run_id = ? GROUP BY mismatch_type",
+        (run_id,),
+    ).fetchall():
+        type_counts[row[0]] = row[1]
+
+    bank_mismatches: dict[str, int] = {}
+    for row in conn.execute(
+        "SELECT bank, COUNT(*) FROM audit_findings WHERE run_id = ? GROUP BY bank",
+        (run_id,),
+    ).fetchall():
+        bank_mismatches[row[0]] = row[1]
+
+    for model_id in model_ids:
+        model_findings = conn.execute(
+            "SELECT COUNT(*) FROM audit_findings WHERE run_id = ? AND model_id = ?",
+            (run_id, model_id),
+        ).fetchone()[0]
+        audit_score = max(0.0, 1.0 - (model_findings * 0.2))
+        db.set_metadata(
+            conn, model_id, "audit_score", str(round(audit_score, 2)), "float"
+        )
+
+    conn.commit()
+
+    per_bank_rates: dict[str, float] = {}
+    if model_ids:
+        for bank_name, count in bank_mismatches.items():
+            per_bank_rates[bank_name] = round(count / num_models, 4)
+
+    summary = {
+        "total_audited": num_models,
+        "total_mismatches": total_mismatches,
+        "per_type_counts": type_counts,
+        "per_bank_rates": per_bank_rates,
+    }
+    db.finish_phase_d_run(conn, run_id, "completed", summary)
+    conn.commit()
+
+    logger.info(
+        "D1 audit complete: %d models, %d mismatches, types=%s",
+        num_models,
+        total_mismatches,
+        type_counts,
+    )
+
+    return AuditResult(
+        run_id=run_id,
+        total_audited=num_models,
+        total_mismatches=total_mismatches,
+        per_bank_rates=per_bank_rates,
+        per_type_counts=type_counts,
+    )
 
 
 def audit_c2(
@@ -251,12 +379,11 @@ def audit_c2(
            WHERE ma.confidence = 0.5"""
     ).fetchall()
     model_ids = [r[0] for r in rows]
+    num_models = len(model_ids)
 
-    logger.info("D1 audit: %d models with C2 anchors", len(model_ids))
+    logger.info("D1 audit: %d models with C2 anchors", num_models)
 
     total_mismatches = 0
-    type_counts: dict[str, int] = {}
-    bank_mismatches: dict[str, int] = {}
 
     for idx, model_id in enumerate(model_ids):
         findings = _audit_single_model(conn, ingest_conn, run_id, model_id)
@@ -264,61 +391,9 @@ def audit_c2(
 
         if (idx + 1) % 500 == 0:
             conn.commit()
-            logger.info("D1 audit: %d/%d models audited...", idx + 1, len(model_ids))
+            logger.info("D1 audit: %d/%d models audited...", idx + 1, num_models)
 
     conn.commit()
 
-    # Compute per-type counts and per-bank rates
-    for row in conn.execute(
-        "SELECT mismatch_type, COUNT(*) FROM audit_findings WHERE run_id = ? GROUP BY mismatch_type",
-        (run_id,),
-    ).fetchall():
-        type_counts[row[0]] = row[1]
-
-    for row in conn.execute(
-        "SELECT bank, COUNT(*) FROM audit_findings WHERE run_id = ? GROUP BY bank",
-        (run_id,),
-    ).fetchall():
-        bank_mismatches[row[0]] = row[1]
-
-    # Compute audit_score per model and store as metadata
-    for model_id in model_ids:
-        model_findings = conn.execute(
-            "SELECT COUNT(*) FROM audit_findings WHERE run_id = ? AND model_id = ?",
-            (run_id, model_id),
-        ).fetchone()[0]
-        # Score: 1.0 = perfect, decays with findings
-        audit_score = max(0.0, 1.0 - (model_findings * 0.2))
-        db.set_metadata(conn, model_id, "audit_score", str(round(audit_score, 2)), "float")
-
-    conn.commit()
-
-    # Per-bank rates
-    per_bank_rates: dict[str, float] = {}
-    if model_ids:
-        for bank_name, count in bank_mismatches.items():
-            per_bank_rates[bank_name] = round(count / len(model_ids), 4)
-
-    summary = {
-        "total_audited": len(model_ids),
-        "total_mismatches": total_mismatches,
-        "per_type_counts": type_counts,
-        "per_bank_rates": per_bank_rates,
-    }
-    db.finish_phase_d_run(conn, run_id, "completed", summary)
-    conn.commit()
-
-    logger.info(
-        "D1 audit complete: %d models, %d mismatches, types=%s",
-        len(model_ids),
-        total_mismatches,
-        type_counts,
-    )
-
-    return AuditResult(
-        run_id=run_id,
-        total_audited=len(model_ids),
-        total_mismatches=total_mismatches,
-        per_bank_rates=per_bank_rates,
-        per_type_counts=type_counts,
-    )
+    result = _finalize_audit(conn, run_id, model_ids, num_models, total_mismatches)
+    return result
