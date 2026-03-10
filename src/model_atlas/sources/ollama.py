@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import urllib.error
 import urllib.request
 
@@ -22,13 +21,25 @@ _TIMEOUT = 5  # seconds
 
 def _parse_param_size(size_str: str) -> float | None:
     """Parse Ollama parameter size string (e.g. '7B', '1.5B') to billions."""
-    match = re.search(
-        r"(\d+(?:\.\d+)?)\s*([BMK])", size_str, re.IGNORECASE
-    )  # NOSONAR — linear regex
-    if not match:
+    size_str = size_str.strip()
+    # Find the unit character (B, M, K) case-insensitive
+    unit_idx = -1
+    unit = ""
+    for i, ch in enumerate(size_str):
+        if ch.upper() in "BMK":
+            unit_idx = i
+            unit = ch.upper()
+            break
+    if unit_idx < 1:
         return None
-    val = float(match.group(1))
-    unit = match.group(2).upper()
+    # Extract the numeric part (skip whitespace between number and unit)
+    num_str = size_str[:unit_idx].rstrip()
+    if not num_str:
+        return None
+    try:
+        val = float(num_str)
+    except ValueError:
+        return None
     if unit == "K":
         return val / 1_000_000
     if unit == "M":

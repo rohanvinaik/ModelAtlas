@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -152,11 +151,6 @@ class ConfigSignals:
 
 
 # Parameter count -> (sign, depth, anchor_label)
-# Regex to extract parameter count like "7B", "1.5b", "70B" from model names.
-# Linear-time: \d+ matches digits, optional \.\d+ matches decimal, [bB] is literal.
-# No nested quantifiers over overlapping character classes — no backtracking risk.
-_PARAM_COUNT_RE = re.compile(r"(\d+\.\d+|\d+)[bB]")  # NOSONAR: S5852 false positive
-
 _PARAM_RANGES: list[tuple[float, float, int, int, str]] = [
     (0, 0.5, -1, 3, "sub-1B"),
     (0.5, 1.5, -1, 2, "1B-class"),
@@ -188,11 +182,36 @@ def _estimate_params_billions(
 
     # 2. Parse from model name (7B, 1.5B, 70b, 0.5b)
     for text in [model_id, *tags]:
-        match = _PARAM_COUNT_RE.search(text)
-        if match:
-            val = float(match.group(1))
-            if 0.1 <= val <= 1000:
-                return val
+        val = _parse_param_from_text(text)
+        if val is not None:
+            return val
+    return None
+
+
+def _parse_param_from_text(text: str) -> float | None:
+    """Extract parameter count from a string like '7B' or '1.5b' without regex."""
+    for i, ch in enumerate(text):
+        if ch in "bB" and i > 0 and (text[i - 1].isdigit() or text[i - 1] == "."):
+            # Walk backwards to find the start of the number
+            start = i - 1
+            has_dot = text[start] == "."
+            while start > 0:
+                prev = text[start - 1]
+                if prev.isdigit():
+                    start -= 1
+                elif prev == "." and not has_dot:
+                    has_dot = True
+                    start -= 1
+                else:
+                    break
+            num_str = text[start:i]
+            if num_str and num_str != ".":
+                try:
+                    val = float(num_str)
+                    if 0.1 <= val <= 1000:
+                        return val
+                except ValueError:
+                    pass
     return None
 
 
