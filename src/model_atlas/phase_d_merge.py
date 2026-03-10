@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 
 from . import db
 
@@ -126,7 +127,10 @@ def _parse_heal_line(line: str) -> tuple[dict | None, str]:
 def _iter_heal_items(files: list[str]):
     """Yield (item_dict, status) tuples from JSONL heal result files."""
     for fpath in files:
-        with open(fpath) as f:
+        resolved = Path(fpath).resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"JSONL file not found: {fpath}")
+        with open(resolved) as f:
             for line in f:
                 item, status = _parse_heal_line(line)
                 if status != "empty":

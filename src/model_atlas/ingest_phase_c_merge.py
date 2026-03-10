@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from pathlib import Path
 
 from . import db
 from .config import QUALITY_GATE_MIN_SCORE
@@ -39,7 +40,10 @@ def _parse_jsonl_line(line: str, required_field: str) -> tuple[dict | None, str]
 def _iter_jsonl_items(files: list[str], required_field: str):
     """Yield (item, status) from JSONL files, skipping empty lines."""
     for fpath in files:
-        with open(fpath) as f:
+        resolved = Path(fpath).resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"JSONL file not found: {fpath}")
+        with open(resolved) as f:
             for line in f:
                 item, status = _parse_jsonl_line(line, required_field)
                 if status != "empty":
