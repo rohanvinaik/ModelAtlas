@@ -33,7 +33,6 @@ def _add_c2_anchor(conn, model_id, label, bank="CAPABILITY"):
     db.link_anchor(conn, model_id, anchor_id, confidence=0.5)
 
 
-
 class TestAuditC2:
     def test_no_c2_models(self, network_conn):
         """No C2 anchors → 0 audited."""
@@ -151,7 +150,10 @@ class TestAuditC2:
         )
         ingest_conn.execute(
             "INSERT INTO ingest_models (model_id, raw_json) VALUES (?, ?)",
-            ("test/model-a", json.dumps({"tags": ["code"], "pipeline_tag": "text-generation"})),
+            (
+                "test/model-a",
+                json.dumps({"tags": ["code"], "pipeline_tag": "text-generation"}),
+            ),
         )
         ingest_conn.commit()
 

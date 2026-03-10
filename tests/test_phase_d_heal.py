@@ -75,10 +75,16 @@ class TestSelectHealingCandidates:
     def test_reproducible_with_seed(self, network_conn):
         """Same seed produces same selection."""
         for i in range(20):
-            _add_model(network_conn, f"test/model-{i}", audit_score=0.3, downloads=i * 100)
+            _add_model(
+                network_conn, f"test/model-{i}", audit_score=0.3, downloads=i * 100
+            )
 
-        sel1, _ = select_healing_candidates(network_conn, None, "local", budget=5, seed=42)
-        sel2, _ = select_healing_candidates(network_conn, None, "local", budget=5, seed=42)
+        sel1, _ = select_healing_candidates(
+            network_conn, None, "local", budget=5, seed=42
+        )
+        sel2, _ = select_healing_candidates(
+            network_conn, None, "local", budget=5, seed=42
+        )
         assert sel1 == sel2
 
     def test_invalid_tier_raises(self, network_conn):
@@ -92,10 +98,23 @@ class TestBuildHealingPrompt:
         """Prompt includes model_id and raw metadata."""
         prompt = build_healing_prompt(
             model_id="org/test-model",
-            raw_json={"author": "org", "pipeline_tag": "text-generation", "tags": ["code"]},
+            raw_json={
+                "author": "org",
+                "pipeline_tag": "text-generation",
+                "tags": ["code"],
+            },
             card_excerpt="A code generation model",
-            current_anchors=[{"label": "chat", "bank": "CAPABILITY", "confidence": 0.5}],
-            audit_findings=[{"type": "contradiction", "bank": "CAPABILITY", "c2_anchor": "chat", "det_anchor": "code-generation"}],
+            current_anchors=[
+                {"label": "chat", "bank": "CAPABILITY", "confidence": 0.5}
+            ],
+            audit_findings=[
+                {
+                    "type": "contradiction",
+                    "bank": "CAPABILITY",
+                    "c2_anchor": "chat",
+                    "det_anchor": "code-generation",
+                }
+            ],
             capability_anchors=["chat", "code-generation", "reasoning"],
             domain_anchors=["code-domain", "math-domain"],
         )
@@ -126,7 +145,9 @@ class TestExportD3:
 
         _add_model(network_conn, "test/model-a", audit_score=0.3)
         _add_c2_anchor(network_conn, "test/model-a", "chat")
-        db.set_metadata(network_conn, "test/model-a", "qwen_summary", "A chat model", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "qwen_summary", "A chat model", "str"
+        )
 
         result = export_d3(
             network_conn, None, tier="local", budget=10, num_shards=1, seed=42
@@ -161,14 +182,21 @@ class TestMergeD3:
         network_conn.commit()
 
         f = tmp_path / "d3_results.jsonl"
-        f.write_text(json.dumps({
-            "model_id": "test/model-a",
-            "summary": "A reasoning model",
-            "selected_anchors": ["reasoning"],
-            "rationale": "Fixed from chat to reasoning",
-            "original_response": json.dumps({"summary": "A chat model", "selected_anchors": ["chat"]}),
-            "original_prompt": "test prompt",
-        }) + "\n")
+        f.write_text(
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "A reasoning model",
+                    "selected_anchors": ["reasoning"],
+                    "rationale": "Fixed from chat to reasoning",
+                    "original_response": json.dumps(
+                        {"summary": "A chat model", "selected_anchors": ["chat"]}
+                    ),
+                    "original_prompt": "test prompt",
+                }
+            )
+            + "\n"
+        )
 
         result = merge_d3(network_conn, [str(f)], run_id)
         assert result["merged"] == 1
@@ -186,10 +214,15 @@ class TestMergeD3:
         network_conn.commit()
 
         f = tmp_path / "d3_results.jsonl"
-        f.write_text(json.dumps({
-            "model_id": "test/model-a",
-            "error": "parse failed",
-        }) + "\n")
+        f.write_text(
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "error": "parse failed",
+                }
+            )
+            + "\n"
+        )
 
         result = merge_d3(network_conn, [str(f)], run_id)
         assert result["skipped"] == 1
@@ -205,13 +238,20 @@ class TestMergeD3:
         network_conn.commit()
 
         f = tmp_path / "d3_results.jsonl"
-        f.write_text(json.dumps({
-            "model_id": "test/model-a",
-            "summary": "A reasoning model",
-            "selected_anchors": ["reasoning"],
-            "original_response": json.dumps({"summary": "old", "selected_anchors": ["chat"]}),
-            "original_prompt": "test prompt",
-        }) + "\n")
+        f.write_text(
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "A reasoning model",
+                    "selected_anchors": ["reasoning"],
+                    "original_response": json.dumps(
+                        {"summary": "old", "selected_anchors": ["chat"]}
+                    ),
+                    "original_prompt": "test prompt",
+                }
+            )
+            + "\n"
+        )
 
         result = merge_d3(network_conn, [str(f)], run_id)
         assert result["anchors_removed"] >= 1

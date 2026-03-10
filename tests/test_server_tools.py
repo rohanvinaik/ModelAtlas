@@ -307,9 +307,7 @@ class TestHfSearchModels:
 
 class TestBuildIndexHuggingface:
     def test_no_candidates_returns_error(self, conn, monkeypatch):
-        monkeypatch.setattr(
-            "model_atlas.server.structured.search", lambda **kw: []
-        )
+        monkeypatch.setattr("model_atlas.server.structured.search", lambda **kw: [])
         result = json.loads(_build_index_huggingface(conn, "code", None, 100, 5))
         assert "error" in result
 

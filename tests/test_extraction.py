@@ -244,7 +244,10 @@ class TestConfigSignals:
         inp2 = ModelInput(model_id="test/B", config=config)
         r1 = extract_det(inp1)
         r2 = extract_det(inp2)
-        assert r1.metadata["structural_fingerprint"] == r2.metadata["structural_fingerprint"]
+        assert (
+            r1.metadata["structural_fingerprint"]
+            == r2.metadata["structural_fingerprint"]
+        )
         assert r1.metadata["structural_fingerprint"][1] == "str"
 
     def test_fingerprint_none_when_incomplete(self):
@@ -343,7 +346,8 @@ class TestLicenseAnchors:
         inp = ModelInput(model_id="test/Model", license_str="")
         result = extract_det(inp)
         license_anchors = [
-            a for a in result.anchors
+            a
+            for a in result.anchors
             if a.label in ("commercial-use-allowed", "research-only", "llama-license")
         ]
         assert license_anchors == []

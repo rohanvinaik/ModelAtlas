@@ -67,9 +67,7 @@ def _add_anchor(
 class TestExportC2:
     def test_sharded_round_robin(self, network_conn, tmp_path, monkeypatch):
         """Models are distributed round-robin across shards."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         for i in range(5):
             _add_model(network_conn, f"test/model-{i}")
 
@@ -88,9 +86,7 @@ class TestExportC2:
 
     def test_min_likes_filter(self, network_conn, tmp_path, monkeypatch):
         """min_likes filters out low-popularity models."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/popular", likes=500)
         _add_model(network_conn, "test/unpopular", likes=5)
 
@@ -103,11 +99,11 @@ class TestExportC2:
 
     def test_skips_models_with_qwen_summary(self, network_conn, tmp_path, monkeypatch):
         """Models that already have qwen_summary are skipped."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/done")
-        db.set_metadata(network_conn, "test/done", "qwen_summary", "already done", "str")
+        db.set_metadata(
+            network_conn, "test/done", "qwen_summary", "already done", "str"
+        )
         _add_model(network_conn, "test/pending")
 
         count = export_c2(network_conn, num_shards=1)
@@ -115,9 +111,7 @@ class TestExportC2:
 
     def test_prompt_includes_config_summary(self, network_conn, tmp_path, monkeypatch):
         """Vibe prompt includes config summary from metadata."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/llama-7b")
         db.set_metadata(network_conn, "test/llama-7b", "model_type", "llama", "str")
         db.set_metadata(network_conn, "test/llama-7b", "num_layers", "32", "int")
@@ -131,14 +125,18 @@ class TestExportC2:
         assert "num_layers=32" in item["prompt"]
         assert "hidden_size=4096" in item["prompt"]
 
-    def test_prompt_includes_existing_anchors(self, network_conn, tmp_path, monkeypatch):
+    def test_prompt_includes_existing_anchors(
+        self, network_conn, tmp_path, monkeypatch
+    ):
         """Vibe prompt includes existing anchors."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model-with-anchors")
-        _add_anchor(network_conn, "test/model-with-anchors", "decoder-only", bank="ARCHITECTURE")
-        _add_anchor(network_conn, "test/model-with-anchors", "7B-class", bank="EFFICIENCY")
+        _add_anchor(
+            network_conn, "test/model-with-anchors", "decoder-only", bank="ARCHITECTURE"
+        )
+        _add_anchor(
+            network_conn, "test/model-with-anchors", "7B-class", bank="EFFICIENCY"
+        )
 
         export_c2(network_conn, num_shards=1)
 
@@ -149,9 +147,7 @@ class TestExportC2:
 
     def test_prompt_has_no_placeholder_tags(self, network_conn, tmp_path, monkeypatch):
         """Exported prompts must not contain literal placeholder strings."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model-a")
 
         export_c2(network_conn, num_shards=1)
@@ -163,17 +159,13 @@ class TestExportC2:
 
     def test_zero_models_returns_zero(self, network_conn, tmp_path, monkeypatch):
         """No models → returns 0, no files created."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         count = export_c2(network_conn, num_shards=2)
         assert count == 0
 
     def test_output_includes_valid_anchors(self, network_conn, tmp_path, monkeypatch):
         """Each JSONL item includes valid_anchors from CAPABILITY+DOMAIN banks."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model-a")
         # Add some dictionary anchors
         db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
@@ -189,9 +181,7 @@ class TestExportC2:
 
     def test_prompt_includes_candidate_lists(self, network_conn, tmp_path, monkeypatch):
         """Prompt lists CAPABILITY and DOMAIN candidates for selection."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model-a")
         db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
         db.get_or_create_anchor(network_conn, "medical", "DOMAIN", source="seed")
@@ -203,16 +193,18 @@ class TestExportC2:
         assert "reasoning" in item["prompt"]
         assert "medical" in item["prompt"]
 
-    def test_candidates_exclude_already_assigned(self, network_conn, tmp_path, monkeypatch):
+    def test_candidates_exclude_already_assigned(
+        self, network_conn, tmp_path, monkeypatch
+    ):
         """Already-assigned anchors are excluded from candidate lists."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model-a")
         # Add "reasoning" to dictionary AND link it to the model
         _add_anchor(network_conn, "test/model-a", "reasoning", bank="CAPABILITY")
         # Add "code-generation" to dictionary only (not linked)
-        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(
+            network_conn, "code-generation", "CAPABILITY", source="seed"
+        )
 
         export_c2(network_conn, num_shards=1)
 
@@ -241,7 +233,8 @@ class TestMergeC1:
 
         f = tmp_path / "c1_results.jsonl"
         f.write_text(
-            json.dumps({"model_id": "test/model-a", "smol_summary": "A great model"}) + "\n"
+            json.dumps({"model_id": "test/model-a", "smol_summary": "A great model"})
+            + "\n"
         )
 
         result = merge_c1(network_conn, [str(f)])
@@ -270,7 +263,8 @@ class TestMergeC1:
         """Unknown model_ids get stub model entries."""
         f = tmp_path / "c1_results.jsonl"
         f.write_text(
-            json.dumps({"model_id": "unknown/new-model", "smol_summary": "New one"}) + "\n"
+            json.dumps({"model_id": "unknown/new-model", "smol_summary": "New one"})
+            + "\n"
         )
 
         result = merge_c1(network_conn, [str(f)])
@@ -287,7 +281,8 @@ class TestMergeC1:
 
         f = tmp_path / "c1_results.jsonl"
         f.write_text(
-            json.dumps({"model_id": "test/model-a", "smol_summary": "Summary v1"}) + "\n"
+            json.dumps({"model_id": "test/model-a", "smol_summary": "Summary v1"})
+            + "\n"
         )
 
         merge_c1(network_conn, [str(f)])
@@ -310,15 +305,20 @@ class TestMergeC2:
         _add_model(network_conn, "test/model-a")
         # Pre-seed dictionary anchors
         db.get_or_create_anchor(network_conn, "reasoning", "CAPABILITY", source="seed")
-        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(
+            network_conn, "code-generation", "CAPABILITY", source="seed"
+        )
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "summary": "Fine-tuned for code",
-                "selected_anchors": ["reasoning", "code-generation"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "Fine-tuned for code",
+                    "selected_anchors": ["reasoning", "code-generation"],
+                }
+            )
+            + "\n"
         )
 
         result = merge_c2(network_conn, [str(f)])
@@ -347,11 +347,14 @@ class TestMergeC2:
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "summary": "A model",
-                "selected_anchors": ["reasoning", "invented-tag"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "A model",
+                    "selected_anchors": ["reasoning", "invented-tag"],
+                }
+            )
+            + "\n"
         )
 
         result = merge_c2(network_conn, [str(f)])
@@ -371,11 +374,22 @@ class TestMergeC2:
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "summary": "A model",
-                "selected_anchors": ["a-cap", "b-cap", "c-cap", "d-cap", "e-cap", "f-cap", "g-cap"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "A model",
+                    "selected_anchors": [
+                        "a-cap",
+                        "b-cap",
+                        "c-cap",
+                        "d-cap",
+                        "e-cap",
+                        "f-cap",
+                        "g-cap",
+                    ],
+                }
+            )
+            + "\n"
         )
 
         merge_c2(network_conn, [str(f)])
@@ -400,15 +414,20 @@ class TestMergeC2:
     def test_backward_compat_extra_anchors(self, network_conn, tmp_path):
         """Falls back to extra_anchors field for old-format results."""
         _add_model(network_conn, "test/model-a")
-        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(
+            network_conn, "code-generation", "CAPABILITY", source="seed"
+        )
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "summary": "Version 1",
-                "extra_anchors": ["code-generation"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "Version 1",
+                    "extra_anchors": ["code-generation"],
+                }
+            )
+            + "\n"
         )
 
         result = merge_c2(network_conn, [str(f)])
@@ -418,15 +437,20 @@ class TestMergeC2:
     def test_idempotent(self, network_conn, tmp_path):
         """Re-merging same data overwrites cleanly."""
         _add_model(network_conn, "test/model-a")
-        db.get_or_create_anchor(network_conn, "code-generation", "CAPABILITY", source="seed")
+        db.get_or_create_anchor(
+            network_conn, "code-generation", "CAPABILITY", source="seed"
+        )
 
         f = tmp_path / "c2_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "summary": "Version 1",
-                "selected_anchors": ["code-generation"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "summary": "Version 1",
+                    "selected_anchors": ["code-generation"],
+                }
+            )
+            + "\n"
         )
 
         merge_c2(network_conn, [str(f)])
@@ -446,14 +470,16 @@ class TestMergeC2:
 class TestExportC3:
     def test_exports_models_needing_quality(self, network_conn, tmp_path, monkeypatch):
         """Exports models with vibe_summary but no quality_score."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/vibed")
-        db.set_metadata(network_conn, "test/vibed", "vibe_summary", "A cool model", "str")
+        db.set_metadata(
+            network_conn, "test/vibed", "vibe_summary", "A cool model", "str"
+        )
 
         _add_model(network_conn, "test/scored")
-        db.set_metadata(network_conn, "test/scored", "vibe_summary", "Scored model", "str")
+        db.set_metadata(
+            network_conn, "test/scored", "vibe_summary", "Scored model", "str"
+        )
         db.set_metadata(network_conn, "test/scored", "quality_score", "0.8", "float")
 
         count = export_c3(network_conn, num_shards=1)
@@ -466,11 +492,11 @@ class TestExportC3:
 
     def test_blind_prompt_contains_summary(self, network_conn, tmp_path, monkeypatch):
         """Quality gate prompt includes the summary text."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/model")
-        db.set_metadata(network_conn, "test/model", "vibe_summary", "Unique summary text", "str")
+        db.set_metadata(
+            network_conn, "test/model", "vibe_summary", "Unique summary text", "str"
+        )
 
         export_c3(network_conn, num_shards=1)
 
@@ -480,9 +506,7 @@ class TestExportC3:
 
     def test_zero_models_returns_zero(self, network_conn, tmp_path, monkeypatch):
         """No eligible models → returns 0."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C3_WORK_DIR", tmp_path)
         count = export_c3(network_conn, num_shards=2)
         assert count == 0
 
@@ -499,14 +523,17 @@ class TestMergeC3:
 
         f = tmp_path / "c3_results.jsonl"
         f.write_text(
-            json.dumps({
-                "model_id": "test/model-a",
-                "quality_score": 0.78,
-                "specificity": 2,
-                "coherence": 3,
-                "artifacts": 2,
-                "flags": ["generic"],
-            }) + "\n"
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "quality_score": 0.78,
+                    "specificity": 2,
+                    "coherence": 3,
+                    "artifacts": 2,
+                    "flags": ["generic"],
+                }
+            )
+            + "\n"
         )
 
         result = merge_c3(network_conn, [str(f)])
@@ -531,8 +558,26 @@ class TestMergeC3:
 
         f = tmp_path / "c3_results.jsonl"
         lines = [
-            json.dumps({"model_id": "test/good", "quality_score": 0.8, "specificity": 3, "coherence": 2, "artifacts": 2, "flags": []}),
-            json.dumps({"model_id": "test/bad", "quality_score": 0.2, "specificity": 0, "coherence": 1, "artifacts": 1, "flags": ["generic", "truncated"]}),
+            json.dumps(
+                {
+                    "model_id": "test/good",
+                    "quality_score": 0.8,
+                    "specificity": 3,
+                    "coherence": 2,
+                    "artifacts": 2,
+                    "flags": [],
+                }
+            ),
+            json.dumps(
+                {
+                    "model_id": "test/bad",
+                    "quality_score": 0.2,
+                    "specificity": 0,
+                    "coherence": 1,
+                    "artifacts": 1,
+                    "flags": ["generic", "truncated"],
+                }
+            ),
         ]
         f.write_text("\n".join(lines) + "\n")
 
@@ -551,8 +596,12 @@ class TestSelectSummaries:
     def test_prefers_smol_over_qwen(self, network_conn):
         """When both exist, smol_summary wins."""
         _add_model(network_conn, "test/model-a")
-        db.set_metadata(network_conn, "test/model-a", "smol_summary", "smol version", "str")
-        db.set_metadata(network_conn, "test/model-a", "qwen_summary", "qwen version", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "smol_summary", "smol version", "str"
+        )
+        db.set_metadata(
+            network_conn, "test/model-a", "qwen_summary", "qwen version", "str"
+        )
 
         result = select_summaries(network_conn)
         assert result["selected"] == 1
@@ -567,7 +616,9 @@ class TestSelectSummaries:
     def test_falls_back_to_qwen(self, network_conn):
         """When only qwen exists, uses qwen_summary."""
         _add_model(network_conn, "test/model-a")
-        db.set_metadata(network_conn, "test/model-a", "qwen_summary", "qwen version", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "qwen_summary", "qwen version", "str"
+        )
 
         result = select_summaries(network_conn)
         assert result["selected"] == 1
@@ -581,7 +632,9 @@ class TestSelectSummaries:
     def test_stores_provenance(self, network_conn):
         """vibe_summary_source tracks which summary was chosen."""
         _add_model(network_conn, "test/model-a")
-        db.set_metadata(network_conn, "test/model-a", "smol_summary", "smol text", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "smol_summary", "smol text", "str"
+        )
 
         select_summaries(network_conn)
 
@@ -593,8 +646,12 @@ class TestSelectSummaries:
     def test_preserves_originals(self, network_conn):
         """Original smol_summary and qwen_summary are preserved."""
         _add_model(network_conn, "test/model-a")
-        db.set_metadata(network_conn, "test/model-a", "smol_summary", "original smol", "str")
-        db.set_metadata(network_conn, "test/model-a", "qwen_summary", "original qwen", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "smol_summary", "original smol", "str"
+        )
+        db.set_metadata(
+            network_conn, "test/model-a", "qwen_summary", "original qwen", "str"
+        )
 
         select_summaries(network_conn)
 
@@ -611,8 +668,12 @@ class TestSelectSummaries:
     def test_skips_already_done(self, network_conn):
         """Models with existing vibe_summary are skipped."""
         _add_model(network_conn, "test/model-a")
-        db.set_metadata(network_conn, "test/model-a", "smol_summary", "smol text", "str")
-        db.set_metadata(network_conn, "test/model-a", "vibe_summary", "already set", "str")
+        db.set_metadata(
+            network_conn, "test/model-a", "smol_summary", "smol text", "str"
+        )
+        db.set_metadata(
+            network_conn, "test/model-a", "vibe_summary", "already set", "str"
+        )
 
         result = select_summaries(network_conn)
         assert result["selected"] == 0
@@ -689,9 +750,7 @@ class TestPhaseStatus:
 class TestExportC1:
     def test_exports_model_ids(self, network_conn, tmp_path, monkeypatch):
         """Exports model_ids without smol_summary."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C1_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C1_WORK_DIR", tmp_path)
         _add_model(network_conn, "test/needs-c1")
         _add_model(network_conn, "test/has-c1")
         db.set_metadata(network_conn, "test/has-c1", "smol_summary", "done", "str")
@@ -705,8 +764,6 @@ class TestExportC1:
 
     def test_zero_returns_zero(self, network_conn, tmp_path, monkeypatch):
         """All models done → returns 0."""
-        monkeypatch.setattr(
-            "model_atlas.ingest_phase_c.PHASE_C1_WORK_DIR", tmp_path
-        )
+        monkeypatch.setattr("model_atlas.ingest_phase_c.PHASE_C1_WORK_DIR", tmp_path)
         count = export_c1(network_conn)
         assert count == 0

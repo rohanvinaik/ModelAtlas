@@ -25,11 +25,13 @@ def mock_openai():
 class TestParseAndValidate:
     def test_valid_output(self):
         """Parses well-formed healing JSON."""
-        text = json.dumps({
-            "summary": "A code generation model",
-            "selected_anchors": ["code-generation", "reasoning"],
-            "rationale": "Model is for code",
-        })
+        text = json.dumps(
+            {
+                "summary": "A code generation model",
+                "selected_anchors": ["code-generation", "reasoning"],
+                "rationale": "Model is for code",
+            }
+        )
         result = _parse_and_validate(text)
         assert result["summary"] == "A code generation model"
         assert result["selected_anchors"] == ["code-generation", "reasoning"]
@@ -37,28 +39,34 @@ class TestParseAndValidate:
 
     def test_filters_against_valid_anchors(self):
         """Only anchors in the valid set are returned."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["code-generation", "invalid-anchor", "chat"],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["code-generation", "invalid-anchor", "chat"],
+            }
+        )
         result = _parse_and_validate(text, valid_anchors={"code-generation", "chat"})
         assert result["selected_anchors"] == ["code-generation", "chat"]
 
     def test_strips_short_anchors(self):
         """Anchors shorter than 3 chars are dropped."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["ab", "code-generation"],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["ab", "code-generation"],
+            }
+        )
         result = _parse_and_validate(text)
         assert result["selected_anchors"] == ["code-generation"]
 
     def test_max_five_anchors(self):
         """At most 5 anchors returned."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": [f"anchor-{i}" for i in range(10)],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": [f"anchor-{i}" for i in range(10)],
+            }
+        )
         result = _parse_and_validate(text)
         assert len(result["selected_anchors"]) == 5
 
@@ -86,38 +94,46 @@ class TestParseAndValidate:
 
     def test_non_string_anchors_skipped(self):
         """Non-string items in anchors are silently skipped."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": [123, "chat", None],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": [123, "chat", None],
+            }
+        )
         result = _parse_and_validate(text)
         assert result["selected_anchors"] == ["chat"]
 
     def test_non_string_rationale_defaults_empty(self):
         """Non-string rationale defaults to empty string."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["chat"],
-            "rationale": 42,
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["chat"],
+                "rationale": 42,
+            }
+        )
         result = _parse_and_validate(text)
         assert result["rationale"] == ""
 
     def test_missing_rationale_defaults_empty(self):
         """Missing rationale field defaults to empty string."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["chat"],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["chat"],
+            }
+        )
         result = _parse_and_validate(text)
         assert result["rationale"] == ""
 
     def test_anchors_lowercased_and_stripped(self):
         """Anchor labels are lowercased and stripped."""
-        text = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["  Code-Generation  ", " CHAT "],
-        })
+        text = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["  Code-Generation  ", " CHAT "],
+            }
+        )
         result = _parse_and_validate(text)
         assert result["selected_anchors"] == ["code-generation", "chat"]
 
@@ -142,20 +158,27 @@ class TestWorkerMain:
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
-        inp.write_text(json.dumps({
-            "model_id": "test/model-a",
-            "healing_prompt": "Classify this model",
-            "valid_anchors": ["chat", "reasoning"],
-            "run_id": "run-1",
-            "original_prompt": "original prompt",
-            "original_response": '{"summary": "old", "selected_anchors": ["chat"]}',
-        }) + "\n")
+        inp.write_text(
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "healing_prompt": "Classify this model",
+                    "valid_anchors": ["chat", "reasoning"],
+                    "run_id": "run-1",
+                    "original_prompt": "original prompt",
+                    "original_response": '{"summary": "old", "selected_anchors": ["chat"]}',
+                }
+            )
+            + "\n"
+        )
 
-        llm_output = json.dumps({
-            "summary": "A reasoning model",
-            "selected_anchors": ["reasoning"],
-            "rationale": "Fixed classification",
-        })
+        llm_output = json.dumps(
+            {
+                "summary": "A reasoning model",
+                "selected_anchors": ["reasoning"],
+                "rationale": "Fixed classification",
+            }
+        )
         mock_client = self._make_mock_client(llm_output)
         mock_openai.return_value = mock_client
 
@@ -176,11 +199,16 @@ class TestWorkerMain:
         inp = tmp_path / "input.jsonl"
         out = tmp_path / "output.jsonl"
 
-        inp.write_text(json.dumps({
-            "model_id": "test/model-a",
-            "healing_prompt": "Classify",
-            "run_id": "run-1",
-        }) + "\n")
+        inp.write_text(
+            json.dumps(
+                {
+                    "model_id": "test/model-a",
+                    "healing_prompt": "Classify",
+                    "run_id": "run-1",
+                }
+            )
+            + "\n"
+        )
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = RuntimeError("API down")
@@ -221,22 +249,31 @@ class TestWorkerMain:
 
         for i in range(2):
             with open(inp, "a") as f:
-                f.write(json.dumps({
-                    "model_id": f"test/model-{i}",
-                    "healing_prompt": "Classify",
-                    "run_id": "run-1",
-                }) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "model_id": f"test/model-{i}",
+                            "healing_prompt": "Classify",
+                            "run_id": "run-1",
+                        }
+                    )
+                    + "\n"
+                )
 
-        llm_output = json.dumps({
-            "summary": "A model",
-            "selected_anchors": ["chat"],
-        })
+        llm_output = json.dumps(
+            {
+                "summary": "A model",
+                "selected_anchors": ["chat"],
+            }
+        )
         mock_client = self._make_mock_client(llm_output)
         mock_openai.return_value = mock_client
 
         worker_mod._shutdown = True
         try:
-            with patch("sys.argv", ["worker", "--input", str(inp), "--output", str(out)]):
+            with patch(
+                "sys.argv", ["worker", "--input", str(inp), "--output", str(out)]
+            ):
                 main()
 
             assert out.read_text().strip() == ""

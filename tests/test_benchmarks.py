@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from model_atlas.extraction.benchmarks import derive_benchmark_anchors, extract_benchmarks
+from model_atlas.extraction.benchmarks import (
+    derive_benchmark_anchors,
+    extract_benchmarks,
+)
 
 
 class TestExtractBenchmarks:

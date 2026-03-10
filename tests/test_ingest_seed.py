@@ -14,7 +14,6 @@ from model_atlas.ingest_seed import (
     _safetensors_to_dict,
 )
 
-
 # ---------------------------------------------------------------------------
 # _make_tz_aware
 # ---------------------------------------------------------------------------
@@ -145,8 +144,12 @@ class TestHfModelToInput:
 
     def test_none_fields_become_empty(self):
         model = _make_hf_model(
-            author=None, pipeline_tag=None, tags=None,
-            library_name=None, likes=None, downloads=None,
+            author=None,
+            pipeline_tag=None,
+            tags=None,
+            library_name=None,
+            likes=None,
+            downloads=None,
             created_at=None,
         )
         inp = _hf_model_to_input(model)
@@ -261,6 +264,13 @@ class TestSeedPassesConfig:
         assert "text-generation" in niche["pipeline_tags"]
 
     def test_all_passes_have_required_keys(self):
-        required = {"name", "description", "min_likes", "min_downloads", "min_created", "pipeline_tags"}
+        required = {
+            "name",
+            "description",
+            "min_likes",
+            "min_downloads",
+            "min_created",
+            "pipeline_tags",
+        }
         for p in SEED_PASSES:
             assert required.issubset(p.keys()), f"Pass '{p['name']}' missing keys"

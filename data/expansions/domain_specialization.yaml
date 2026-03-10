@@ -52,7 +52,39 @@ expansions:
           value: "music"
         - type: "name_regex"
           value: "\\b(?:music|audio(?:gen|craft)|midi|melody)\\b"
+      min_matches: 1
+    confidence: 0.7
+
+  - label: "speech-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
         - type: "pipeline_tag_in"
-          value: ["text-to-audio"]
+          value: ["text-to-speech", "automatic-speech-recognition", "voice-activity-detection"]
+        - type: "tag_exact"
+          value: "text-to-speech"
+        - type: "tag_exact"
+          value: "automatic-speech-recognition"
+        - type: "name_regex"
+          value: "\\b(?:tts|asr|speech|whisper|bark|parler|kokoro|piper|vits|voice(?:clone|craft)?)\\b"
+      min_matches: 1
+    confidence: 0.7
+
+  - label: "audio-domain"
+    bank: "DOMAIN"
+    category: "specialization"
+    mode: "auto_link"
+    match_rules:
+      operator: "OR"
+      conditions:
+        - type: "pipeline_tag_in"
+          value: ["text-to-audio", "audio-to-audio", "audio-classification", "audio-text-to-text"]
+        - type: "tag_exact"
+          value: "audio"
+        - type: "name_regex"
+          value: "\\b(?:audio(?:lm|palm|gen|ldm|craft)|sound|noise|acoustic)\\b"
       min_matches: 1
     confidence: 0.7

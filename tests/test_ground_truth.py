@@ -24,8 +24,13 @@ class TestValidateAgainstGroundTruth:
 
         # Insert a model with a vibe_summary
         db.insert_model(conn, "test/Model-7B", author="test")
-        db.set_metadata(conn, "test/Model-7B", "vibe_summary",
-                        "A 7B parameter language model for code generation", "str")
+        db.set_metadata(
+            conn,
+            "test/Model-7B",
+            "vibe_summary",
+            "A 7B parameter language model for code generation",
+            "str",
+        )
         conn.commit()
 
         # Synthetic ground truth — similar but not identical
@@ -54,7 +59,6 @@ class TestValidateAgainstGroundTruth:
         assert result["similarity_mean"] == 0.0
         assert result["total_compared"] == 0
 
-
     def test_empty_ground_truth(self):
         """Works with empty ground truth datasets."""
         conn = _make_network_conn()
@@ -65,14 +69,14 @@ class TestValidateAgainstGroundTruth:
         assert result["similarity_mean"] == 0.0
         assert result["anchor_coverage_mean"] == 0.0
 
-
     def test_flags_low_similarity(self):
         """Flags models with very low summary similarity."""
         conn = _make_network_conn()
 
         db.insert_model(conn, "test/Divergent", author="test")
-        db.set_metadata(conn, "test/Divergent", "vibe_summary",
-                        "AAAA BBBB CCCC DDDD", "str")
+        db.set_metadata(
+            conn, "test/Divergent", "vibe_summary", "AAAA BBBB CCCC DDDD", "str"
+        )
         conn.commit()
 
         gt_summaries = {

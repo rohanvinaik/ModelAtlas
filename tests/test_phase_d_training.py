@@ -39,7 +39,9 @@ def _add_correction(conn, model_id, tier="local", run_id="test-run"):
         tier=tier,
         original_prompt="Classify this model",
         original_response=json.dumps({"summary": "old", "selected_anchors": ["chat"]}),
-        healed_response=json.dumps({"summary": "new", "selected_anchors": ["reasoning"]}),
+        healed_response=json.dumps(
+            {"summary": "new", "selected_anchors": ["reasoning"]}
+        ),
         anchors_added=["reasoning"],
         anchors_removed=["chat"],
         rationale="Fixed classification",
@@ -110,7 +112,9 @@ class TestExportTrainingData:
 
     def test_default_output_path(self, network_conn, monkeypatch, tmp_path):
         """Uses default path when output_path is None."""
-        monkeypatch.setattr("model_atlas.phase_d_training.PHASE_D_TRAINING_DIR", tmp_path)
+        monkeypatch.setattr(
+            "model_atlas.phase_d_training.PHASE_D_TRAINING_DIR", tmp_path
+        )
         _add_correction(network_conn, "test/model-a")
 
         stats = export_training_data(network_conn)

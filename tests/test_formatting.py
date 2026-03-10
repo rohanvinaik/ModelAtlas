@@ -169,10 +169,24 @@ class TestFormatNetworkResults:
 class TestFormatFuzzyResults:
     def test_sorts_by_score_descending(self):
         candidates = [
-            {"model_id": "a/Low", "author": "a", "likes": 10, "downloads": 100,
-             "pipeline_tag": "text-generation", "tags": ["t1"], "library_name": "transformers"},
-            {"model_id": "b/High", "author": "b", "likes": 500, "downloads": 10000,
-             "pipeline_tag": "text-generation", "tags": ["t1"], "library_name": "transformers"},
+            {
+                "model_id": "a/Low",
+                "author": "a",
+                "likes": 10,
+                "downloads": 100,
+                "pipeline_tag": "text-generation",
+                "tags": ["t1"],
+                "library_name": "transformers",
+            },
+            {
+                "model_id": "b/High",
+                "author": "b",
+                "likes": 500,
+                "downloads": 10000,
+                "pipeline_tag": "text-generation",
+                "tags": ["t1"],
+                "library_name": "transformers",
+            },
         ]
         fuzzy_scores = {"a/Low": 0.3, "b/High": 0.9}
         result = format_fuzzy_results(candidates, fuzzy_scores, limit=10)
@@ -181,8 +195,15 @@ class TestFormatFuzzyResults:
 
     def test_respects_limit(self):
         candidates = [
-            {"model_id": f"t/{i}", "author": "t", "likes": 0, "downloads": 0,
-             "pipeline_tag": "", "tags": [], "library_name": ""}
+            {
+                "model_id": f"t/{i}",
+                "author": "t",
+                "likes": 0,
+                "downloads": 0,
+                "pipeline_tag": "",
+                "tags": [],
+                "library_name": "",
+            }
             for i in range(5)
         ]
         fuzzy_scores = {f"t/{i}": float(i) for i in range(5)}
@@ -194,8 +215,15 @@ class TestFormatFuzzyResults:
 
     def test_missing_fuzzy_score_defaults_zero(self):
         candidates = [
-            {"model_id": "a/A", "author": "a", "likes": 0, "downloads": 0,
-             "pipeline_tag": "", "tags": [], "library_name": ""},
+            {
+                "model_id": "a/A",
+                "author": "a",
+                "likes": 0,
+                "downloads": 0,
+                "pipeline_tag": "",
+                "tags": [],
+                "library_name": "",
+            },
         ]
         result = format_fuzzy_results(candidates, {}, limit=10)
         assert len(result) == 1
@@ -203,17 +231,30 @@ class TestFormatFuzzyResults:
 
     def test_tags_capped_at_10(self):
         candidates = [
-            {"model_id": "a/A", "author": "a", "likes": 0, "downloads": 0,
-             "pipeline_tag": "", "tags": [f"tag{i}" for i in range(20)],
-             "library_name": ""},
+            {
+                "model_id": "a/A",
+                "author": "a",
+                "likes": 0,
+                "downloads": 0,
+                "pipeline_tag": "",
+                "tags": [f"tag{i}" for i in range(20)],
+                "library_name": "",
+            },
         ]
         result = format_fuzzy_results(candidates, {"a/A": 0.5}, limit=10)
         assert len(result[0]["tags"]) == 10
 
     def test_none_tags_handled(self):
         candidates = [
-            {"model_id": "a/A", "author": "a", "likes": 0, "downloads": 0,
-             "pipeline_tag": "", "tags": None, "library_name": ""},
+            {
+                "model_id": "a/A",
+                "author": "a",
+                "likes": 0,
+                "downloads": 0,
+                "pipeline_tag": "",
+                "tags": None,
+                "library_name": "",
+            },
         ]
         result = format_fuzzy_results(candidates, {"a/A": 0.5}, limit=10)
         assert result[0]["tags"] == []
@@ -223,8 +264,15 @@ class TestFormatFuzzyResults:
 
     def test_output_field_names(self):
         candidates = [
-            {"model_id": "a/A", "author": "a", "likes": 42, "downloads": 999,
-             "pipeline_tag": "text-gen", "tags": ["t"], "library_name": "torch"},
+            {
+                "model_id": "a/A",
+                "author": "a",
+                "likes": 42,
+                "downloads": 999,
+                "pipeline_tag": "text-gen",
+                "tags": ["t"],
+                "library_name": "torch",
+            },
         ]
         result = format_fuzzy_results(candidates, {"a/A": 0.75}, limit=10)
         d = result[0]

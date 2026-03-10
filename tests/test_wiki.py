@@ -31,8 +31,7 @@ def wiki_tree(tmp_path: Path):
         "# API\n\nAPI docs.\n"
     )
     (tmp_path / "README.md").write_text(
-        "# Project\n\nA short readme.\n\n"
-        "## Install\n\nRun pip install.\n"
+        "# Project\n\nA short readme.\n\n## Install\n\nRun pip install.\n"
     )
 
     # wiki.yaml
@@ -74,6 +73,7 @@ def wiki_config(wiki_tree: Path) -> WikiConfig:
 
 # ---------- Config parsing ----------
 
+
 class TestConfigParsing:
     def test_load_pages(self, wiki_config: WikiConfig):
         assert len(wiki_config.pages) == 3
@@ -108,6 +108,7 @@ class TestConfigParsing:
 
 # ---------- Extractor ----------
 
+
 class TestExtractor:
     def test_extract_all(self, wiki_tree: Path):
         source = SourceSpec(path="README.md", sections="all")
@@ -116,7 +117,9 @@ class TestExtractor:
         assert "Run pip install" in result
 
     def test_extract_specific_sections(self, wiki_tree: Path):
-        source = SourceSpec(path="docs/design.md", sections=["Overview", "Architecture"])
+        source = SourceSpec(
+            path="docs/design.md", sections=["Overview", "Architecture"]
+        )
         result = extract_sections(source, wiki_tree)
         assert "This is the overview" in result
         assert "Arch details" in result
@@ -130,8 +133,11 @@ class TestExtractor:
 
 # ---------- Determinism ----------
 
+
 class TestDeterminism:
-    def test_materialize_twice_identical(self, wiki_config: WikiConfig, wiki_tree: Path):
+    def test_materialize_twice_identical(
+        self, wiki_config: WikiConfig, wiki_tree: Path
+    ):
         """Materialize twice, assert byte-identical output."""
         out1 = wiki_tree / ".wiki1"
         out2 = wiki_tree / ".wiki2"
@@ -153,6 +159,7 @@ class TestDeterminism:
 
 
 # ---------- Drift detection ----------
+
 
 class TestDrift:
     def test_clean_after_materialize(self, wiki_config: WikiConfig, wiki_tree: Path):
@@ -256,6 +263,7 @@ class TestDrift:
 
 # ---------- Provenance (frontmatter) ----------
 
+
 class TestProvenance:
     def test_frontmatter_fields_present(self, wiki_config: WikiConfig, wiki_tree: Path):
         """All required frontmatter fields are present in materialized pages."""
@@ -263,9 +271,15 @@ class TestProvenance:
         materialize(wiki_config, wiki_tree, out)
 
         required_fields = [
-            "generated:", "generated_from:", "source_hash:",
-            "spec_hash:", "file_hash:", "materializer_version:",
-            "theory_scope:", "audience:", "page_id:",
+            "generated:",
+            "generated_from:",
+            "source_hash:",
+            "spec_hash:",
+            "file_hash:",
+            "materializer_version:",
+            "theory_scope:",
+            "audience:",
+            "page_id:",
         ]
 
         for page in wiki_config.pages:
@@ -288,6 +302,7 @@ class TestProvenance:
 
 
 # ---------- Round-trip (manifest integrity) ----------
+
 
 class TestRoundTrip:
     def test_manifest_hashes_match_disk(self, wiki_config: WikiConfig, wiki_tree: Path):
@@ -330,10 +345,15 @@ class TestRoundTrip:
         """Save → load manifest preserves all fields."""
         entries = [
             PageEntry(
-                id="test-page", title="Test", path=".wiki/test-page.md",
-                source_hash="abcd1234abcd1234", spec_hash="efef5678efef5678",
-                file_hash="1111222233334444", sources=["docs/a.md"],
-                audience="user", theory_scope=False,
+                id="test-page",
+                title="Test",
+                path=".wiki/test-page.md",
+                source_hash="abcd1234abcd1234",
+                spec_hash="efef5678efef5678",
+                file_hash="1111222233334444",
+                sources=["docs/a.md"],
+                audience="user",
+                theory_scope=False,
             ),
         ]
         original = Manifest(

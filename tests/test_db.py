@@ -227,3 +227,266 @@ def test_get_connection(tmp_path, monkeypatch):
     conn.close()
     # Parent dir was created
     assert db_path.parent.exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase D: audit/correction lifecycle
+# ---------------------------------------------------------------------------
+
+
+class TestCreatePhaseDRun:
+    """Tests for create_phase_d_run."""
+
+    def test_returns_uuid_string(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1", config={"phase": "audit"})
+        assert isinstance(run_id, str)
+        assert len(run_id) == 36  # UUID format
+
+    def test_persists_to_database(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        row = conn.execute(
+            "SELECT phase, status FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row is not None
+        assert row["phase"] == "d1"
+        assert row["status"] == "running"
+
+    def test_config_stored_as_json(self, conn):
+        config = {"top_k": 10, "threshold": 0.5}
+        run_id = db.create_phase_d_run(conn, "d3", config=config)
+        import json
+
+        row = conn.execute(
+            "SELECT config FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert json.loads(row["config"]) == config
+
+    def test_null_config(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1", config=None)
+        row = conn.execute(
+            "SELECT config FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row["config"] is None
+
+
+class TestFinishPhaseDRun:
+    """Tests for finish_phase_d_run."""
+
+    def test_updates_status(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.finish_phase_d_run(conn, run_id, "completed")
+        row = conn.execute(
+            "SELECT status, finished_at FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row["status"] == "completed"
+        assert row["finished_at"] is not None
+
+    def test_stores_summary_as_json(self, conn):
+        import json
+
+        run_id = db.create_phase_d_run(conn, "d1")
+        summary = {"total": 100, "mismatches": 5}
+        db.finish_phase_d_run(conn, run_id, "completed", summary=summary)
+        row = conn.execute(
+            "SELECT summary FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert json.loads(row["summary"]) == summary
+
+    def test_null_summary(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.finish_phase_d_run(conn, run_id, "failed")
+        row = conn.execute(
+            "SELECT summary, status FROM phase_d_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row["summary"] is None
+        assert row["status"] == "failed"
+
+
+class TestInsertAuditFinding:
+    """Tests for insert_audit_finding — the highest-gamma composition hub."""
+
+    def test_returns_finding_id(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.insert_model(conn, "test/Model", author="test")
+        finding_id = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            mismatch_type="contradiction",
+            bank="CAPABILITY",
+        )
+        assert isinstance(finding_id, int)
+        assert finding_id > 0
+
+    def test_persists_all_fields(self, conn):
+        import json
+
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.insert_model(conn, "test/Model", author="test")
+        detail = {"pipeline_tag": "text-generation", "det_found": ["code-gen"]}
+        finding_id = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            mismatch_type="contradiction",
+            bank="CAPABILITY",
+            c2_anchor="chat",
+            det_anchor=None,
+            severity=0.7,
+            detail=detail,
+        )
+        row = conn.execute(
+            "SELECT * FROM audit_findings WHERE finding_id = ?", (finding_id,)
+        ).fetchone()
+        assert row["run_id"] == run_id
+        assert row["model_id"] == "test/Model"
+        assert row["mismatch_type"] == "contradiction"
+        assert row["bank"] == "CAPABILITY"
+        assert row["c2_anchor"] == "chat"
+        assert row["det_anchor"] is None
+        assert abs(row["severity"] - 0.7) < 0.001
+        assert json.loads(row["detail"]) == detail
+
+    def test_nullable_fields_default_to_none(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.insert_model(conn, "test/Model", author="test")
+        finding_id = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            mismatch_type="gap",
+        )
+        row = conn.execute(
+            "SELECT bank, c2_anchor, det_anchor, detail FROM audit_findings WHERE finding_id = ?",
+            (finding_id,),
+        ).fetchone()
+        assert row["bank"] is None
+        assert row["c2_anchor"] is None
+        assert row["det_anchor"] is None
+        assert row["detail"] is None
+
+    def test_default_severity(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.insert_model(conn, "test/Model", author="test")
+        finding_id = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            mismatch_type="unsupported",
+        )
+        row = conn.execute(
+            "SELECT severity FROM audit_findings WHERE finding_id = ?", (finding_id,)
+        ).fetchone()
+        assert abs(row["severity"] - 0.5) < 0.001
+
+    def test_multiple_findings_same_run(self, conn):
+        run_id = db.create_phase_d_run(conn, "d1")
+        db.insert_model(conn, "test/A", author="test")
+        db.insert_model(conn, "test/B", author="test")
+        id1 = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/A",
+            mismatch_type="gap",
+        )
+        id2 = db.insert_audit_finding(
+            conn,
+            run_id=run_id,
+            model_id="test/B",
+            mismatch_type="contradiction",
+        )
+        assert id1 != id2
+        count = conn.execute(
+            "SELECT COUNT(*) FROM audit_findings WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert count == 2
+
+
+class TestInsertCorrectionEvent:
+    """Tests for insert_correction_event — the other high-gamma hub."""
+
+    def test_returns_event_id(self, conn):
+        run_id = db.create_phase_d_run(conn, "d3")
+        db.insert_model(conn, "test/Model", author="test")
+        event_id = db.insert_correction_event(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            tier="d3_heal",
+        )
+        assert isinstance(event_id, int)
+        assert event_id > 0
+
+    def test_persists_all_fields(self, conn):
+        import json
+
+        run_id = db.create_phase_d_run(conn, "d3")
+        db.insert_model(conn, "test/Model", author="test")
+        event_id = db.insert_correction_event(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            tier="d3_heal",
+            original_prompt="Classify this model",
+            original_response='{"anchors": ["chat"]}',
+            healed_response='{"anchors": ["chat", "code-gen"]}',
+            anchors_added=["code-gen"],
+            anchors_removed=[],
+            rationale="Model card mentions code generation",
+        )
+        row = conn.execute(
+            "SELECT * FROM correction_events WHERE event_id = ?", (event_id,)
+        ).fetchone()
+        assert row["run_id"] == run_id
+        assert row["model_id"] == "test/Model"
+        assert row["tier"] == "d3_heal"
+        assert row["original_prompt"] == "Classify this model"
+        assert json.loads(row["anchors_added"]) == ["code-gen"]
+        # Empty list is falsy → stored as NULL by the current serialization logic
+        assert row["anchors_removed"] is None
+        assert row["rationale"] == "Model card mentions code generation"
+        assert row["created_at"] is not None
+
+    def test_nullable_fields_default_to_none(self, conn):
+        run_id = db.create_phase_d_run(conn, "d3")
+        db.insert_model(conn, "test/Model", author="test")
+        event_id = db.insert_correction_event(
+            conn,
+            run_id=run_id,
+            model_id="test/Model",
+            tier="d3_heal",
+        )
+        row = conn.execute(
+            "SELECT original_prompt, original_response, healed_response, "
+            "anchors_added, anchors_removed, rationale "
+            "FROM correction_events WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+        assert row["original_prompt"] is None
+        assert row["original_response"] is None
+        assert row["healed_response"] is None
+        assert row["anchors_added"] is None
+        assert row["anchors_removed"] is None
+        assert row["rationale"] is None
+
+    def test_multiple_events_same_run(self, conn):
+        run_id = db.create_phase_d_run(conn, "d3")
+        db.insert_model(conn, "test/A", author="test")
+        db.insert_model(conn, "test/B", author="test")
+        id1 = db.insert_correction_event(
+            conn,
+            run_id=run_id,
+            model_id="test/A",
+            tier="d3_heal",
+        )
+        id2 = db.insert_correction_event(
+            conn,
+            run_id=run_id,
+            model_id="test/B",
+            tier="d3_heal",
+        )
+        assert id1 != id2
+        count = conn.execute(
+            "SELECT COUNT(*) FROM correction_events WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+        assert count == 2

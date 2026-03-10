@@ -58,10 +58,24 @@ class TestInitDB:
                (model_id, source, likes, phase_a_done, phase_b_done, phase_c_done,
                 phase_c_attempts, raw_json, fetched_at, extracted_at, vibed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("test/Model", "huggingface", 100, 1, 0, 0, 0, "{}", "2025-01-01", None, None),
+            (
+                "test/Model",
+                "huggingface",
+                100,
+                1,
+                0,
+                0,
+                0,
+                "{}",
+                "2025-01-01",
+                None,
+                None,
+            ),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM ingest_models WHERE model_id = 'test/Model'").fetchone()
+        row = conn.execute(
+            "SELECT * FROM ingest_models WHERE model_id = 'test/Model'"
+        ).fetchone()
         assert row["model_id"] == "test/Model"
         assert row["source"] == "huggingface"
         assert row["likes"] == 100
