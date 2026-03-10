@@ -82,7 +82,9 @@ def main() -> None:
 
     from openai import OpenAI
 
-    client = OpenAI(base_url=args.url, api_key=os.environ.get("OLLAMA_API_KEY", "ollama"))
+    client = OpenAI(
+        base_url=args.url, api_key=os.environ.get("OLLAMA_API_KEY", "ollama")
+    )
 
     count = 0
     errors = 0
@@ -118,13 +120,15 @@ def main() -> None:
                 )
                 text = response.choices[0].message.content or ""
                 result = _parse_and_validate(text, valid_anchors=valid_anchors)
-                out = json.dumps({
-                    "model_id": model_id,
-                    "run_id": run_id,
-                    "original_prompt": original_prompt,
-                    "original_response": original_response,
-                    **result,
-                })
+                out = json.dumps(
+                    {
+                        "model_id": model_id,
+                        "run_id": run_id,
+                        "original_prompt": original_prompt,
+                        "original_response": original_response,
+                        **result,
+                    }
+                )
             except Exception as e:
                 out = json.dumps({"model_id": model_id, "error": str(e)})
                 errors += 1

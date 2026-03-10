@@ -1,12 +1,7 @@
-"""D3: Healing orchestration — export, prompt build, and merge.
+"""D3: Healing orchestration — candidate selection, prompt build, and export.
 
-Follows the export/merge pattern from ingest_phase_c.py. Workers produce
-complete C2-style responses (summary + selected_anchors), and the merge step
-computes diffs and stores correction_events for DPO training data.
-
-Two tiers:
-  - D3a (local): qwen2.5:3b via Ollama, bulk corrections
-  - D3b (claude): Claude Code CLI, 0.1% budget, high-value models
+Merge logic lives in phase_d_merge.py. Two tiers: D3a (local Ollama) and
+D3b (Claude CLI, 0.1% budget).
 """
 
 from __future__ import annotations
@@ -24,40 +19,30 @@ from .config import (
     HEAL_DEFAULT_SEED,
     PHASE_D_WORK_DIR,
 )
+from .phase_d_merge import merge_d3 as merge_d3  # noqa: F401, E402
 
 logger = logging.getLogger(__name__)
 
 
-_HEALING_PROMPT_TEMPLATE = """You are correcting a previous ML model classification. The original classification had errors detected by automated audit.
-
+_HEALING_PROMPT_TEMPLATE = """\
+You are correcting a previous ML model classification. The original classification had errors detected by automated audit.
 ## Model Information
-- Model ID: {model_id}
-- Author: {author}
-- Pipeline tag: {pipeline_tag}
-- Tags: {tags}
-- Parameter count: {param_count}
-- Card excerpt: {card_excerpt}
-
+- Model ID: {model_id}  Author: {author}  Pipeline: {pipeline_tag}
+- Tags: {tags}  Params: {param_count}  Card excerpt: {card_excerpt}
 ## Raw metadata
 {raw_fields}
-
 ## Current anchors (from previous classification)
 {current_anchors}
-
 ## Audit findings (what was wrong)
 {audit_findings}
-
-## Valid anchor dictionary
-Select ONLY from these anchors:
+## Valid anchor dictionary — select ONLY from these:
 CAPABILITY: {capability_anchors}
 DOMAIN: {domain_anchors}
-
 ## Instructions
-Based on the raw evidence above, provide a corrected classification. Output valid JSON with:
-- "summary": A one-sentence description of this model's purpose and distinguishing features
-- "selected_anchors": Array of 1-5 anchors from the valid dictionary that best describe this model's capabilities and domain
-
-Focus on correcting the audit findings. Use the raw metadata (tags, pipeline_tag, author) as ground truth."""
+Provide a corrected classification as valid JSON:
+- "summary": One-sentence description of this model's purpose and distinguishing features
+- "selected_anchors": Array of 1-5 anchors from the valid dictionary
+Focus on correcting the audit findings. Use raw metadata (tags, pipeline_tag, author) as ground truth."""
 
 
 @dataclass
@@ -166,7 +151,9 @@ def select_healing_candidates(
     elif tier == "claude":
         # Top by downloads
         total_models = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
-        claude_budget = min(budget, max(1, int(total_models * HEAL_CLAUDE_BUDGET_FRACTION)))
+        claude_budget = min(
+            budget, max(1, int(total_models * HEAL_CLAUDE_BUDGET_FRACTION))
+        )
 
         # Get models with low audit scores, sorted by downloads
         rows = conn.execute(
@@ -228,7 +215,9 @@ def build_healing_prompt(
     # Format current anchors
     anchor_strs = []
     for a in current_anchors:
-        anchor_strs.append(f"  {a['label']} ({a['bank']}, confidence={a['confidence']})")
+        anchor_strs.append(
+            f"  {a['label']} ({a['bank']}, confidence={a['confidence']})"
+        )
 
     # Format audit findings
     finding_strs = []
@@ -259,6 +248,71 @@ def build_healing_prompt(
     )
 
 
+def _build_export_item(
+    conn: sqlite3.Connection,
+    ingest_conn: sqlite3.Connection | None,
+    model_id: str,
+    cap_labels: list[str],
+    dom_labels: list[str],
+    all_valid: list[str],
+    run_id: str,
+) -> dict:
+    """Build a single D3 export item for one model."""
+    raw: dict = {}
+    if ingest_conn is not None:
+        row = ingest_conn.execute(
+            "SELECT raw_json FROM ingest_models WHERE model_id = ?",
+            (model_id,),
+        ).fetchone()
+        if row and row[0]:
+            try:
+                raw = json.loads(row[0])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    card_row = conn.execute(
+        "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'smol_summary'",
+        (model_id,),
+    ).fetchone()
+    card_excerpt = card_row[0] if card_row else ""
+
+    current_anchors = _get_model_anchors_with_detail(conn, model_id)
+    findings = _get_audit_findings_for_model(conn, model_id)
+
+    prompt = build_healing_prompt(
+        model_id=model_id,
+        raw_json=raw,
+        card_excerpt=card_excerpt,
+        current_anchors=current_anchors,
+        audit_findings=findings,
+        capability_anchors=cap_labels,
+        domain_anchors=dom_labels,
+    )
+
+    qwen_row = conn.execute(
+        "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'qwen_summary'",
+        (model_id,),
+    ).fetchone()
+    c2_anchors = [
+        a["label"] for a in current_anchors if abs(a["confidence"] - 0.5) < 1e-9
+    ]
+    original_response = json.dumps(
+        {
+            "summary": qwen_row[0] if qwen_row else "",
+            "selected_anchors": c2_anchors,
+        }
+    )
+
+    return {
+        "model_id": model_id,
+        "healing_prompt": prompt,
+        "valid_anchors": all_valid,
+        "run_id": run_id,
+        "original_prompt": prompt,
+        "original_response": original_response,
+    }
+
+
 def export_d3(
     conn: sqlite3.Connection,
     ingest_conn: sqlite3.Connection | None,
@@ -278,7 +332,8 @@ def export_d3(
     if not selected:
         logger.info("export_d3: no healing candidates found")
         run_id = db.create_phase_d_run(
-            conn, f"d3{'a' if tier == 'local' else 'b'}",
+            conn,
+            f"d3{'a' if tier == 'local' else 'b'}",
             config={"tier": tier, "budget": budget, "seed": seed, **sel_metadata},
         )
         db.finish_phase_d_run(conn, run_id, "completed", {"exported": 0})
@@ -311,77 +366,25 @@ def export_d3(
         ]
 
         for idx, model_id in enumerate(selected):
-            # Get raw_json from ingest DB
-            raw: dict = {}
-            if ingest_conn is not None:
-                row = ingest_conn.execute(
-                    "SELECT raw_json FROM ingest_models WHERE model_id = ?",
-                    (model_id,),
-                ).fetchone()
-                if row and row[0]:
-                    try:
-                        raw = json.loads(row[0])
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-            # Get card excerpt
-            card_row = conn.execute(
-                "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'smol_summary'",
-                (model_id,),
-            ).fetchone()
-            card_excerpt = card_row[0] if card_row else ""
-
-            # Get current anchors and audit findings
-            current_anchors = _get_model_anchors_with_detail(conn, model_id)
-            findings = _get_audit_findings_for_model(conn, model_id)
-
-            # Build healing prompt
-            prompt = build_healing_prompt(
-                model_id=model_id,
-                raw_json=raw,
-                card_excerpt=card_excerpt,
-                current_anchors=current_anchors,
-                audit_findings=findings,
-                capability_anchors=cap_labels,
-                domain_anchors=dom_labels,
+            item = _build_export_item(
+                conn, ingest_conn, model_id, cap_labels, dom_labels, all_valid, run_id
             )
-
-            # Build original C2 response (for DPO training data)
-            qwen_row = conn.execute(
-                "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'qwen_summary'",
-                (model_id,),
-            ).fetchone()
-            c2_anchors = [
-                a["label"]
-                for a in current_anchors
-                if abs(a["confidence"] - 0.5) < 1e-9
-            ]
-            original_response = json.dumps({
-                "summary": qwen_row[0] if qwen_row else "",
-                "selected_anchors": c2_anchors,
-            })
-
-            item = {
-                "model_id": model_id,
-                "healing_prompt": prompt,
-                "valid_anchors": all_valid,
-                "run_id": run_id,
-                "original_prompt": prompt,
-                "original_response": original_response,
-            }
-
             shard_idx = idx % num_shards
             shard_files[shard_idx].write(json.dumps(item) + "\n")
 
     db.finish_phase_d_run(
-        conn, run_id, "exported",
+        conn,
+        run_id,
+        "exported",
         {"exported": len(selected), "num_shards": num_shards},
     )
     conn.commit()
 
     logger.info(
         "export_d3: wrote %d prompts across %d shards (%s tier)",
-        len(selected), num_shards, tier,
+        len(selected),
+        num_shards,
+        tier,
     )
 
     return HealExportResult(
@@ -390,130 +393,3 @@ def export_d3(
         num_shards=num_shards,
         tier=tier,
     )
-
-
-def merge_d3(
-    conn: sqlite3.Connection,
-    files: list[str],
-    run_id: str,
-) -> dict[str, int]:
-    """Merge D3 healing results into network DB.
-
-    For each healed response:
-      - Compute diff (anchors_added, anchors_removed)
-      - Apply anchor changes
-      - Store correction_event
-
-    Returns {"merged": N, "skipped": N, "errors": N, "anchors_added": N, "anchors_removed": N}.
-    """
-    merged = 0
-    skipped = 0
-    errors = 0
-    total_added = 0
-    total_removed = 0
-
-    for fpath in files:
-        with open(fpath) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    item = json.loads(line)
-                except json.JSONDecodeError:
-                    errors += 1
-                    continue
-
-                model_id = item.get("model_id", "")
-                if not model_id:
-                    errors += 1
-                    continue
-
-                if "error" in item:
-                    skipped += 1
-                    continue
-
-                summary = item.get("summary", "")
-                selected_anchors = item.get("selected_anchors", [])
-                rationale = item.get("rationale", "")
-
-                if not summary:
-                    skipped += 1
-                    continue
-
-                # Get original C2 anchors for diff
-                original_response_str = item.get("original_response", "{}")
-                try:
-                    original = json.loads(original_response_str)
-                except (json.JSONDecodeError, TypeError):
-                    original = {}
-                original_anchors = set(original.get("selected_anchors", []))
-                healed_anchors = {a.strip().lower() for a in selected_anchors if isinstance(a, str) and a.strip()}
-
-                anchors_added = sorted(healed_anchors - original_anchors)
-                anchors_removed = sorted(original_anchors - healed_anchors)
-
-                # Apply anchor changes
-                for label in anchors_added:
-                    row = conn.execute(
-                        "SELECT anchor_id FROM anchors WHERE label = ?",
-                        (label,),
-                    ).fetchone()
-                    if row:
-                        db.link_anchor(conn, model_id, row[0], confidence=0.6)
-                        total_added += 1
-
-                for label in anchors_removed:
-                    conn.execute(
-                        """DELETE FROM model_anchors
-                           WHERE model_id = ?
-                             AND anchor_id = (SELECT anchor_id FROM anchors WHERE label = ?)
-                             AND confidence = 0.5""",
-                        (model_id, label),
-                    )
-                    total_removed += 1
-
-                # Update summary if changed
-                healed_response = json.dumps({
-                    "summary": summary,
-                    "selected_anchors": sorted(healed_anchors),
-                })
-
-                if summary != original.get("summary", ""):
-                    db.set_metadata(conn, model_id, "qwen_summary", summary, "str")
-
-                # Store correction event
-                db.insert_correction_event(
-                    conn,
-                    run_id=run_id,
-                    model_id=model_id,
-                    tier=item.get("tier", "local"),
-                    original_prompt=item.get("original_prompt"),
-                    original_response=original_response_str,
-                    healed_response=healed_response,
-                    anchors_added=anchors_added,
-                    anchors_removed=anchors_removed,
-                    rationale=rationale,
-                )
-
-                merged += 1
-
-    conn.commit()
-
-    result = {
-        "merged": merged,
-        "skipped": skipped,
-        "errors": errors,
-        "anchors_added": total_added,
-        "anchors_removed": total_removed,
-    }
-
-    db.finish_phase_d_run(conn, run_id, "completed", result)
-    conn.commit()
-
-    logger.info(
-        "merge_d3: merged=%d skipped=%d errors=%d added=%d removed=%d",
-        merged, skipped, errors, total_added, total_removed,
-    )
-
-    return result

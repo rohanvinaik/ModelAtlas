@@ -25,7 +25,9 @@ class PatternResult:
     domain: BankPosition = field(default_factory=BankPosition)
     training: BankPosition = field(default_factory=BankPosition)
     anchors: list[AnchorTag] = field(default_factory=list)
-    base_models: list[tuple[str, str]] = field(default_factory=list)  # (model_id, relation)
+    base_models: list[tuple[str, str]] = field(
+        default_factory=list
+    )  # (model_id, relation)
     metadata: dict[str, tuple[str, str]] = field(default_factory=dict)
 
     @property
@@ -225,10 +227,26 @@ _TRAINING_DATA_PATTERNS: list[tuple[str, str]] = [
 ]
 
 _DATASET_KEYWORDS: set[str] = {
-    "alpaca", "sharegpt", "orca", "dolly", "oasst", "openassistant",
-    "ultrachat", "wildchat", "capybara", "slimorca", "hermes",
-    "platypus", "wizard", "evol-instruct", "metamath", "gsm8k",
-    "code-feedback", "magicoder", "openhermes", "deita",
+    "alpaca",
+    "sharegpt",
+    "orca",
+    "dolly",
+    "oasst",
+    "openassistant",
+    "ultrachat",
+    "wildchat",
+    "capybara",
+    "slimorca",
+    "hermes",
+    "platypus",
+    "wizard",
+    "evol-instruct",
+    "metamath",
+    "gsm8k",
+    "code-feedback",
+    "magicoder",
+    "openhermes",
+    "deita",
 }
 
 
@@ -265,7 +283,7 @@ def _detect_training_datasets(searchable: str, tags: list[str]) -> list[str]:
     # Check dataset: tags
     for tag in tags:
         if tag.startswith("dataset:"):
-            datasets.append(tag[len("dataset:"):].strip())
+            datasets.append(tag[len("dataset:") :].strip())
 
     # Keyword matching in searchable text
     searchable_lower = searchable.lower()
@@ -338,7 +356,7 @@ def _detect_lineage(
     for tag in tags:
         if not tag.startswith("base_model:"):
             continue
-        rest = tag[len("base_model:"):]
+        rest = tag[len("base_model:") :]
         # Parse subtype: base_model:finetune:org/model -> subtype=finetune, id=org/model
         parts = rest.split(":", 1)
         if len(parts) == 2 and parts[0] in _TAG_RELATION_MAP:

@@ -21,6 +21,7 @@ import re
 import signal
 import sys
 import time
+from dataclasses import dataclass
 
 MODEL_NAME = "davanstrien/Smol-Hub-tldr"
 MAX_LENGTH = 2048
@@ -169,8 +170,9 @@ def _summarize(card_text: str, model, tokenizer, device: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _write_result(fout, model_id: str, tier: int, summary: str | None = None,
-                  error: str | None = None) -> None:
+def _write_result(
+    fout, model_id: str, tier: int, summary: str | None = None, error: str | None = None
+) -> None:
     """Write a single JSONL result line."""
     if error is not None:
         record = {"model_id": model_id, "error": error, "tier": tier}
@@ -181,64 +183,178 @@ def _write_result(fout, model_id: str, tier: int, summary: str | None = None,
 
 
 # ---------------------------------------------------------------------------
+# Shared processing context and helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _ProcessCtx:
+    """Bundles shared state for model processing across all tiers."""
+
+    model: object
+    tokenizer: object
+    device: str
+    fout: object
+    skip_set: set[str]
+    max_models: int
+    count: int = 0
+    errors: int = 0
+    tier_count: int = 0
+
+    def should_stop(self) -> bool:
+        """Check if we've hit the model limit or received a shutdown signal."""
+        if _shutdown:
+            return True
+        return self.max_models > 0 and self.count >= self.max_models
+
+    def process_one_hf(self, mid: str, tier: int) -> None:
+        """Fetch card from HF, summarize, write result."""
+        from huggingface_hub import ModelCard
+
+        try:
+            card = ModelCard.load(mid)
+            card_text = card.text if card.text else ""
+            summary = _summarize(card_text, self.model, self.tokenizer, self.device)
+            _write_result(self.fout, mid, tier=tier, summary=summary)
+        except Exception as e:
+            _write_result(self.fout, mid, tier=tier, error=str(e))
+            self.errors += 1
+        self.skip_set.add(mid)
+        self.count += 1
+        self.tier_count += 1
+
+    def log_progress(self, label: str) -> None:
+        """Print progress every 100 models."""
+        if self.tier_count % 100 == 0:
+            print(
+                f"{label} progress: {self.tier_count} processed ({self.errors} errors)",
+                file=sys.stderr,
+            )
+
+
+def _extract_model_id(info) -> str:
+    """Get model_id string from an HF API model info object."""
+    return info.id if hasattr(info, "id") else str(info)
+
+
+# ---------------------------------------------------------------------------
+# Chunked HF API processing (shared by Tier 1 and Tier 3)
+# ---------------------------------------------------------------------------
+
+
+def _process_chunk(
+    ctx: _ProcessCtx,
+    chunk: list,
+    tier: int,
+    label: str,
+    extra_skip: set[str] | None = None,
+    cutoff_check=None,
+) -> bool:
+    """Process a chunk of HF API model infos. Returns True to stop early."""
+    for info in chunk:
+        if ctx.should_stop():
+            return True
+
+        mid = _extract_model_id(info)
+        if mid in ctx.skip_set:
+            continue
+        if extra_skip and mid in extra_skip:
+            continue
+        if cutoff_check and cutoff_check(info):
+            return True
+
+        ctx.process_one_hf(mid, tier)
+        ctx.log_progress(label)
+
+    return False
+
+
+def _run_chunked_api(
+    ctx: _ProcessCtx,
+    tier: int,
+    label: str,
+    chunk_size: int,
+    extra_skip: set[str] | None = None,
+    cutoff_check=None,
+) -> tuple[int, int]:
+    """Iterate HF API in chunks, process each model, sleep between chunks."""
+    from huggingface_hub import HfApi
+
+    print(f"=== {label} ===", file=sys.stderr)
+    api = HfApi()
+    ctx.tier_count = 0
+    chunk: list = []
+
+    for model_info in api.list_models(sort="createdAt"):
+        if ctx.should_stop():
+            break
+        chunk.append(model_info)
+        if len(chunk) < chunk_size:
+            continue
+
+        stop = _process_chunk(
+            ctx, chunk, tier, label, extra_skip=extra_skip, cutoff_check=cutoff_check
+        )
+        chunk.clear()
+        if stop:
+            break
+        time.sleep(CHUNK_SLEEP_SECONDS)
+
+    # Remaining partial chunk
+    if chunk and not ctx.should_stop():
+        _process_chunk(
+            ctx, chunk, tier, label, extra_skip=extra_skip, cutoff_check=cutoff_check
+        )
+
+    print(
+        f"{label} done: {ctx.tier_count} processed ({ctx.errors} errors)",
+        file=sys.stderr,
+    )
+    return ctx.count, ctx.errors
+
+
+# ---------------------------------------------------------------------------
 # From-IDs mode: process specific model IDs from a JSONL file
 # ---------------------------------------------------------------------------
 
 
-def _run_from_ids(model, tokenizer, device: str, fout, skip_set: set[str],
-                  ids_file: str, max_models: int, count: int) -> tuple[int, int]:
-    """Process specific model IDs by fetching card text from HF API."""
-    from huggingface_hub import ModelCard
-
-    print(f"=== From-IDs mode: processing models from {ids_file} ===", file=sys.stderr)
-    errors = 0
-    tier_count = 0
-
+def _iter_ids_from_file(ids_file: str) -> list[str]:
+    """Read model IDs from a JSONL file, skipping malformed lines."""
+    ids: list[str] = []
     with open(ids_file) as f:
         for line in f:
-            if _shutdown:
-                break
-            if max_models > 0 and count >= max_models:
-                break
-
             line = line.strip()
             if not line:
                 continue
-
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
                 continue
-
             mid = item.get("model_id", "")
-            if not mid:
-                continue
-            if mid in skip_set:
-                continue
+            if mid:
+                ids.append(mid)
+    return ids
 
-            try:
-                card = ModelCard.load(mid)
-                card_text = card.text if card.text else ""
-                summary = _summarize(card_text, model, tokenizer, device)
-                _write_result(fout, mid, tier=0, summary=summary)
-            except Exception as e:
-                _write_result(fout, mid, tier=0, error=str(e))
-                errors += 1
 
-            skip_set.add(mid)
-            count += 1
-            tier_count += 1
+def _run_from_ids(ctx: _ProcessCtx, ids_file: str) -> tuple[int, int]:
+    """Process specific model IDs by fetching card text from HF API."""
+    print(f"=== From-IDs mode: processing models from {ids_file} ===", file=sys.stderr)
+    ctx.tier_count = 0
 
-            if tier_count % 100 == 0:
-                print(
-                    f"From-IDs progress: {tier_count} processed ({errors} errors)",
-                    file=sys.stderr,
-                )
+    for mid in _iter_ids_from_file(ids_file):
+        if ctx.should_stop():
+            break
+        if mid in ctx.skip_set:
+            continue
+
+        ctx.process_one_hf(mid, tier=0)
+        ctx.log_progress("From-IDs")
 
     print(
-        f"From-IDs done: {tier_count} processed ({errors} errors)", file=sys.stderr
+        f"From-IDs done: {ctx.tier_count} processed ({ctx.errors} errors)",
+        file=sys.stderr,
     )
-    return count, errors
+    return ctx.count, ctx.errors
 
 
 # ---------------------------------------------------------------------------
@@ -246,118 +362,37 @@ def _run_from_ids(model, tokenizer, device: str, fout, skip_set: set[str],
 # ---------------------------------------------------------------------------
 
 
-def _run_tier1(model, tokenizer, device: str, fout, skip_set: set[str],
-               librarian_ids: set[str], chunk_size: int,
-               max_models: int, count: int) -> tuple[int, int]:
+def _make_tier1_cutoff_check(cutoff):
+    """Build a cutoff checker for Tier 1 date filtering."""
+
+    def check(info) -> bool:
+        created = getattr(info, "created_at", None)
+        if created is not None and created < cutoff:
+            print(
+                f"Tier 1: Hit cutoff date ({cutoff.date()}), stopping.",
+                file=sys.stderr,
+            )
+            return True
+        return False
+
+    return check
+
+
+def _run_tier1(
+    ctx: _ProcessCtx, librarian_ids: set[str], chunk_size: int
+) -> tuple[int, int]:
     """Process newest models from HF API that are not in librarian-bots."""
     from datetime import datetime, timedelta, timezone
 
-    from huggingface_hub import HfApi, ModelCard
-
-    print("=== Tier 1: Newest HF API models (not in librarian-bots) ===", file=sys.stderr)
-    api = HfApi()
-    errors = 0
-    tier_count = 0
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-
-    models_iter = api.list_models(sort="createdAt")
-    chunk: list = []
-
-    for model_info in models_iter:
-        if _shutdown:
-            break
-        if max_models > 0 and count >= max_models:
-            break
-
-        chunk.append(model_info)
-
-        if len(chunk) < chunk_size:
-            continue
-
-        # Process chunk
-        for info in chunk:
-            if _shutdown:
-                break
-            if max_models > 0 and count >= max_models:
-                break
-
-            mid = info.id if hasattr(info, "id") else str(info)
-            if mid in skip_set:
-                continue
-            if mid in librarian_ids:
-                continue
-
-            # Check age cutoff
-            created = getattr(info, "created_at", None)
-            if created is not None and created < cutoff:
-                print(
-                    f"Tier 1: Hit cutoff date ({cutoff.date()}), stopping.",
-                    file=sys.stderr,
-                )
-                return count, errors
-
-            try:
-                card = ModelCard.load(mid)
-                card_text = card.text if card.text else ""
-                summary = _summarize(card_text, model, tokenizer, device)
-                _write_result(fout, mid, tier=1, summary=summary)
-            except Exception as e:
-                _write_result(fout, mid, tier=1, error=str(e))
-                errors += 1
-
-            skip_set.add(mid)
-            count += 1
-            tier_count += 1
-
-            if tier_count % 100 == 0:
-                print(
-                    f"Tier 1 progress: {tier_count} processed ({errors} errors)",
-                    file=sys.stderr,
-                )
-
-        chunk.clear()
-        time.sleep(CHUNK_SLEEP_SECONDS)
-
-    # Process remaining partial chunk
-    for info in chunk:
-        if _shutdown:
-            break
-        if max_models > 0 and count >= max_models:
-            break
-
-        mid = info.id if hasattr(info, "id") else str(info)
-        if mid in skip_set:
-            continue
-        if mid in librarian_ids:
-            continue
-
-        created = getattr(info, "created_at", None)
-        if created is not None and created < cutoff:
-            break
-
-        try:
-            card = ModelCard.load(mid)
-            card_text = card.text if card.text else ""
-            summary = _summarize(card_text, model, tokenizer, device)
-            _write_result(fout, mid, tier=1, summary=summary)
-        except Exception as e:
-            _write_result(fout, mid, tier=1, error=str(e))
-            errors += 1
-
-        skip_set.add(mid)
-        count += 1
-        tier_count += 1
-
-        if tier_count % 100 == 0:
-            print(
-                f"Tier 1 progress: {tier_count} processed ({errors} errors)",
-                file=sys.stderr,
-            )
-
-    print(
-        f"Tier 1 done: {tier_count} processed ({errors} errors)", file=sys.stderr
+    return _run_chunked_api(
+        ctx,
+        tier=1,
+        label="Tier 1: Newest HF API models (not in librarian-bots)",
+        chunk_size=chunk_size,
+        extra_skip=librarian_ids,
+        cutoff_check=_make_tier1_cutoff_check(cutoff),
     )
-    return count, errors
 
 
 # ---------------------------------------------------------------------------
@@ -365,52 +400,44 @@ def _run_tier1(model, tokenizer, device: str, fout, skip_set: set[str],
 # ---------------------------------------------------------------------------
 
 
-def _run_tier2(model, tokenizer, device: str, fout, skip_set: set[str],
-               max_models: int, count: int) -> tuple[int, int]:
+def _run_tier2(ctx: _ProcessCtx) -> tuple[int, int]:
     """Process librarian-bots corpus via streaming dataset."""
     from datasets import load_dataset
 
-    print("=== Tier 2: librarian-bots/model_cards_with_metadata (streaming) ===", file=sys.stderr)
-    errors = 0
-    tier_count = 0
-
+    print(
+        "=== Tier 2: librarian-bots/model_cards_with_metadata (streaming) ===",
+        file=sys.stderr,
+    )
+    ctx.tier_count = 0
     ds = load_dataset(LIBRARIAN_BOTS_DATASET, split="train", streaming=True)
 
     for row in ds:
-        if _shutdown:
-            break
-        if max_models > 0 and count >= max_models:
+        if ctx.should_stop():
             break
 
         mid = row.get("modelId") or row.get("model_id") or ""
-        if not mid:
-            continue
-        if mid in skip_set:
+        if not mid or mid in ctx.skip_set:
             continue
 
         card_text = row.get("card") or row.get("text") or row.get("card_text") or ""
 
         try:
-            summary = _summarize(card_text, model, tokenizer, device)
-            _write_result(fout, mid, tier=2, summary=summary)
+            summary = _summarize(card_text, ctx.model, ctx.tokenizer, ctx.device)
+            _write_result(ctx.fout, mid, tier=2, summary=summary)
         except Exception as e:
-            _write_result(fout, mid, tier=2, error=str(e))
-            errors += 1
+            _write_result(ctx.fout, mid, tier=2, error=str(e))
+            ctx.errors += 1
 
-        skip_set.add(mid)
-        count += 1
-        tier_count += 1
-
-        if tier_count % 100 == 0:
-            print(
-                f"Tier 2 progress: {tier_count} processed ({errors} errors)",
-                file=sys.stderr,
-            )
+        ctx.skip_set.add(mid)
+        ctx.count += 1
+        ctx.tier_count += 1
+        ctx.log_progress("Tier 2")
 
     print(
-        f"Tier 2 done: {tier_count} processed ({errors} errors)", file=sys.stderr
+        f"Tier 2 done: {ctx.tier_count} processed ({ctx.errors} errors)",
+        file=sys.stderr,
     )
-    return count, errors
+    return ctx.count, ctx.errors
 
 
 # ---------------------------------------------------------------------------
@@ -418,97 +445,14 @@ def _run_tier2(model, tokenizer, device: str, fout, skip_set: set[str],
 # ---------------------------------------------------------------------------
 
 
-def _run_tier3(model, tokenizer, device: str, fout, skip_set: set[str],
-               chunk_size: int, max_models: int, count: int) -> tuple[int, int]:
+def _run_tier3(ctx: _ProcessCtx, chunk_size: int) -> tuple[int, int]:
     """Scan HF API for any model_ids not yet processed."""
-    from huggingface_hub import HfApi, ModelCard
-
-    print("=== Tier 3: Remaining HF API models ===", file=sys.stderr)
-    api = HfApi()
-    errors = 0
-    tier_count = 0
-
-    models_iter = api.list_models(sort="createdAt")
-    chunk: list = []
-
-    for model_info in models_iter:
-        if _shutdown:
-            break
-        if max_models > 0 and count >= max_models:
-            break
-
-        chunk.append(model_info)
-
-        if len(chunk) < chunk_size:
-            continue
-
-        # Process chunk
-        for info in chunk:
-            if _shutdown:
-                break
-            if max_models > 0 and count >= max_models:
-                break
-
-            mid = info.id if hasattr(info, "id") else str(info)
-            if mid in skip_set:
-                continue
-
-            try:
-                card = ModelCard.load(mid)
-                card_text = card.text if card.text else ""
-                summary = _summarize(card_text, model, tokenizer, device)
-                _write_result(fout, mid, tier=3, summary=summary)
-            except Exception as e:
-                _write_result(fout, mid, tier=3, error=str(e))
-                errors += 1
-
-            skip_set.add(mid)
-            count += 1
-            tier_count += 1
-
-            if tier_count % 100 == 0:
-                print(
-                    f"Tier 3 progress: {tier_count} processed ({errors} errors)",
-                    file=sys.stderr,
-                )
-
-        chunk.clear()
-        time.sleep(CHUNK_SLEEP_SECONDS)
-
-    # Process remaining partial chunk
-    for info in chunk:
-        if _shutdown:
-            break
-        if max_models > 0 and count >= max_models:
-            break
-
-        mid = info.id if hasattr(info, "id") else str(info)
-        if mid in skip_set:
-            continue
-
-        try:
-            card = ModelCard.load(mid)
-            card_text = card.text if card.text else ""
-            summary = _summarize(card_text, model, tokenizer, device)
-            _write_result(fout, mid, tier=3, summary=summary)
-        except Exception as e:
-            _write_result(fout, mid, tier=3, error=str(e))
-            errors += 1
-
-        skip_set.add(mid)
-        count += 1
-        tier_count += 1
-
-        if tier_count % 100 == 0:
-            print(
-                f"Tier 3 progress: {tier_count} processed ({errors} errors)",
-                file=sys.stderr,
-            )
-
-    print(
-        f"Tier 3 done: {tier_count} processed ({errors} errors)", file=sys.stderr
+    return _run_chunked_api(
+        ctx,
+        tier=3,
+        label="Tier 3: Remaining HF API models",
+        chunk_size=chunk_size,
     )
-    return count, errors
 
 
 # ---------------------------------------------------------------------------
@@ -524,15 +468,16 @@ def main() -> None:
     parser.add_argument(
         "--resume", action="store_true", help="Skip already-processed models"
     )
+    parser.add_argument("--chunk-size", type=int, default=250, help="HF API chunk size")
     parser.add_argument(
-        "--chunk-size", type=int, default=250, help="HF API chunk size"
-    )
-    parser.add_argument(
-        "--max-models", type=int, default=0,
+        "--max-models",
+        type=int,
+        default=0,
         help="Max models to process (0 = unlimited)",
     )
     parser.add_argument(
-        "--tier", default="all",
+        "--tier",
+        default="all",
         choices=["1", "2", "3", "all"],
         help="Which tier to run: 1, 2, 3, or all",
     )
@@ -556,62 +501,37 @@ def main() -> None:
 
     # Load model
     lm, tokenizer, device = _load_model(args.model)
-
-    count = 0
-    total_errors = 0
     open_mode = "a" if args.resume else "w"
 
     with open(args.output, open_mode) as fout:
-        # --from-ids mode: process specific model IDs, skip tier system
+        ctx = _ProcessCtx(
+            model=lm,
+            tokenizer=tokenizer,
+            device=device,
+            fout=fout,
+            skip_set=skip_set,
+            max_models=args.max_models,
+        )
+
         if args.from_ids:
-            c, e = _run_from_ids(
-                lm, tokenizer, device, fout, skip_set,
-                args.from_ids, args.max_models, count,
-            )
-            count = c
-            total_errors += e
+            _run_from_ids(ctx, args.from_ids)
         else:
-            # Load librarian-bots ID set for Tier 1 dedup (only if Tier 1 will run)
-            librarian_ids: set[str] = set()
             run_tiers = [args.tier] if args.tier != "all" else ["1", "2", "3"]
+            librarian_ids: set[str] = set()
             if "1" in run_tiers:
                 librarian_ids = _load_librarian_bots_ids()
 
-            # Tier 1
-            if "1" in run_tiers and not _shutdown:
-                c, e = _run_tier1(
-                    lm, tokenizer, device, fout, skip_set, librarian_ids,
-                    args.chunk_size, args.max_models, count,
-                )
-                count = c
-                total_errors += e
+            if "1" in run_tiers and not ctx.should_stop():
+                _run_tier1(ctx, librarian_ids, args.chunk_size)
 
-            # Tier 2
-            if "2" in run_tiers and not _shutdown:
-                if args.max_models > 0 and count >= args.max_models:
-                    pass
-                else:
-                    c, e = _run_tier2(
-                        lm, tokenizer, device, fout, skip_set,
-                        args.max_models, count,
-                    )
-                    count = c
-                    total_errors += e
+            if "2" in run_tiers and not ctx.should_stop():
+                _run_tier2(ctx)
 
-            # Tier 3
-            if "3" in run_tiers and not _shutdown:
-                if args.max_models > 0 and count >= args.max_models:
-                    pass
-                else:
-                    c, e = _run_tier3(
-                        lm, tokenizer, device, fout, skip_set,
-                        args.chunk_size, args.max_models, count,
-                    )
-                    count = c
-                    total_errors += e
+            if "3" in run_tiers and not ctx.should_stop():
+                _run_tier3(ctx, args.chunk_size)
 
     print(
-        f"All done: {count} processed, {total_errors} errors, "
+        f"All done: {ctx.count} processed, {ctx.errors} errors, "
         f"{len(skip_set)} total unique model_ids seen",
         file=sys.stderr,
     )

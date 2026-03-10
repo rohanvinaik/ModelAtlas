@@ -33,7 +33,7 @@ def _strip_yaml_frontmatter(text: str) -> str:
     if text.startswith("---"):
         end = text.find("---", 3)
         if end != -1:
-            return text[end + 3:].lstrip("\n")
+            return text[end + 3 :].lstrip("\n")
     return text
 
 
@@ -52,8 +52,9 @@ def _extract_heading_sections(text: str, section_titles: list[str]) -> str:
         for heading_level, heading_title, start, end in sections:
             # Prefix match, case-insensitive, strip numbering like "1. " or "2.1 "
             clean_title = re.sub(r"^\d+(\.\d+)*\.?\s*", "", heading_title).strip()
-            if (clean_title.lower().startswith(target_lower)
-                    or heading_title.lower().startswith(target_lower)):
+            if clean_title.lower().startswith(
+                target_lower
+            ) or heading_title.lower().startswith(target_lower):
                 result_parts.append("\n".join(lines[start:end]))
                 break
 
@@ -79,7 +80,7 @@ def _parse_headings(lines: list[str]) -> list[tuple[int, str, int, int]]:
     for idx, (level, title, start) in enumerate(headings):
         # Find end: next heading at same or higher level
         end = len(lines)
-        for future_level, _, future_start in headings[idx + 1:]:
+        for future_level, _, future_start in headings[idx + 1 :]:
             if future_level <= level:
                 end = future_start
                 break

@@ -143,7 +143,9 @@ def _open_hf_streams(pipeline_tags: list[str] | None) -> list:
     api = HfApi()
     if pipeline_tags:
         return [
-            api.list_models(full=True, sort="likes", pipeline_tag=tag, fetch_config=True)
+            api.list_models(
+                full=True, sort="likes", pipeline_tag=tag, fetch_config=True
+            )
             for tag in pipeline_tags
         ]
     return [api.list_models(full=True, sort="likes", fetch_config=True)]

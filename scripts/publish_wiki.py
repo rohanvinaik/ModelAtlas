@@ -51,8 +51,12 @@ def main() -> int:
         default=None,
         help="Repository root (default: auto-detect)",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    parser.add_argument("--push", action="store_true", help="Git commit and push after writing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview without writing"
+    )
+    parser.add_argument(
+        "--push", action="store_true", help="Git commit and push after writing"
+    )
     parser.add_argument("--message", default=None, help="Commit message (with --push)")
     args = parser.parse_args()
 
@@ -67,12 +71,16 @@ def main() -> int:
     docs_wiki = repo_root / "docs" / "wiki"
 
     if not materialized_dir.exists():
-        print("ERROR: .wiki/ not found. Run `python -m model_atlas.wiki materialize` first.")
+        print(
+            "ERROR: .wiki/ not found. Run `python -m model_atlas.wiki materialize` first."
+        )
         return 1
 
     if not wiki_dir.exists():
         print(f"ERROR: Wiki repo not found at {wiki_dir}")
-        print("Clone it: git clone https://github.com/rohanvinaik/ModelAtlas.wiki.git /tmp/ModelAtlas.wiki")
+        print(
+            "Clone it: git clone https://github.com/rohanvinaik/ModelAtlas.wiki.git /tmp/ModelAtlas.wiki"
+        )
         return 1
 
     # Load config and metrics
@@ -85,7 +93,9 @@ def main() -> int:
     page_map = {p["id"]: page_id_to_wiki_name(p["id"]) for p in all_pages}
 
     # Remove old pages that aren't in the new config
-    existing_files = set(f.name for f in wiki_dir.glob("*.md") if not f.name.startswith("_"))
+    existing_files = set(
+        f.name for f in wiki_dir.glob("*.md") if not f.name.startswith("_")
+    )
     new_files = set(f"{page_map[p['id']]}.md" for p in all_pages)
     for old_file in existing_files - new_files:
         if args.dry_run:
@@ -105,7 +115,12 @@ def main() -> int:
             continue
 
         content = apply_common_transforms(
-            source_path, page_config, metrics, rails, all_pages, page_map,
+            source_path,
+            page_config,
+            metrics,
+            rails,
+            all_pages,
+            page_map,
             link_fn=wiki_link_fn,
         )
 
@@ -135,15 +150,11 @@ def main() -> int:
     if args.push and not args.dry_run:
         msg = args.message or "Update wiki from materializer"
         subprocess.run(["git", "add", "-A"], cwd=wiki_dir, check=True)
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--quiet"], cwd=wiki_dir
-        )
+        result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=wiki_dir)
         if result.returncode == 0:
             print("\nNo changes to push.")
         else:
-            subprocess.run(
-                ["git", "commit", "-m", msg], cwd=wiki_dir, check=True
-            )
+            subprocess.run(["git", "commit", "-m", msg], cwd=wiki_dir, check=True)
             subprocess.run(["git", "push"], cwd=wiki_dir, check=True)
             print("\nPushed to wiki repo.")
 

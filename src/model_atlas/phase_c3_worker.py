@@ -26,9 +26,14 @@ def _handle_signal(signum: int, frame: object) -> None:
     _shutdown = True
 
 
-_VALID_FLAGS = frozenset({
-    "generic", "hallucinated", "truncated", "repetitive",
-})
+_VALID_FLAGS = frozenset(
+    {
+        "generic",
+        "hallucinated",
+        "truncated",
+        "repetitive",
+    }
+)
 
 
 def _parse_and_validate(text: str) -> dict:
@@ -42,9 +47,15 @@ def _parse_and_validate(text: str) -> dict:
     artifacts = data.get("artifacts")
     flags = data.get("flags", [])
 
-    for name, value in [("specificity", specificity), ("coherence", coherence), ("artifacts", artifacts)]:
+    for name, value in [
+        ("specificity", specificity),
+        ("coherence", coherence),
+        ("artifacts", artifacts),
+    ]:
         if not isinstance(value, (int, float)):
-            raise ValueError(f"'{name}' must be int or float, got {type(value).__name__}")
+            raise ValueError(
+                f"'{name}' must be int or float, got {type(value).__name__}"
+            )
         if not (0 <= value <= 3):
             raise ValueError(f"'{name}' must be 0-3, got {value}")
 
@@ -52,7 +63,9 @@ def _parse_and_validate(text: str) -> dict:
         raise ValueError("'flags' must be a list")
 
     # Filter to only known flag values
-    flags = [f for f in flags if isinstance(f, str) and f.strip().lower() in _VALID_FLAGS]
+    flags = [
+        f for f in flags if isinstance(f, str) and f.strip().lower() in _VALID_FLAGS
+    ]
 
     specificity = int(specificity)
     coherence = int(coherence)
@@ -90,14 +103,18 @@ def _load_skip_set(output_path: str) -> set[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Standalone Phase C3 quality gate worker")
+    parser = argparse.ArgumentParser(
+        description="Standalone Phase C3 quality gate worker"
+    )
     parser.add_argument("--input", required=True, help="Input quality gate JSONL file")
     parser.add_argument("--output", required=True, help="Output results JSONL file")
     parser.add_argument("--model", default="qwen2.5:3b", help="Ollama model name")
     parser.add_argument(
         "--url", default="http://localhost:11434/v1", help="Ollama API base URL"
     )
-    parser.add_argument("--resume", action="store_true", help="Skip already-processed model_ids")
+    parser.add_argument(
+        "--resume", action="store_true", help="Skip already-processed model_ids"
+    )
     args = parser.parse_args()
 
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -111,7 +128,10 @@ def main() -> None:
     if args.resume:
         skip_set = _load_skip_set(args.output)
         if skip_set:
-            print(f"Resume: skipping {len(skip_set)} already-processed models", file=sys.stderr)
+            print(
+                f"Resume: skipping {len(skip_set)} already-processed models",
+                file=sys.stderr,
+            )
 
     file_mode = "a" if args.resume else "w"
     count = 0
@@ -160,7 +180,9 @@ def main() -> None:
             if count % 10 == 0:
                 print(f"Progress: {count} processed ({errors} errors)", file=sys.stderr)
 
-    print(f"Done: {count} processed, {errors} errors, {skipped} skipped", file=sys.stderr)
+    print(
+        f"Done: {count} processed, {errors} errors, {skipped} skipped", file=sys.stderr
+    )
 
 
 if __name__ == "__main__":

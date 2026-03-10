@@ -1,8 +1,8 @@
 """Wiki materializer — deterministic documentation generation with provenance."""
 
-from .config import load_config, WikiConfig
-from .drift import check_drift, DriftReport
-from .manifest import load_manifest, Manifest
+from .config import WikiConfig, load_config
+from .drift import DriftReport, check_drift
+from .manifest import Manifest, load_manifest
 from .renderer import materialize
 
 __all__ = [

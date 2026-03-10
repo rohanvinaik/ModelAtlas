@@ -56,9 +56,7 @@ def compute_source_hash(source_paths: list[str], repo_root: Path) -> str:
 
 def compute_aggregate_hash(pages: list[PageEntry]) -> str:
     """Hash of all file_hash values sorted by page id."""
-    combined = "\n".join(
-        p.file_hash for p in sorted(pages, key=lambda x: x.id)
-    )
+    combined = "\n".join(p.file_hash for p in sorted(pages, key=lambda x: x.id))
     return compute_hash(combined)
 
 

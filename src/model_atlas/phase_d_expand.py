@@ -147,9 +147,7 @@ def _get_model_tags(conn: sqlite3.Connection, model_id: str) -> set[str]:
     return tags
 
 
-def _get_model_metadata_dict(
-    conn: sqlite3.Connection, model_id: str
-) -> dict[str, str]:
+def _get_model_metadata_dict(conn: sqlite3.Connection, model_id: str) -> dict[str, str]:
     """Get all metadata as a flat dict."""
     rows = conn.execute(
         "SELECT key, value FROM model_metadata WHERE model_id = ?",
@@ -207,7 +205,9 @@ def expand_dictionary(
         label_stats: dict[str, int] = {"matched": 0, "linked": 0, "queued": 0}
 
         if not existing and not dry_run:
-            db.get_or_create_anchor(conn, label, bank, category=category, source="expansion")
+            db.get_or_create_anchor(
+                conn, label, bank, category=category, source="expansion"
+            )
             result.anchors_created += 1
 
         if mode == "create_only":

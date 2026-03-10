@@ -33,7 +33,9 @@ def load_hub_tldr_summaries() -> dict[str, str]:
         summary = row.get("summary") or row.get("text") or ""
         if model_id and summary:
             result[model_id] = summary
-    logger.info("Loaded %d reference summaries from hub-tldr-model-summaries-llama", len(result))
+    logger.info(
+        "Loaded %d reference summaries from hub-tldr-model-summaries-llama", len(result)
+    )
     return result
 
 
@@ -53,6 +55,135 @@ def load_parsed_model_cards() -> dict[str, dict]:
             result[model_id] = dict(row)
     logger.info("Loaded %d parsed model cards from parsed-model-cards", len(result))
     return result
+
+
+def _compare_summaries(
+    network_conn: sqlite3.Connection,
+    gt_summaries: dict[str, str],
+) -> tuple[list[float], list[dict]]:
+    """Compare our summaries against ground truth reference summaries.
+
+    Returns (similarities, flagged) where similarities is a list of
+    SequenceMatcher ratios and flagged contains low-similarity entries.
+    """
+    similarities: list[float] = []
+    flagged: list[dict] = []
+
+    # Get all our vibe_summary and smol_summary entries
+    our_summaries: dict[str, str] = {}
+    for row in network_conn.execute(
+        "SELECT model_id, value FROM model_metadata WHERE key IN ('vibe_summary', 'smol_summary')"
+    ).fetchall():
+        # Prefer smol_summary if both exist; last write wins in this iteration
+        our_summaries[row[0]] = row[1]
+
+    for model_id, gt_summary in gt_summaries.items():
+        our_summary = our_summaries.get(model_id)
+        if not our_summary:
+            continue
+        ratio = difflib.SequenceMatcher(
+            None, our_summary.lower(), gt_summary.lower()
+        ).ratio()
+        similarities.append(ratio)
+        if ratio < 0.2:
+            flagged.append(
+                {
+                    "model_id": model_id,
+                    "type": "low_summary_similarity",
+                    "similarity": round(ratio, 3),
+                    "ours": our_summary[:100],
+                    "reference": gt_summary[:100],
+                }
+            )
+
+    return similarities, flagged
+
+
+def _expected_fields_from_parsed(parsed: dict) -> set[str]:
+    """Extract expected anchor-related fields from a parsed model card."""
+    fields: set[str] = set()
+    base_model = parsed.get("base_model") or parsed.get("base_model_mention") or ""
+    if base_model:
+        fields.add("lineage")
+    training = parsed.get("training_data") or parsed.get("datasets") or ""
+    if training:
+        fields.add("training-data")
+    language = parsed.get("language") or ""
+    if language:
+        fields.add("multilingual" if "," in str(language) else "language")
+    return fields
+
+
+def _check_param_mismatch(
+    network_conn: sqlite3.Connection,
+    model_id: str,
+    parsed: dict,
+) -> dict | None:
+    """Check if our parameter count disagrees with ground truth. Returns flag dict or None."""
+    gt_params = parsed.get("parameters") or parsed.get("num_parameters")
+    if not gt_params:
+        return None
+    our_params_row = network_conn.execute(
+        "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'parameter_count_b'",
+        (model_id,),
+    ).fetchone()
+    if not our_params_row:
+        return None
+    try:
+        our_val = float(our_params_row[0])
+        gt_val = float(gt_params)
+        # Normalize — gt might be raw count, ours is in billions
+        if gt_val > 1e6:
+            gt_val = gt_val / 1e9
+        if abs(our_val - gt_val) / max(our_val, gt_val, 1e-9) > 0.5:
+            return {
+                "model_id": model_id,
+                "type": "param_count_mismatch",
+                "ours": our_val,
+                "reference": gt_val,
+            }
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _compare_parsed_cards(
+    network_conn: sqlite3.Connection,
+    gt_parsed: dict[str, dict],
+) -> tuple[list[float], list[dict]]:
+    """Compare our anchors against parsed model card ground truth.
+
+    Returns (anchor_coverages, flagged).
+    """
+    anchor_coverages: list[float] = []
+    flagged: list[dict] = []
+
+    for model_id, parsed in gt_parsed.items():
+        our_anchors = {
+            row[0].lower()
+            for row in network_conn.execute(
+                """SELECT a.label FROM model_anchors ma
+                   JOIN anchors a ON ma.anchor_id = a.anchor_id
+                   WHERE ma.model_id = ?""",
+                (model_id,),
+            ).fetchall()
+        }
+        if not our_anchors:
+            continue
+
+        expected_fields = _expected_fields_from_parsed(parsed)
+        if expected_fields:
+            covered = sum(
+                1 for f in expected_fields if any(f in a for a in our_anchors)
+            )
+            coverage = covered / len(expected_fields)
+            anchor_coverages.append(coverage)
+
+        mismatch = _check_param_mismatch(network_conn, model_id, parsed)
+        if mismatch:
+            flagged.append(mismatch)
+
+    return anchor_coverages, flagged
 
 
 def validate_against_ground_truth(
@@ -76,109 +207,17 @@ def validate_against_ground_truth(
         anchor_coverage_mean: float
         flagged_disagreements: list[dict]
     """
-    similarities: list[float] = []
-    anchor_coverages: list[float] = []
-    flagged: list[dict] = []
-
-    # Get all our vibe_summary and smol_summary entries
-    our_summaries: dict[str, str] = {}
-    for row in network_conn.execute(
-        "SELECT model_id, value FROM model_metadata WHERE key IN ('vibe_summary', 'smol_summary')"
-    ).fetchall():
-        model_id = row[0]
-        # Prefer smol_summary if both exist; last write wins in this iteration
-        our_summaries[model_id] = row[1]
-
-    # Compare summaries
-    for model_id, gt_summary in gt_summaries.items():
-        our_summary = our_summaries.get(model_id)
-        if our_summary:
-            ratio = difflib.SequenceMatcher(None, our_summary.lower(), gt_summary.lower()).ratio()
-            similarities.append(ratio)
-            if ratio < 0.2:
-                flagged.append({
-                    "model_id": model_id,
-                    "type": "low_summary_similarity",
-                    "similarity": round(ratio, 3),
-                    "ours": our_summary[:100],
-                    "reference": gt_summary[:100],
-                })
-
-    # Compare against parsed model cards (anchor coverage)
-    for model_id, parsed in gt_parsed.items():
-        our_anchors = set()
-        for row in network_conn.execute(
-            """SELECT a.label FROM model_anchors ma
-               JOIN anchors a ON ma.anchor_id = a.anchor_id
-               WHERE ma.model_id = ?""",
-            (model_id,),
-        ).fetchall():
-            our_anchors.add(row[0].lower())
-
-        if not our_anchors:
-            continue
-
-        # Extract expected fields from parsed card
-        expected_fields: set[str] = set()
-        base_model = parsed.get("base_model") or parsed.get("base_model_mention") or ""
-        if base_model:
-            expected_fields.add("lineage")
-        training = parsed.get("training_data") or parsed.get("datasets") or ""
-        if training:
-            expected_fields.add("training-data")
-        language = parsed.get("language") or ""
-        if language:
-            expected_fields.add("multilingual" if "," in str(language) else "language")
-
-        if expected_fields:
-            covered = sum(1 for f in expected_fields if any(f in a for a in our_anchors))
-            coverage = covered / len(expected_fields)
-            anchor_coverages.append(coverage)
-
-        # Flag param count mismatches
-        gt_params = parsed.get("parameters") or parsed.get("num_parameters")
-        if gt_params:
-            our_params_row = network_conn.execute(
-                "SELECT value FROM model_metadata WHERE model_id = ? AND key = 'parameter_count_b'",
-                (model_id,),
-            ).fetchone()
-            if our_params_row:
-                try:
-                    our_val = float(our_params_row[0])
-                    gt_val = float(gt_params)
-                    # Normalize — gt might be raw count, ours is in billions
-                    if gt_val > 1e6:
-                        gt_val = gt_val / 1e9
-                    if abs(our_val - gt_val) / max(our_val, gt_val, 1e-9) > 0.5:
-                        flagged.append({
-                            "model_id": model_id,
-                            "type": "param_count_mismatch",
-                            "ours": our_val,
-                            "reference": gt_val,
-                        })
-                except (ValueError, TypeError):
-                    pass
+    similarities, summary_flags = _compare_summaries(network_conn, gt_summaries)
+    anchor_coverages, parsed_flags = _compare_parsed_cards(network_conn, gt_parsed)
+    flagged = summary_flags + parsed_flags
 
     similarity_mean = sum(similarities) / len(similarities) if similarities else 0.0
     sorted_sims = sorted(similarities)
-    similarity_median = (
-        sorted_sims[len(sorted_sims) // 2] if sorted_sims else 0.0
-    )
+    similarity_median = sorted_sims[len(sorted_sims) // 2] if sorted_sims else 0.0
     anchor_coverage_mean = (
         sum(anchor_coverages) / len(anchor_coverages) if anchor_coverages else 0.0
     )
-
     total_compared = len(similarities) + len(anchor_coverages)
-
-    result = {
-        "total_compared": total_compared,
-        "summary_comparisons": len(similarities),
-        "similarity_mean": round(similarity_mean, 3),
-        "similarity_median": round(similarity_median, 3),
-        "parsed_comparisons": len(anchor_coverages),
-        "anchor_coverage_mean": round(anchor_coverage_mean, 3),
-        "flagged_disagreements": flagged,
-    }
 
     logger.info(
         "Ground truth validation: %d compared, similarity=%.3f, coverage=%.3f, %d flagged",
@@ -187,5 +226,12 @@ def validate_against_ground_truth(
         anchor_coverage_mean,
         len(flagged),
     )
-    return result
-
+    return {
+        "total_compared": total_compared,
+        "summary_comparisons": len(similarities),
+        "similarity_mean": round(similarity_mean, 3),
+        "similarity_median": round(similarity_median, 3),
+        "parsed_comparisons": len(anchor_coverages),
+        "anchor_coverage_mean": round(anchor_coverage_mean, 3),
+        "flagged_disagreements": flagged,
+    }

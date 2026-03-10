@@ -17,12 +17,12 @@ import sys
 from pathlib import Path
 
 import markdown
-
 from wiki_transforms import (
     apply_common_transforms,
     load_metrics,
     load_wiki_config,
 )
+
 
 def page_id_to_wiki_name(page_id: str) -> str:
     """Convert page ID to GitHub Wiki filename (Title-Case)."""
@@ -49,11 +49,12 @@ def rewrite_wiki_case_links(text: str, all_pages: list[dict]) -> str:
         # Without fragment: Signed-Hierarchies -> ../signed-hierarchies/
         text = text.replace(f"]({wiki_name})", f"]({target})")
 
-
     return text
 
 
-TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "docs" / "wiki" / "_template.html"
+TEMPLATE_PATH = (
+    Path(__file__).resolve().parent.parent / "docs" / "wiki" / "_template.html"
+)
 STYLE_PATH = Path(__file__).resolve().parent.parent / "docs" / "wiki" / "style.css"
 SCRIPT_PATH = Path(__file__).resolve().parent.parent / "docs" / "wiki" / "script.js"
 
@@ -110,7 +111,9 @@ def build_sidebar_html(all_pages: list[dict], rails: dict, current_page_id: str)
     return "\n".join(lines)
 
 
-def build_prev_next(page_config: dict, all_pages: list[dict], current_page_id: str) -> str:
+def build_prev_next(
+    page_config: dict, all_pages: list[dict], current_page_id: str
+) -> str:
     """Build prev/next navigation HTML."""
     rail_id = page_config.get("rail")
     if not rail_id:
@@ -132,13 +135,17 @@ def build_prev_next(page_config: dict, all_pages: list[dict], current_page_id: s
     parts.append('<nav class="prev-next">')
     if current_idx > 0:
         prev_p = rail_pages[current_idx - 1]
-        parts.append(f'  <a href="../{prev_p["id"]}/" class="prev">&larr; {prev_p["title"]}</a>')
+        parts.append(
+            f'  <a href="../{prev_p["id"]}/" class="prev">&larr; {prev_p["title"]}</a>'
+        )
     else:
         parts.append('  <span class="prev"></span>')
 
     if current_idx < len(rail_pages) - 1:
         next_p = rail_pages[current_idx + 1]
-        parts.append(f'  <a href="../{next_p["id"]}/" class="next">{next_p["title"]} &rarr;</a>')
+        parts.append(
+            f'  <a href="../{next_p["id"]}/" class="next">{next_p["title"]} &rarr;</a>'
+        )
     else:
         parts.append('  <span class="next"></span>')
 
@@ -206,7 +213,7 @@ def generate_sitemap(all_pages: list[dict], base_url: str) -> str:
     for p in all_pages:
         if p["id"] == "home":
             continue
-        lines.append(f'  <url><loc>{base_url}{p["id"]}/</loc></url>')
+        lines.append(f"  <url><loc>{base_url}{p['id']}/</loc></url>")
     lines.append("</urlset>")
     return "\n".join(lines)
 
@@ -247,7 +254,9 @@ def check_links(out_dir: Path, all_pages: list[dict]) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Publish wiki as GitHub Pages static site")
+    parser = argparse.ArgumentParser(
+        description="Publish wiki as GitHub Pages static site"
+    )
     parser.add_argument(
         "--out-dir",
         default="_site",
@@ -263,8 +272,14 @@ def main() -> int:
         default="https://rohanv.me/ModelAtlas/",
         help="Base URL for sitemap (default: https://rohanv.me/ModelAtlas/)",
     )
-    parser.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    parser.add_argument("--check-links", action="store_true", help="Check for broken links after generation")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Preview without writing"
+    )
+    parser.add_argument(
+        "--check-links",
+        action="store_true",
+        help="Check for broken links after generation",
+    )
     args = parser.parse_args()
 
     if args.repo_root:
@@ -276,7 +291,9 @@ def main() -> int:
     materialized_dir = repo_root / ".wiki"
 
     if not materialized_dir.exists():
-        print("ERROR: .wiki/ not found. Run `python -m model_atlas.wiki materialize` first.")
+        print(
+            "ERROR: .wiki/ not found. Run `python -m model_atlas.wiki materialize` first."
+        )
         return 1
 
     # Load config and metrics
@@ -311,7 +328,12 @@ def main() -> int:
 
         # Apply shared transforms (breadcrumb links use pages format)
         md_content = apply_common_transforms(
-            source_path, page_config, metrics, rails, all_pages, page_map,
+            source_path,
+            page_config,
+            metrics,
+            rails,
+            all_pages,
+            page_map,
             link_fn=pages_link_fn,
         )
 

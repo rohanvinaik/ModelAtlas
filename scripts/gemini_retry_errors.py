@@ -12,20 +12,19 @@ import sqlite3
 import time
 from pathlib import Path
 
-from huggingface_hub import HfApi
-
 from gemini_validate import (
-    NETWORK_DB,
     INGEST_DB,
+    NETWORK_DB,
     ModelRotator,
-    call_gemini,
-    get_anchor_dictionary,
-    get_our_classification,
-    fetch_hf_metadata,
     build_record,
     build_validation_prompt,
+    call_gemini,
+    fetch_hf_metadata,
+    get_anchor_dictionary,
+    get_our_classification,
     parse_gemini_json,
 )
+from huggingface_hub import HfApi
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)

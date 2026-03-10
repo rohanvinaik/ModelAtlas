@@ -59,6 +59,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     output_dir = repo_root / ".wiki"
 
     from .manifest import load_manifest
+
     manifest = load_manifest(output_dir / "manifest.json")
 
     print(f"Config: {len(config.pages)} pages defined in wiki.yaml")
@@ -75,8 +76,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             print("Drift: clean")
         else:
             print(
-                f"Drift: {report.stale_count} stale, "
-                f"{report.orphaned_count} orphaned"
+                f"Drift: {report.stale_count} stale, {report.orphaned_count} orphaned"
             )
 
     return 0
@@ -88,7 +88,8 @@ def main() -> int:
         description="Wiki materializer — deterministic doc generation",
     )
     parser.add_argument(
-        "--root", default=str(_find_repo_root()),
+        "--root",
+        default=str(_find_repo_root()),
         help="Repository root (default: auto-detect from CWD)",
     )
 
@@ -98,7 +99,8 @@ def main() -> int:
 
     drift_parser = sub.add_parser("drift", help="Check for drift")
     drift_parser.add_argument(
-        "--check", action="store_true",
+        "--check",
+        action="store_true",
         help="CI mode: nonzero exit on drift",
     )
 

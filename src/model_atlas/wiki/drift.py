@@ -57,9 +57,7 @@ class DriftReport:
             f"{self.orphaned_count} orphaned"
         )
         if not self.is_clean:
-            lines.append(
-                "Run `python -m model_atlas.wiki materialize` to regenerate."
-            )
+            lines.append("Run `python -m model_atlas.wiki materialize` to regenerate.")
         return "\n".join(lines)
 
 
@@ -75,22 +73,27 @@ def check_drift(
     if manifest is None:
         # No manifest — everything is stale
         for page in config.pages:
-            report.pages.append(PageDrift(
-                page_id=page.id, status="stale", reasons=["no manifest found"]
-            ))
+            report.pages.append(
+                PageDrift(
+                    page_id=page.id, status="stale", reasons=["no manifest found"]
+                )
+            )
         return report
 
     # Check version mismatch
     if manifest.materializer_version != config.materializer_version:
         report.version_mismatch = True
         for page in config.pages:
-            report.pages.append(PageDrift(
-                page_id=page.id, status="stale",
-                reasons=[
-                    f"version mismatch (manifest={manifest.materializer_version}, "
-                    f"config={config.materializer_version})"
-                ],
-            ))
+            report.pages.append(
+                PageDrift(
+                    page_id=page.id,
+                    status="stale",
+                    reasons=[
+                        f"version mismatch (manifest={manifest.materializer_version}, "
+                        f"config={config.materializer_version})"
+                    ],
+                )
+            )
         return report
 
     # Build lookup from manifest
@@ -102,10 +105,13 @@ def check_drift(
         entry = manifest_by_id.get(page.id)
 
         if entry is None:
-            report.pages.append(PageDrift(
-                page_id=page.id, status="stale",
-                reasons=["page not in manifest"],
-            ))
+            report.pages.append(
+                PageDrift(
+                    page_id=page.id,
+                    status="stale",
+                    reasons=["page not in manifest"],
+                )
+            )
             continue
 
         reasons: list[str] = []
@@ -114,8 +120,7 @@ def check_drift(
         source_paths = [s.path for s in page.sources]
         current_source_hash = compute_source_hash(source_paths, repo_root)
         if current_source_hash != entry.source_hash:
-            changed = [s.path for s in page.sources
-                       if (repo_root / s.path).exists()]
+            changed = [s.path for s in page.sources if (repo_root / s.path).exists()]
             reasons.append(f"source changed ({', '.join(changed)})")
 
         # Check spec hash
@@ -133,16 +138,23 @@ def check_drift(
                 reasons.append("page file modified on disk")
 
         status = "stale" if reasons else "ok"
-        report.pages.append(PageDrift(
-            page_id=page.id, status=status, reasons=reasons,
-        ))
+        report.pages.append(
+            PageDrift(
+                page_id=page.id,
+                status=status,
+                reasons=reasons,
+            )
+        )
 
     # Check for orphaned pages (in manifest but not in config)
     for entry in manifest.pages:
         if entry.id not in seen_ids:
-            report.pages.append(PageDrift(
-                page_id=entry.id, status="orphaned",
-                reasons=["page in manifest but not in config"],
-            ))
+            report.pages.append(
+                PageDrift(
+                    page_id=entry.id,
+                    status="orphaned",
+                    reasons=["page in manifest but not in config"],
+                )
+            )
 
     return report

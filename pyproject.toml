@@ -26,7 +26,7 @@ ingest = [
 
 [project.scripts]
 model-atlas = "model_atlas.server:main"
-model-atlas-ingest = "model_atlas.ingest:main"
+model-atlas-ingest = "model_atlas.ingest_cli:main"
 
 [tool.mutmut]
 paths_to_mutate = ["src/"]

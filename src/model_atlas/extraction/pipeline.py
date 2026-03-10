@@ -10,6 +10,7 @@ import logging
 import sqlite3
 
 from .. import db
+from .benchmarks import derive_benchmark_anchors, extract_benchmarks
 from .deterministic import (
     AnchorTag,
     DeterministicResult,
@@ -18,7 +19,6 @@ from .deterministic import (
 from .deterministic import (
     extract as extract_deterministic,
 )
-from .benchmarks import derive_benchmark_anchors, extract_benchmarks
 from .patterns import PatternResult
 from .patterns import extract as extract_patterns
 from .vibes import extract_vibe_summary
@@ -188,9 +188,7 @@ def _store_positions(
     )
     db.set_position(conn, model_id, "LINEAGE", pat.lineage.sign, pat.lineage.depth)
     db.set_position(conn, model_id, "DOMAIN", pat.domain.sign, pat.domain.depth)
-    db.set_position(
-        conn, model_id, "TRAINING", pat.training.sign, pat.training.depth
-    )
+    db.set_position(conn, model_id, "TRAINING", pat.training.sign, pat.training.depth)
 
 
 def _store_anchors(
@@ -217,7 +215,9 @@ def _store_anchors(
             source=source,
         )
         # Use per-anchor confidence if set, else fall back to default
-        conf = anchor.confidence if anchor.confidence is not None else default_confidence
+        conf = (
+            anchor.confidence if anchor.confidence is not None else default_confidence
+        )
         db.link_anchor(conn, model_id, anchor_id, confidence=conf)
 
 
@@ -273,7 +273,7 @@ def _infer_sibling_links(conn: sqlite3.Connection) -> int:
     for row in rows:
         siblings = row[1].split(",")[:20]  # cap
         for i, a in enumerate(siblings):
-            for b in siblings[i + 1:]:
+            for b in siblings[i + 1 :]:
                 conn.execute(
                     """INSERT OR IGNORE INTO model_links (source_id, target_id, relation, weight)
                        VALUES (?, ?, 'variant_of', 0.6)""",
@@ -302,7 +302,7 @@ def _infer_variant_links(conn: sqlite3.Connection) -> int:
         model_ids = row[1].split(",")[:50]  # cap
         for i, a in enumerate(model_ids):
             name_a = a.split("/")[-1].lower()
-            for b in model_ids[i + 1:]:
+            for b in model_ids[i + 1 :]:
                 name_b = b.split("/")[-1].lower()
                 # Find shared prefix length
                 prefix_len = 0
@@ -338,7 +338,7 @@ def _infer_fingerprint_links(conn: sqlite3.Connection) -> int:
     for row in rows:
         model_ids = row[1].split(",")[:50]  # cap
         for i, a in enumerate(model_ids):
-            for b in model_ids[i + 1:]:
+            for b in model_ids[i + 1 :]:
                 conn.execute(
                     """INSERT OR IGNORE INTO model_links
                        (source_id, target_id, relation, weight)

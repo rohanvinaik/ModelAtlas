@@ -16,8 +16,9 @@ from .manifest import (
 )
 
 
-def _render_frontmatter(page: PageConfig, source_hash: str, spec_hash: str,
-                        file_hash: str, version: str) -> str:
+def _render_frontmatter(
+    page: PageConfig, source_hash: str, spec_hash: str, file_hash: str, version: str
+) -> str:
     """Generate YAML frontmatter for a page."""
     sources_yaml = "\n".join(f"  - {s.path}" for s in page.sources)
     if not sources_yaml:
@@ -32,7 +33,7 @@ def _render_frontmatter(page: PageConfig, source_hash: str, spec_hash: str,
         f"source_hash: {source_hash}\n"
         f"spec_hash: {spec_hash}\n"
         f"file_hash: {file_hash}\n"
-        f"materializer_version: \"{version}\"\n"
+        f'materializer_version: "{version}"\n'
         f"theory_scope: {'true' if page.theory_scope else 'false'}\n"
         f"audience: {page.audience}\n"
         f"page_id: {page.id}\n"
@@ -95,19 +96,22 @@ def materialize(config: WikiConfig, repo_root: Path, output_dir: Path) -> Manife
 
         # First pass: render with placeholder file_hash to compute real one
         placeholder = "0" * 16
-        content = _render_frontmatter(page, source_hash, spec_hash,
-                                      placeholder, config.materializer_version)
+        content = _render_frontmatter(
+            page, source_hash, spec_hash, placeholder, config.materializer_version
+        )
         content += "\n" + body
 
         # Compute file_hash from content with placeholder, then re-render
         # To make this deterministic, we hash the body + metadata (not file_hash itself)
         from .manifest import compute_hash
+
         stable_parts = f"{source_hash}|{spec_hash}|{config.materializer_version}|{body}"
         file_hash = compute_hash(stable_parts)
 
         # Final render with real file_hash
-        content = _render_frontmatter(page, source_hash, spec_hash,
-                                      file_hash, config.materializer_version)
+        content = _render_frontmatter(
+            page, source_hash, spec_hash, file_hash, config.materializer_version
+        )
         content += "\n" + body
 
         # Write page
@@ -119,17 +123,19 @@ def materialize(config: WikiConfig, repo_root: Path, output_dir: Path) -> Manife
         # manifest file_hash is the real bytes hash for drift detection.)
         actual_file_hash = compute_file_hash(page_path)
 
-        entries.append(PageEntry(
-            id=page.id,
-            title=page.title,
-            path=f"{page.id}.md",
-            source_hash=source_hash,
-            spec_hash=spec_hash,
-            file_hash=actual_file_hash,
-            sources=source_paths,
-            audience=page.audience,
-            theory_scope=page.theory_scope,
-        ))
+        entries.append(
+            PageEntry(
+                id=page.id,
+                title=page.title,
+                path=f"{page.id}.md",
+                source_hash=source_hash,
+                spec_hash=spec_hash,
+                file_hash=actual_file_hash,
+                sources=source_paths,
+                audience=page.audience,
+                theory_scope=page.theory_scope,
+            )
+        )
 
     aggregate = compute_aggregate_hash(entries)
     manifest = Manifest(
