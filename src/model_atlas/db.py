@@ -448,7 +448,7 @@ def insert_correction_event(
 from .db_ingest import (  # noqa: E402
     get_connection as get_ingest_connection,
 )
-from .db_ingest import (
+from .db_ingest import (  # noqa: E402
     init_db as init_ingest_db,
 )
 from .db_queries import (  # noqa: E402
