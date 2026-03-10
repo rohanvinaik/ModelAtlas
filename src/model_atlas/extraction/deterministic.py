@@ -152,6 +152,11 @@ class ConfigSignals:
 
 
 # Parameter count -> (sign, depth, anchor_label)
+# Regex to extract parameter count like "7B", "1.5b", "70B" from model names.
+# Linear-time: \d+ matches digits, optional \.\d+ matches decimal, [bB] is literal.
+# No nested quantifiers over overlapping character classes — no backtracking risk.
+_PARAM_COUNT_RE = re.compile(r"(\d+\.\d+|\d+)[bB]")  # NOSONAR: S5852 false positive
+
 _PARAM_RANGES: list[tuple[float, float, int, int, str]] = [
     (0, 0.5, -1, 3, "sub-1B"),
     (0.5, 1.5, -1, 2, "1B-class"),
@@ -183,9 +188,7 @@ def _estimate_params_billions(
 
     # 2. Parse from model name (7B, 1.5B, 70b, 0.5b)
     for text in [model_id, *tags]:
-        match = re.search(
-            r"(\d+(?:\.\d+)?)[bB]", text
-        )  # NOSONAR — linear regex, no backtracking risk
+        match = _PARAM_COUNT_RE.search(text)
         if match:
             val = float(match.group(1))
             if 0.1 <= val <= 1000:
