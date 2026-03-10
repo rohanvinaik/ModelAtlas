@@ -1,67 +1,55 @@
 # ModelAtlas
 
+**Navigate HuggingFace's 800K models by semantic coordinates, not keywords.**
+
 [![CI](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml/badge.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Reliability](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 
-Have you ever spent a wasted afternoon digging through HuggingFace, looking for that model you saw last week that was absolutely *perfect* for your experiment, but now it's buried under 62 different versions of some fancy new model that has been fine tuned beyond all sense of decency? I have. Ever waste a week on some inferior model that an LLM recommended, only to stumble upon the *perfect* model posted by @FartKnocker6969 on Twitter? No comment.
+HuggingFace has 800K models and no way to ask "find me a small code model with tool-calling." So I built a coordinate system.
 
-Regardless, it's clear that the field is starting to suffer from its own success; the profusion of models that are small enough to fit on consumer hardware has made finding the *right* model almost impossible. HF's model search is...adequate. If you know what you're looking for. But if you *don't* know what you're looking for--if you're looking to *discover* a model that fits your specific requirements--you're left navigating a jungle of LLMs without a map.
+19,498 models positioned across 8 semantic dimensions. No embeddings, no GPU, no API calls at query time. Pure arithmetic on a SQLite file.
 
-ModelAtlas is the map.
+---
 
-A structured semantic network of ML models. Built with simple symbolic operations. Typed, structural data encoding of relative model characteristics, with a tiny footprint and searches executed at the speed of thought. All exposed as an MCP tool, so the LLM you're already talking to can *see* the model landscape itself. Get a subconscious "vibe" of model architectures, and help you find the models you didn't know you were searching for.
+You want a small code model with tool-calling.
 
-### See the difference
-
-You want a small code model with tool-calling that runs on consumer hardware.
-
-**HuggingFace** gives you the most popular code models, regardless of size:
+**HuggingFace** gives you the biggest, most popular code models:
 
 ```
 Qwen/Qwen2.5-Coder-32B-Instruct          847K downloads
 Qwen/Qwen3-Coder-480B-A35B-Instruct       75K downloads
 Qwen/Qwen3-Coder-Next                      1.1M downloads
-Phind/Phind-CodeLlama-34B-v2                2K downloads
 ```
 
-32B. 480B. Not small. HuggingFace can filter by tag and sort by popularity, but it can't express "small" as a *direction* or "tool-calling" as a *capability* — so it gives you the biggest, most popular code models instead.
+32B. 480B. Not small. HF can filter by tag and sort by popularity, but it can't express "small" as a *direction*.
 
-**ModelAtlas** navigates to exactly what you asked for:
+**ModelAtlas** navigates to what you actually asked for:
 
 ```python
 navigate_models(efficiency=-1, capability=+1,
                 require_anchors=["code-generation"],
-                prefer_anchors=["instruction-following", "tool-calling"])
+                prefer_anchors=["tool-calling"])
 ```
 
 ```
 LiquidAI/LFM2.5-1.2B-Instruct-GGUF        1B  | code-generation, function-calling, GGUF
 LocoreMind/LocoOperator-4B                  3B  | code-generation, function-calling, GGUF
 Manojb/Qwen3-4B-toolcalling-gguf-codex     3B  | code-generation, function-calling, GGUF
-adityakum667388/lumichat_coder-v2.1         3B  | code-generation, consumer-GPU-viable
 codelion/Llama-3.2-1B-Instruct-tool-calling 1B  | code-generation, function-calling
 ```
 
-1B-3B models. Code generation. Tool-calling. Consumer-GPU-viable. GGUF-ready. Every result is a direct hit — not because of keyword matching, but because ModelAtlas has a coordinate system that knows what "small" and "capable" mean as *positions in model space*.
+Every result is a direct hit. Not keyword matching — *position in model space*.
 
-## The gap
+<!-- TODO: mlx-vis 2D projection of the semantic network (19K models, colored by domain) -->
 
-HuggingFace knows that `meta-llama/Llama-3.1-8B-Instruct` has 42,000 likes and uses the `transformers` library. What it doesn't know: this model is an instruction-tuned derivative of a base model in the Llama family, supports tool-calling, sits in the mainstream efficiency range, and has 47 quantized variants on the Hub. That information exists — scattered across model cards, naming conventions, config files, and community knowledge. But it's not queryable.
+---
 
-There isn't an API call or a search bar that answers:
+## How it works
 
-- "What's the most general Llama base that supports tool-calling and fits on consumer GPU?"
-- "What are some models that are architecturally similar to Mamba, but with instruction tuning?"
-- "Can we find models like *this* one, but smaller and more code-focused?"
-
-These aren't filter queries. They're **navigation** — and HuggingFace doesn't have a coordinate system to navigate with.
-
-## The idea
-
-Every model has a position along eight independent dimensions, with signed hierarchical traversal from an assigned zero point. Take efficiency: 7B is a mainstream sweet spot, so 7B is set as "zero". Smaller goes negative. Larger goes positive. "Small" just means "negative in EFFICIENCY."
+Eight signed dimensions. Each has a zero state — the most common thing people look for.
 
 ```
 ARCHITECTURE    zero = transformer decoder       →  +novel (Mamba, MoE)
@@ -71,48 +59,34 @@ COMPATIBILITY   zero = PyTorch + transformers     →  +specific (GGUF, MLX)
 LINEAGE         zero = base/foundational model    →  +derived (fine-tune, quant)
 DOMAIN          zero = general knowledge           →  +specialized (code, medical)
 QUALITY         zero = established mainstream      →  +trending  / -legacy
-TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -simpler (LoRA, distill)
+TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -simpler
 ```
 
-Zero is defined as **the most common thing people look for**. Most queries resolve near the origin.
+On top of coordinates, models share **anchors** — labels like "instruction-following", "GGUF-available", "Llama-family." Similarity is emergent from shared labels, weighted by rarity (IDF). Every score traces back to specific anchors. Nothing is an opaque embedding.
 
-On top of coordinates, models share **anchors** — a vocabulary of characteristics like "instruction-following", "GGUF-available", "Llama-family." Models sharing anchors are similar without explicit edges. Similarity is emergent, and every score traces back to specific shared labels. Nothing is an opaque embedding.
+**Scoring:** `bank_alignment × anchor_relevance × seed_similarity`. Multiplicative — a model that nails efficiency but misses capability gets zero, not fifty percent.
 
-The LLM decomposes a user's question into coordinates and anchors. ModelAtlas does arithmetic on integers and set intersections on small lists. The intelligence is in the interaction — no single piece is smart, but the system is.
+**Extraction** runs in three tiers: deterministic (API fields, parameter math) → pattern matching (tags, names, configs) → vibe extraction (small local LLM, once per model at ingestion). At query time, it's multiplication and set intersection. Math — not inference.
 
 ## What this is not
 
 - **Not a vector store.** No embeddings. Similarity comes from shared structure.
-- **Not a database with 65 columns.** Eight signed dimensions and a label vocabulary replace flat attributes.
 - **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose.
-- **Not a ranking system.** No "best model" score. Just "what's near here, and what path leads where you need."
-
-The entire thing is a SQLite file, a few thousand anchor labels, and signed integers. No GPU at query time. No vector store in the background. No running services. Full semantic decomposition was done at home with spare compute. At query time, it's simply multiplication and set intersection.
+- **Not a ranking system.** No "best model" score. Navigation, not leaderboard.
 
 ## Quick start
 
-**1. Install:**
-
 ```bash
-git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas
-uv sync
-```
+# 1. Clone and install
+git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas && uv sync
 
-**2. Download the pre-built network:**
-
-The semantic network is distributed as a SQLite file attached to [GitHub Releases](https://github.com/rohanvinaik/ModelAtlas/releases). Download the latest `network.db` and place it in the cache directory:
-
-```bash
+# 2. Download pre-built network (19K+ models, all extraction tiers applied)
 mkdir -p ~/.cache/model-atlas
 curl -L -o ~/.cache/model-atlas/network.db \
   https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
+
+# 3. Add to Claude Code (.mcp.json) or Claude Desktop config
 ```
-
-Or manually: go to [Releases](https://github.com/rohanvinaik/ModelAtlas/releases), download `network.db`, and move it to `~/.cache/model-atlas/`.
-
-**3. Add to your MCP client:**
-
-For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -125,100 +99,51 @@ For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_
 }
 ```
 
-For Claude Code, add to `.mcp.json` in your project:
+That's it. Your LLM can now see model space.
 
-```json
-{
-  "mcpServers": {
-    "model-atlas": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/ModelAtlas", "run", "model-atlas"]
-    }
-  }
-}
-```
+## Tools
 
-That's it. Your LLM can now see the model landscape.
+| Tool | Purpose |
+|------|---------|
+| `navigate_models` | Primary. Bank directions + anchor targeting → ranked results |
+| `hf_search_models` | Natural language fallback with fuzzy matching |
+| `hf_get_model_detail` | Full semantic profile: all 8 positions, anchors, lineage |
+| `hf_compare_models` | Structural diff via anchor set operations + Jaccard similarity |
+| `hf_build_index` | Ingest models from HuggingFace/Ollama into the network |
+| `set_model_vibe` | LLM-generated one-sentence model summary |
+| `search_models` | Multi-source search (HuggingFace, Ollama, or all) |
+| `list_model_sources` | Available sources and connection status |
+| `hf_index_status` | Network statistics |
 
-Without the pre-built network, ModelAtlas starts with an empty database. You can build your own using `hf_build_index`, but the pre-built network includes 19K+ models with multi-tier extraction already applied.
+<!-- TODO: ## Performance
 
-## Usage
+| Metric | Value |
+|--------|-------|
+| Query latency (p50) | TBD ms |
+| Query latency (p95) | TBD ms |
+| Query latency (p99) | TBD ms |
+| Network size | 19,498 models, 166 anchors, 128K+ links |
+| Memory footprint | ~XX MB (SQLite + Python process) |
+| Neural compute at query time | Zero |
+-->
 
-The primary tool is `navigate_models`. The calling LLM fills in structured parameters; ModelAtlas does deterministic scoring.
+## Status
 
-```python
-navigate_models(
-    efficiency=-1,           # small
-    capability=1,            # capable
-    require_anchors=["code-generation"],
-    prefer_anchors=["instruction-following", "tool-calling"],
-    avoid_anchors=["embedding"]
-)
-# → Small code models with tool-calling, ranked by IDF-weighted anchor overlap
-```
+19,498 models. 166 anchors. 128K+ model-anchor links. ~7,300 models with LLM-enriched summaries; the rest have full structural data from deterministic + pattern extraction. ~3,000 models independently validated against raw HF metadata. Multi-phase correction pipeline actively converging toward 90-95%+ anchor accuracy.
 
-**Bank directions** — `-1`, `0`, or `+1` per dimension. Omit any you don't care about.
+The network is dense enough for the core use case: giving an LLM structural awareness of model space that isn't in its weights. Popular models are well-covered. Long tail still refining. HuggingFace has real-time download counts and community activity; ModelAtlas is a periodic snapshot — it tells you *what to look at*, not *what's trending right now*.
 
-**Anchor targeting** — `require` (hard filter), `prefer` (IDF-weighted boost — rare anchors count more), `avoid` (each match halves the score).
-
-**Seed similarity** — `similar_to="meta-llama/Llama-3.1-8B-Instruct"` finds models with overlapping anchor sets, weighted by anchor rarity.
-
-**Scoring** — `bank_alignment * anchor_relevance * seed_similarity`. Multiplicative: a model that nails efficiency but misses capability gets zero, not fifty percent.
-
-### Other tools
-
-| Tool | What it does |
-|------|-------------|
-| `hf_search_models` | Natural language fallback — keyword parsing into bank constraints + fuzzy matching |
-| `hf_build_index` | Fetch models from HuggingFace/Ollama, extract positions and anchors, add to network |
-| `hf_get_model_detail` | Full semantic profile: all 8 bank positions, anchor set, lineage, metadata |
-| `hf_compare_models` | Set operations on anchor sets: shared features, distinguishing features, Jaccard similarity |
-| `set_model_vibe` | LLM writes a one-sentence vibe summary after reading a model card |
-| `hf_index_status` | Network stats |
-| `search_models` | Search models across multiple sources (HuggingFace, Ollama, or all) |
-| `list_model_sources` | List available model sources and their connection status |
-
-## How it works underneath
-
-**Extraction** runs in three tiers:
-
-1. **Deterministic** — parameter count, architecture type, download velocity. Pure arithmetic on structured API fields.
-2. **Pattern matching** — regex on tags, model names, configs. Detects instruction-tuning, quantization formats, family membership, domain signals.
-3. **Vibe extraction** — a small (sub-7B) local model produces a one-sentence summary and extra anchors via constrained generation. Runs once per model during ingestion.
-
-**Ingestion** is additive. Each `hf_build_index` call enriches the same network. A background daemon can run continuously, streaming new models through all three extraction tiers.
-
-**Storage** is `~/.cache/model-atlas/network.db` — one SQLite file.
-
-Execution of the query is done with *pure* symbolic processes. Jaccard similarity. Logarithmic decay. Signed integer directional traversal. Basic set theory operations. Math--not inference.
-
-Don't waste tokens on problems that have been solved for 50 years--waste them on *your* terms.
-
-## Beta status
-
-ModelAtlas is in active beta. The semantic network contains **19,498 models** with **166 anchors** across all 8 banks and **128K+ model-anchor links**. The top-downloaded models on HuggingFace are all present and enriched.
-
-**What works today:**
-- Navigation queries return meaningfully different results than keyword search. "Small code models with tool-calling" surfaces LiquidAI LFM-1.2B, Qwen3-4B tool-calling variants, and Llama-3.2-1B function-calling adapters — real answers to a query HuggingFace can't express.
-- The 8-bank coordinate system captures structural relationships that tags and filters miss. Signed directions, anchor set intersections, and IDF-weighted similarity all function as described.
-- ~7,300 models have LLM-generated enrichment (summaries + capability anchors) beyond deterministic extraction. The remaining ~12K have full Tier 1+2 structural data.
-
-**Validation:**
-- ~3,000 models independently validated by Gemini against raw HuggingFace metadata.
-- A multi-phase correction pipeline (deterministic audit, dictionary expansion, LLM healing) is actively improving anchor accuracy, with a target of 90-95%+ in the final network.
-
-**What this means for users:**
-The network is directionally correct and dense enough for the core use case: giving an LLM a structural sense of model space it doesn't have in its weights. Popular models are well-covered. The long tail is still being refined. Expect anchor accuracy to improve steadily as the correction pipeline converges.
+Part of a research program on structured navigation through constrained semantic spaces — the same paradigm applied to [theorem proving](https://github.com/rohanvinaik/Wayfinder) and [code quality supervision](https://github.com/rohanvinaik/LintGate).
 
 ## Deep dive
 
-The full conceptual documentation — theory, architecture, design rationale — lives at **[rohanv.me/ModelAtlas](https://rohanv.me/ModelAtlas/)**:
-
-| If you want to... | Start here |
+| | |
 |---|---|
-| Use it | [Getting Started](https://rohanv.me/ModelAtlas/getting-started/) → [Query Examples](https://rohanv.me/ModelAtlas/query-examples/) |
-| Understand the architecture | [System Overview](https://rohanv.me/ModelAtlas/system-overview/) → [Query Engine](https://rohanv.me/ModelAtlas/query-engine/) → [Data Model](https://rohanv.me/ModelAtlas/data-model/) |
-| Understand the design theory | [The Gap](https://rohanv.me/ModelAtlas/the-gap/) → [Signed Hierarchies](https://rohanv.me/ModelAtlas/signed-hierarchies/) → [Navigation Geometry](https://rohanv.me/ModelAtlas/navigation-geometry/) |
-| Look up a concept | [Glossary](https://rohanv.me/ModelAtlas/glossary/) · [Concept Map](https://rohanv.me/ModelAtlas/concept-map/) |
+| Full docs | [rohanv.me/ModelAtlas](https://rohanv.me/ModelAtlas/) |
+| Pipeline reference | [`docs/pipeline.md`](docs/pipeline.md) |
+| Design deep dive | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| Theoretical foundation | [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding) |
 
-Pipeline reference: [`docs/pipeline.md`](docs/pipeline.md) | Design deep dive: [`docs/DESIGN.md`](docs/DESIGN.md) | Theoretical foundation: [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding)
+---
+
+MIT — Rohan Vinaik
