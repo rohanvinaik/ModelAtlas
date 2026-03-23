@@ -1,60 +1,66 @@
-"""Structured navigation engine — the primary query interface.
-
-Bank directions + anchor constraints → scored, ranked results.
-Multiplicative scoring over an 8-dimensional product semiring.
-"""
+"""Extracted from src/model_atlas/query.py."""
 
 from __future__ import annotations
 
 import sqlite3
-
 from . import db
 from .config import (
     NAVIGATE_AVOID_DECAY,
     NAVIGATE_MISSING_BANK_PENALTY,
+    WEIGHT_ANCHOR,
+    WEIGHT_BANK,
+    WEIGHT_FUZZY,
+    WEIGHT_SPREAD,
 )
-from .query_types import NavigationResult, StructuredQuery
-
-# Module-level IDF cache — invalidated after index builds
-_idf_cache: dict[str, float] | None = None
+from .query_types import (  # noqa: F401 — re-exported for backward compat
+    BankConstraint,
+    ComparisonResult,
+    NavigationResult,
+    ParsedQuery,
+    SearchResult,
+    StructuredQuery,
+)
 
 
 def _get_idf(conn: sqlite3.Connection) -> dict[str, float]:
-    """Get or compute IDF weights for all anchors."""
+    """Return cached IDF dict, computing on first call."""
     global _idf_cache
-    if _idf_cache is None:
+    if not _idf_cache:
         _idf_cache = db.compute_anchor_idf(conn)
     return _idf_cache
 
 
 def invalidate_idf_cache() -> None:
-    """Clear the IDF cache (call after index builds)."""
+    """Clear the IDF cache — call after index builds."""
     global _idf_cache
-    _idf_cache = None
+    _idf_cache = {}
 
 
 def _bank_score_single(model_signed_pos: int, query_direction: int) -> float:
-    """Score a single bank dimension.
+    """Score a single bank alignment.
 
-    Returns 1.0 for correct direction, 0.5 for neutral, and
-    hyperbolic decay 1/(1+|alignment|) for wrong direction.
-    Direction 0 means "want zero state" — penalizes distance from origin.
+    direction == 0: want near zero, penalize distance.
+    direction == +1/-1: reward alignment, penalize opposition.
     """
     if query_direction == 0:
         return 1.0 / (1.0 + abs(model_signed_pos))
     alignment = model_signed_pos * query_direction
     if alignment > 0:
         return 1.0
-    if alignment == 0:
+    elif alignment == 0:
         return 0.5
-    return 1.0 / (1.0 + abs(alignment))
+    else:
+        return 1.0 / (1.0 + abs(alignment))
 
 
 def _nav_candidates(
     conn: sqlite3.Connection,
-    require_set: set[str] | None,
+    require_set: set[str],
 ) -> list[str] | None:
-    """Get candidate model IDs, optionally filtered by required anchors."""
+    """Resolve candidate model IDs, pre-filtering by required anchors.
+
+    Returns None if a required anchor doesn't exist (→ no results possible).
+    """
     if require_set:
         anchor_ids = []
         for label in require_set:
@@ -62,11 +68,11 @@ def _nav_candidates(
                 "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
             ).fetchone()
             if row:
-                anchor_ids.append(row[0])
+                anchor_ids.append(row["anchor_id"])
             else:
-                return []  # Required anchor doesn't exist → no results
+                return None
         if len(anchor_ids) != len(require_set):
-            return []
+            return None
         placeholders = ",".join("?" for _ in anchor_ids)
         rows = conn.execute(
             f"""SELECT model_id FROM model_anchors
@@ -138,38 +144,32 @@ def navigate(
     conn: sqlite3.Connection,
     query: StructuredQuery,
 ) -> list[NavigationResult]:
-    """Execute a structured navigation query.
+    """Structured navigational search — the primary recommendation engine.
 
-    The primary query interface. Decomposes into:
-    1. Pre-filter candidates by required anchors (SQL HAVING)
-    2. Batch-load positions and anchor sets
-    3. Score: bank_alignment × anchor_relevance × seed_similarity
-    4. Sort and return top results
+    Three signals, multiplicative:
+        final_score = bank_alignment * anchor_relevance * seed_similarity
+
+    Uses batch SQL instead of N+1 per-model lookups.
     """
     idf = _get_idf(conn)
-
-    require_set = set(query.require_anchors) if query.require_anchors else None
-    prefer_set = set(query.prefer_anchors) if query.prefer_anchors else set()
-    avoid_set = set(query.avoid_anchors) if query.avoid_anchors else set()
-    has_constraints = bool(require_set or prefer_set or avoid_set)
-
+    directions = query.bank_directions()
+    require_set = set(query.require_anchors)
+    prefer_set = set(query.prefer_anchors)
+    avoid_set = set(query.avoid_anchors)
+    has_anchor_constraints = bool(require_set or prefer_set or avoid_set)
     prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
 
-    # Seed similarity setup
-    seed_anchors: set[str] = set()
-    if query.similar_to:
-        seed_anchors = db.get_anchor_set(conn, query.similar_to)
-
-    # 1. Pre-filter
+    # Step 1: Determine candidate set
     candidate_ids = _nav_candidates(conn, require_set)
     if not candidate_ids:
         return []
 
-    # 2. Batch load
-    directions = query.bank_directions()
-
+    # Step 2: Batch-fetch positions, anchors, authors
     all_positions = db.batch_get_positions(conn, candidate_ids)
     all_anchors = db.batch_get_anchor_sets(conn, candidate_ids)
+    seed_anchors = (
+        db.get_anchor_set(conn, query.similar_to) if query.similar_to else set()
+    )
 
     ph = ",".join("?" for _ in candidate_ids)
     author_rows = conn.execute(
@@ -178,7 +178,7 @@ def navigate(
     ).fetchall()
     authors = {r["model_id"]: r["author"] or "" for r in author_rows}
 
-    # 3. Score
+    # Step 3: Score each candidate
     results: list[NavigationResult] = []
     for mid in candidate_ids:
         positions = all_positions.get(mid, {})
@@ -186,8 +186,12 @@ def navigate(
 
         bank_alignment = _nav_bank_alignment(positions, directions)
         anchor_relevance = _nav_anchor_relevance(
-            model_anchor_set, prefer_set, avoid_set, idf,
-            prefer_idf_total, has_constraints,
+            model_anchor_set,
+            prefer_set,
+            avoid_set,
+            idf,
+            prefer_idf_total,
+            has_anchor_constraints,
         )
         seed_similarity = _nav_seed_similarity(model_anchor_set, seed_anchors, idf)
         final_score = bank_alignment * anchor_relevance * seed_similarity
@@ -211,3 +215,4 @@ def navigate(
 
     results.sort(key=lambda r: r.score, reverse=True)
     return results[: query.limit]
+

@@ -32,6 +32,7 @@ from .query_types import (  # noqa: F401 — re-exported for backward compat
     StructuredQuery,
 )
 from .spreading import spread
+from .query_navigate import _bank_score_single, _get_idf, _nav_anchor_relevance, _nav_bank_alignment, _nav_candidates, _nav_seed_similarity, invalidate_idf_cache, navigate  # noqa: F401
 
 # Query signal keywords mapped to bank constraints
 _BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None, int]]] = {
@@ -468,15 +469,26 @@ def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
 # ModelAtlas does deterministic math.
 # ---------------------------------------------------------------------------
 
-# Navigate engine — extracted to query_navigate.py
-# Re-exported here for backward compatibility
-from .query_navigate import (  # noqa: E402, F401
-    _bank_score_single,
-    _get_idf,
-    _nav_anchor_relevance,
-    _nav_bank_alignment,
-    _nav_candidates,
-    _nav_seed_similarity,
-    invalidate_idf_cache,
-    navigate,
-)
+# Module-level IDF cache, invalidated by clearing it after index builds.
+_idf_cache: dict[str, float] = {}
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# navigate() scoring helpers — extracted to reduce cognitive complexity
+# ---------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
