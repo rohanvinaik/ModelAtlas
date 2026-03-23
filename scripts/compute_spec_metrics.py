@@ -92,7 +92,7 @@ def run_test_suite() -> bool:
     return result.returncode == 0
 
 
-def main():
+def _read_mutation_cache():
     # Read mutation cache if available
     cache_dir = Path(".lintgate/mutation")
     killed = 0
@@ -118,14 +118,41 @@ def main():
         killed = 576
         survived = 2  # 2 equivalent mutants
         total_sigma = 578
+    return func_count, killed, survived, total_sigma
 
+
+def _compute_sigma_from_profiles():
     # Compute σ from profiled files
+    total_sigma = 0
+    func_count = 0
     for target in PROFILE_TARGETS:
         if Path(target).exists():
             funcs = count_functions(target)
             for name, sigma in funcs:
                 total_sigma += sigma
                 func_count += 1
+    return func_count, total_sigma
+
+
+def _write_metrics(metrics) -> None:
+    # Write to GITHUB_ENV if available
+    import os
+
+    env_file = os.environ.get("GITHUB_ENV")
+    if env_file:
+        with open(env_file, "a") as f:
+            for k, v in metrics.items():
+                f.write(f"{k}={v}\n")
+    else:
+        # Print for local testing
+        for k, v in metrics.items():
+            print(f"  {k}={v}")
+
+
+def main():
+    func_count, killed, survived, total_sigma = _read_mutation_cache()
+
+    func_count, total_sigma = _compute_sigma_from_profiles()
 
     total_mutants = killed + survived
     kill_pct = round(100 * killed / max(total_mutants, 1))
@@ -151,18 +178,7 @@ def main():
     print(f"Mean σ: {mean_sigma} across {func_count} functions")
     print(f"Tests: {test_count} | Source: {source_loc} LOC | Ratio: 1:{ratio}")
 
-    # Write to GITHUB_ENV if available
-    import os
-
-    env_file = os.environ.get("GITHUB_ENV")
-    if env_file:
-        with open(env_file, "a") as f:
-            for k, v in metrics.items():
-                f.write(f"{k}={v}\n")
-    else:
-        # Print for local testing
-        for k, v in metrics.items():
-            print(f"  {k}={v}")
+    _write_metrics(metrics)
 
 
 if __name__ == "__main__":

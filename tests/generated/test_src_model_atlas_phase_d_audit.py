@@ -109,11 +109,7 @@ def test__check_confidence_conflicts_characterization():
     model_id = "test"
     c2_anchors = {}
     det_anchors = {}
-    result = _check_confidence_conflicts(
-        conn,
-        run_id,
-        model_id,
-        c2_anchors,
-        det_anchors,  # type: ignore[arg-type]
+    result = _check_confidence_conflicts(  # type: ignore[arg-type]
+        conn, run_id, model_id, c2_anchors, det_anchors,
     )
     assert result is not None  # TODO: replace with golden assertion
