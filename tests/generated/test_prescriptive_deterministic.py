@@ -361,3 +361,156 @@ class TestValidateParamValue:
 
     def test_invalid_string(self):
         assert _validate_param_value("abc") is None
+
+
+# === _extract_from_config (σ=33) ===
+
+from model_atlas.extraction.deterministic import _extract_from_config, ConfigSignals
+
+
+class TestExtractFromConfig:
+    """Pin config parsing for all field extraction paths."""
+
+    def test_none_config(self):
+        cfg = _extract_from_config(None)
+        assert cfg.context_length is None
+        assert cfg.model_type is None
+
+    def test_empty_config(self):
+        cfg = _extract_from_config({})
+        assert cfg.context_length is None
+
+    def test_max_position_embeddings(self):
+        cfg = _extract_from_config({"max_position_embeddings": 4096})
+        assert cfg.context_length == 4096
+
+    def test_max_seq_len_fallback(self):
+        cfg = _extract_from_config({"max_seq_len": 2048})
+        assert cfg.context_length == 2048
+
+    def test_context_length_priority(self):
+        """max_position_embeddings takes priority over max_seq_len."""
+        cfg = _extract_from_config({
+            "max_position_embeddings": 4096,
+            "max_seq_len": 2048,
+        })
+        assert cfg.context_length == 4096
+
+    def test_vocab_size(self):
+        cfg = _extract_from_config({"vocab_size": 32000})
+        assert cfg.vocab_size == 32000
+
+    def test_vocab_size_zero_ignored(self):
+        cfg = _extract_from_config({"vocab_size": 0})
+        assert cfg.vocab_size is None
+
+    def test_vocab_size_non_int_ignored(self):
+        cfg = _extract_from_config({"vocab_size": "32000"})
+        assert cfg.vocab_size is None
+
+    def test_hidden_size(self):
+        cfg = _extract_from_config({"hidden_size": 4096})
+        assert cfg.hidden_size == 4096
+
+    def test_num_layers(self):
+        cfg = _extract_from_config({"num_hidden_layers": 32})
+        assert cfg.num_layers == 32
+
+    def test_num_heads(self):
+        cfg = _extract_from_config({"num_attention_heads": 32})
+        assert cfg.num_heads == 32
+
+    def test_num_kv_heads(self):
+        cfg = _extract_from_config({"num_key_value_heads": 8})
+        assert cfg.num_kv_heads == 8
+
+    def test_gqa_detection(self):
+        cfg = _extract_from_config({
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+        })
+        assert cfg.uses_gqa is True
+
+    def test_no_gqa_when_equal(self):
+        cfg = _extract_from_config({
+            "num_attention_heads": 32,
+            "num_key_value_heads": 32,
+        })
+        assert cfg.uses_gqa is False
+
+    def test_model_type(self):
+        cfg = _extract_from_config({"model_type": "llama"})
+        assert cfg.model_type == "llama"
+
+    def test_model_type_non_string(self):
+        cfg = _extract_from_config({"model_type": 42})
+        assert cfg.model_type is None
+
+    def test_rope_scaling(self):
+        cfg = _extract_from_config({"rope_scaling": {"type": "dynamic"}})
+        assert cfg.rope_scaling_type == "dynamic"
+
+    def test_rope_scaling_rope_type_key(self):
+        cfg = _extract_from_config({"rope_scaling": {"rope_type": "yarn"}})
+        assert cfg.rope_scaling_type == "yarn"
+
+    def test_quantization_config(self):
+        cfg = _extract_from_config({"quantization_config": {"quant_method": "gptq"}})
+        assert cfg.quantization_config == "gptq"
+
+    def test_torch_dtype(self):
+        cfg = _extract_from_config({"torch_dtype": "bfloat16"})
+        assert cfg.torch_dtype == "bfloat16"
+
+    def test_torch_dtype_non_string(self):
+        cfg = _extract_from_config({"torch_dtype": 16})
+        assert cfg.torch_dtype is None
+
+    def test_full_llama_config(self):
+        """Integration: full Llama-style config."""
+        cfg = _extract_from_config({
+            "model_type": "llama",
+            "hidden_size": 4096,
+            "num_hidden_layers": 32,
+            "num_attention_heads": 32,
+            "num_key_value_heads": 8,
+            "intermediate_size": 11008,
+            "vocab_size": 32000,
+            "max_position_embeddings": 4096,
+            "torch_dtype": "bfloat16",
+        })
+        assert cfg.model_type == "llama"
+        assert cfg.hidden_size == 4096
+        assert cfg.num_layers == 32
+        assert cfg.uses_gqa is True
+        assert cfg.structural_fingerprint is not None
+
+
+# === _config_anchors (σ=6) ===
+
+from model_atlas.extraction.deterministic import _config_anchors
+
+
+class TestConfigAnchors:
+    def test_gqa_anchor(self):
+        cfg = ConfigSignals(uses_gqa=True, num_heads=32, num_kv_heads=8)
+        anchors = _config_anchors(cfg)
+        labels = [a.label for a in anchors]
+        assert "grouped-query-attention" in labels
+
+    def test_rope_anchor(self):
+        cfg = ConfigSignals(rope_scaling_type="dynamic")
+        anchors = _config_anchors(cfg)
+        labels = [a.label for a in anchors]
+        assert "rope-dynamic" in labels
+
+    def test_quantization_anchor(self):
+        cfg = ConfigSignals(quantization_config="gptq")
+        anchors = _config_anchors(cfg)
+        labels = [a.label for a in anchors]
+        assert "gptq-quantized" in labels
+
+    def test_no_signals_empty(self):
+        cfg = ConfigSignals()
+        anchors = _config_anchors(cfg)
+        assert anchors == []
