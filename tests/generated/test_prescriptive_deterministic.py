@@ -8,9 +8,14 @@ _license_anchors (σ=1), _config_anchors (σ=6), _compute_structural_fingerprint
 import pytest
 
 from model_atlas.extraction.deterministic import (
+    BankPosition,
     _estimate_params_billions,
+    _extract_efficiency,
+    _extract_quality,
     _license_anchors,
     _parse_param_from_text,
+    _validate_param_value,
+    _walk_number_backwards,
 )
 
 # === _parse_param_from_text (σ=17, pure) ===
@@ -174,7 +179,6 @@ class TestLicenseAnchors:
 
 # === _extract_efficiency (σ=7) ===
 
-from model_atlas.extraction.deterministic import _extract_efficiency, BankPosition
 
 
 class TestExtractEfficiency:
@@ -243,7 +247,6 @@ class TestExtractEfficiency:
 
 # === _extract_quality (σ=33) ===
 
-from model_atlas.extraction.deterministic import _extract_quality
 
 
 class TestExtractQuality:
@@ -291,3 +294,70 @@ class TestExtractQuality:
         """Invalid date string should not crash."""
         pos, anchors = _extract_quality(100, 100000, "not-a-date")
         assert isinstance(anchors, list)
+
+
+# === _walk_number_backwards (σ=7, pure) ===
+
+
+
+class TestWalkNumberBackwards:
+    """Pin the backward number walking helper."""
+
+    def test_single_digit(self):
+        assert _walk_number_backwards("7B", 1) == "7"
+
+    def test_multi_digit(self):
+        assert _walk_number_backwards("13B", 2) == "13"
+
+    def test_decimal(self):
+        assert _walk_number_backwards("1.5B", 3) == "1.5"
+
+    def test_embedded(self):
+        assert _walk_number_backwards("abc7B", 4) == "7"
+
+    def test_dot_before_b(self):
+        """7.B — dot is the char before B, walk back to find 7."""
+        assert _walk_number_backwards("7.B", 2) == "7."
+
+    def test_leading_dot(self):
+        """.5B — starts with dot."""
+        assert _walk_number_backwards(".5B", 2) == ".5"
+
+    def test_no_number(self):
+        """xB — no digit before B."""
+        result = _walk_number_backwards("xB", 1)
+        assert result == "x" or result == ""
+
+
+# === _validate_param_value (σ=4, pure) ===
+
+
+class TestValidateParamValue:
+    """Pin validation of parsed param strings."""
+
+    def test_valid_7(self):
+        assert _validate_param_value("7") == 7.0
+
+    def test_valid_1_5(self):
+        assert _validate_param_value("1.5") == 1.5
+
+    def test_empty_string(self):
+        assert _validate_param_value("") is None
+
+    def test_dot_only(self):
+        assert _validate_param_value(".") is None
+
+    def test_below_range(self):
+        assert _validate_param_value("0.05") is None
+
+    def test_above_range(self):
+        assert _validate_param_value("1001") is None
+
+    def test_boundary_low(self):
+        assert _validate_param_value("0.1") == pytest.approx(0.1)
+
+    def test_boundary_high(self):
+        assert _validate_param_value("1000") == 1000.0
+
+    def test_invalid_string(self):
+        assert _validate_param_value("abc") is None
