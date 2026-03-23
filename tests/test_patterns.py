@@ -18,6 +18,7 @@ from model_atlas.extraction.patterns import (
     _detect_quantization_level,
     _detect_training,
     _detect_training_datasets,
+    _infer_relation,
     extract,
 )
 
@@ -777,3 +778,37 @@ class TestExtractIntegration:
             tags=["dataset:alpaca", "text-generation"],
         )
         assert "training_datasets" in result.metadata
+
+
+# === _infer_relation (σ=9, prescriptive) ===
+
+
+class TestInferRelation:
+    """Pin relation inference from model name heuristics."""
+
+    def test_gguf_is_quantized(self):
+        assert _infer_relation("TheBloke/model-GGUF") == "quantized_from"
+
+    def test_gptq_is_quantized(self):
+        assert _infer_relation("model-GPTQ") == "quantized_from"
+
+    def test_awq_is_quantized(self):
+        assert _infer_relation("model-AWQ") == "quantized_from"
+
+    def test_exl2_is_quantized(self):
+        assert _infer_relation("model-exl2") == "quantized_from"
+
+    def test_merge_is_merged(self):
+        assert _infer_relation("user/model-merge-v1") == "merged_from"
+
+    def test_franken_is_merged(self):
+        assert _infer_relation("user/frankenmodel") == "merged_from"
+
+    def test_default_is_fine_tuned(self):
+        assert _infer_relation("user/my-model-instruct") == "fine_tuned_from"
+
+    def test_plain_name_is_fine_tuned(self):
+        assert _infer_relation("meta-llama/Llama-3.1-8B") == "fine_tuned_from"
+
+    def test_case_insensitive(self):
+        assert _infer_relation("model-GGUF") == _infer_relation("model-gguf")
