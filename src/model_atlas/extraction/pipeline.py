@@ -54,18 +54,8 @@ def extract_and_store(
     )
 
     # Extract enrichment data from Tier 1+2 for vibe prompt
+    param_count, family, capabilities, training_methods = _extract_enrichment_context(det, pat)
     param_b = det.metadata.get("parameter_count_b")
-    param_count = param_b[0] + "B" if param_b else "unknown"
-    family = "unknown"
-    capabilities: list[str] = []
-    training_methods: list[str] = []
-    for anchor in pat.anchors:
-        if anchor.bank == "LINEAGE" and anchor.label.endswith("-family"):
-            family = anchor.label
-        elif anchor.bank == "CAPABILITY":
-            capabilities.append(anchor.label)
-        elif anchor.bank == "TRAINING":
-            training_methods.append(anchor.label)
 
     # Tier 3: Vibes
     vibe = extract_vibe_summary(
@@ -136,18 +126,8 @@ def extract_and_store(
 
     # Inference hardware requirement estimate
     if param_b:
-        param_val = float(param_b[0])
         quant = pat.metadata.get("quantization_level", ("", ""))[0]
-        if quant and any(q in quant.upper() for q in ("Q4", "Q5", "Q3", "Q2")):
-            hw_req = "consumer-GPU" if param_val <= 13 else "high-end-GPU"
-        elif param_val <= 3:
-            hw_req = "consumer-GPU"
-        elif param_val <= 13:
-            hw_req = "mid-range-GPU"
-        elif param_val <= 70:
-            hw_req = "high-end-GPU"
-        else:
-            hw_req = "multi-GPU"
+        hw_req = _infer_hardware_requirement(param_b[0], quant)
         db.set_metadata(conn, inp.model_id, "inference_hardware_req", hw_req, "str")
 
     # Store lineage links for all detected base models
@@ -358,3 +338,39 @@ def infer_relationships(conn: sqlite3.Connection) -> int:
     if total:
         logger.info("Inferred %d relationship links", total)
     return total
+
+
+def _extract_enrichment_context(
+    det: DeterministicResult, pat: PatternResult
+) -> tuple[str, str, list[str], list[str]]:
+    """Extract enrichment data from Tier 1+2 results for vibe prompt.
+
+    Returns (param_count, family, capabilities, training_methods).
+    """
+    param_b = det.metadata.get("parameter_count_b")
+    param_count = param_b[0] + "B" if param_b else "unknown"
+    family = "unknown"
+    capabilities: list[str] = []
+    training_methods: list[str] = []
+    for anchor in pat.anchors:
+        if anchor.bank == "LINEAGE" and anchor.label.endswith("-family"):
+            family = anchor.label
+        elif anchor.bank == "CAPABILITY":
+            capabilities.append(anchor.label)
+        elif anchor.bank == "TRAINING":
+            training_methods.append(anchor.label)
+    return param_count, family, capabilities, training_methods
+
+
+def _infer_hardware_requirement(param_b_str: str, quantization: str) -> str:
+    """Estimate inference hardware requirement from param count and quantization."""
+    param_val = float(param_b_str)
+    if quantization and any(q in quantization.upper() for q in ("Q4", "Q5", "Q3", "Q2")):
+        return "consumer-GPU" if param_val <= 13 else "high-end-GPU"
+    if param_val <= 3:
+        return "consumer-GPU"
+    if param_val <= 13:
+        return "mid-range-GPU"
+    if param_val <= 70:
+        return "high-end-GPU"
+    return "multi-GPU"

@@ -109,6 +109,18 @@ controlplane:
 # Evidence-based exemptions approved via propose_exemption
 # Each requires mutation kill rate >= 80% + rationale + evidence
 approved_exemptions:
+  - file: src/model_atlas/extraction/deterministic.py
+    function: ConfigSignals
+    code: too-many-attributes
+    rationale: "Pure data container — 13 attributes map 1:1 to config.json fields (context_length, vocab_size, hidden_size, num_layers, num_heads, num_kv_heads, intermediate_size, model_type, uses_gqa, rope_scaling_type, quantization_config, torch_dtype, structural_fingerprint). No methods, no logic. Splitting adds indirection without reducing complexity."
+    kill_rate: 0.98
+    approved_at: "2026-03-23 19:24:18"
+  - file: src/model_atlas/server.py
+    function: server
+    code: file-too-long
+    rationale: "MCP server module — all tool functions must be registered in one module via @mcp.tool() decorators. FastMCP requires tool definitions in the same module as the server instance. Splitting would break MCP tool registration."
+    kill_rate: 1.00
+    approved_at: "2026-03-23 19:23:54"
   - file: src/model_atlas/server.py
     code: too-many-args
     rationale: "MCP tool function — 13 args map to LLM tool schema."

@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+
 from . import db
 from .config import (
     NAVIGATE_AVOID_DECAY,
     NAVIGATE_MISSING_BANK_PENALTY,
-    WEIGHT_ANCHOR,
-    WEIGHT_BANK,
-    WEIGHT_FUZZY,
-    WEIGHT_SPREAD,
 )
 from .query_types import (  # noqa: F401 — re-exported for backward compat
     BankConstraint,
@@ -215,4 +212,3 @@ def navigate(
 
     results.sort(key=lambda r: r.score, reverse=True)
     return results[: query.limit]
-

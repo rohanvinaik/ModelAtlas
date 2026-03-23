@@ -16,12 +16,20 @@ from functools import lru_cache
 
 from . import db
 from .config import (
-    NAVIGATE_AVOID_DECAY,
-    NAVIGATE_MISSING_BANK_PENALTY,
     WEIGHT_ANCHOR,
     WEIGHT_BANK,
     WEIGHT_FUZZY,
     WEIGHT_SPREAD,
+)
+from .query_navigate import (  # noqa: F401
+    _bank_score_single,
+    _get_idf,
+    _nav_anchor_relevance,
+    _nav_bank_alignment,
+    _nav_candidates,
+    _nav_seed_similarity,
+    invalidate_idf_cache,
+    navigate,
 )
 from .query_types import (  # noqa: F401 — re-exported for backward compat
     BankConstraint,
@@ -32,7 +40,6 @@ from .query_types import (  # noqa: F401 — re-exported for backward compat
     StructuredQuery,
 )
 from .spreading import spread
-from .query_navigate import _bank_score_single, _get_idf, _nav_anchor_relevance, _nav_bank_alignment, _nav_candidates, _nav_seed_similarity, invalidate_idf_cache, navigate  # noqa: F401
 
 # Query signal keywords mapped to bank constraints
 _BANK_KEYWORDS: dict[str, list[tuple[str, int | None, int | None, int]]] = {
@@ -473,22 +480,6 @@ def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
 _idf_cache: dict[str, float] = {}
 
 
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
 # navigate() scoring helpers — extracted to reduce cognitive complexity
 # ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
