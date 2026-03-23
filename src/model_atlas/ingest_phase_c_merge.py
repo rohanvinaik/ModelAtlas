@@ -125,7 +125,10 @@ def merge_c2(conn: sqlite3.Connection, files: list[str]) -> dict[str, int]:
     conn.commit()
     logger.info(
         "merge_c2: merged=%d skipped=%d errors=%d anchors_linked=%d",
-        merged, skipped, errors, anchors_linked,
+        merged,
+        skipped,
+        errors,
+        anchors_linked,
     )
     return {
         "merged": merged,
@@ -177,7 +180,11 @@ def merge_c3(conn: sqlite3.Connection, files: list[str]) -> dict[str, int]:
     conn.commit()
     logger.info(
         "merge_c3: merged=%d (passed=%d failed=%d) skipped=%d errors=%d",
-        merged, passed, failed, skipped, errors,
+        merged,
+        passed,
+        failed,
+        skipped,
+        errors,
     )
     return {
         "merged": merged,

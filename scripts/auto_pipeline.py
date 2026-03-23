@@ -52,7 +52,9 @@ def ssh(machine: str, cmd: str, timeout: int = 30) -> subprocess.CompletedProces
     m = MACHINES[machine]
     return subprocess.run(
         ["ssh", m["ssh"], cmd],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
     )
 
 
@@ -60,7 +62,9 @@ def scp_to(machine: str, local: str, remote: str) -> None:
     m = MACHINES[machine]
     subprocess.run(
         ["scp", local, f"{m['ssh']}:{remote}"],
-        check=True, capture_output=True, timeout=120,
+        check=True,
+        capture_output=True,
+        timeout=120,
     )
 
 
@@ -69,7 +73,8 @@ def scp_from(machine: str, remote: str, local: str) -> bool:
     m = MACHINES[machine]
     r = subprocess.run(
         ["scp", f"{m['ssh']}:{remote}", local],
-        capture_output=True, timeout=120,
+        capture_output=True,
+        timeout=120,
     )
     return r.returncode == 0
 
@@ -88,8 +93,14 @@ def deploy_worker(machine: str, worker_name: str) -> None:
     scp_to(machine, str(local_path), f"{m['workdir']}/{worker_name}")
 
 
-def start_worker(machine: str, worker_name: str, input_file: str,
-                 output_file: str, log_file: str, extra_args: str = "") -> None:
+def start_worker(
+    machine: str,
+    worker_name: str,
+    input_file: str,
+    output_file: str,
+    log_file: str,
+    extra_args: str = "",
+) -> None:
     m = MACHINES[machine]
     cmd = (
         f"cd {m['workdir']} && nohup {m['python']} {worker_name} "
@@ -102,7 +113,10 @@ def start_worker(machine: str, worker_name: str, input_file: str,
 
 def check_ollama(machine: str) -> bool:
     """Verify Ollama is responding on a machine."""
-    r = ssh(machine, "curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/v1/models")
+    r = ssh(
+        machine,
+        "curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/v1/models",
+    )
     return r.stdout.strip() == "200"
 
 
@@ -120,7 +134,9 @@ def poll_workers(targets: dict[str, tuple[str, int]]) -> None:
         for machine, (results_path, expected) in targets.items():
             r = ssh(machine, f"wc -l {results_path} 2>/dev/null || echo '0 none'")
             count = int(r.stdout.strip().split()[0])
-            running = ssh(machine, "ps aux | grep 'phase_.*worker\\.py' | grep -v grep | wc -l")
+            running = ssh(
+                machine, "ps aux | grep 'phase_.*worker\\.py' | grep -v grep | wc -l"
+            )
             procs = int(running.stdout.strip())
             pct = 100 * count / expected if expected > 0 else 0
             log(f"  {machine}: {count}/{expected} ({pct:.0f}%) | workers: {procs}")
@@ -135,7 +151,9 @@ def poll_workers(targets: dict[str, tuple[str, int]]) -> None:
                 r = ssh(machine, f"wc -l {results_path} 2>/dev/null || echo '0 none'")
                 count = int(r.stdout.strip().split()[0])
                 if count < expected * 0.1:
-                    log(f"  WARNING: {machine} only produced {count}/{expected} results — worker may have crashed")
+                    log(
+                        f"  WARNING: {machine} only produced {count}/{expected} results — worker may have crashed"
+                    )
             log("  All workers finished")
             return
         time.sleep(POLL_INTERVAL)
@@ -145,7 +163,9 @@ def run_local_python(code: str) -> str:
     """Run Python code locally via uv run, return stdout."""
     r = subprocess.run(
         ["uv", "run", "python", "-c", code],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
         cwd=str(PROJECT_ROOT),
     )
     if r.returncode != 0:
@@ -155,6 +175,7 @@ def run_local_python(code: str) -> str:
 
 
 # --- Pipeline stages ---
+
 
 def stage_c2(dry_run: bool = False) -> bool:
     """Export C2, deploy, run, pull, merge. Returns True if work was done."""
@@ -202,8 +223,7 @@ conn.close()
     for machine, shard in shard_map.items():
         m = MACHINES[machine]
         scp_to(machine, str(c2_work / shard), f"{m['workdir']}/{shard}")
-        start_worker(machine, WORKERS["c2"], shard,
-                     f"results_{shard}", "c2.log")
+        start_worker(machine, WORKERS["c2"], shard, f"results_{shard}", "c2.log")
 
     # Poll
     targets = {}
@@ -293,8 +313,9 @@ conn.close()
     for machine, shard in shard_map.items():
         m = MACHINES[machine]
         scp_to(machine, str(c3_work / shard), f"{m['workdir']}/{shard}")
-        start_worker(machine, WORKERS["c3"], shard,
-                     f"results_c3_{shard}", "c3.log", "--resume")
+        start_worker(
+            machine, WORKERS["c3"], shard, f"results_c3_{shard}", "c3.log", "--resume"
+        )
 
     targets = {}
     for machine, shard in shard_map.items():
@@ -397,14 +418,16 @@ nconn.close(); iconn.close()
     per_shard = (exported + 1) // 2
 
     d3_work = LOCAL_CACHE / "phase_d_work"
-    shard_map = {"macpro": "d3_local_shard_0.jsonl", "homebridge": "d3_local_shard_1.jsonl"}
+    shard_map = {
+        "macpro": "d3_local_shard_0.jsonl",
+        "homebridge": "d3_local_shard_1.jsonl",
+    }
     for name in MACHINES:
         deploy_worker(name, WORKERS["d3"])
     for machine, shard in shard_map.items():
         m = MACHINES[machine]
         scp_to(machine, str(d3_work / shard), f"{m['workdir']}/{shard}")
-        start_worker(machine, WORKERS["d3"], shard,
-                     f"results_d3_{shard}", "d3.log")
+        start_worker(machine, WORKERS["d3"], shard, f"results_d3_{shard}", "d3.log")
 
     targets = {}
     for machine, shard in shard_map.items():
@@ -455,16 +478,29 @@ conn.close()
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ModelAtlas auto-pipeline")
-    parser.add_argument("--heal-budget", type=int, default=200,
-                        help="Max models per D3 healing pass (default 200)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Report what would be done without doing it")
-    parser.add_argument("--skip-c2", action="store_true",
-                        help="Skip C2 stage (e.g. workers already running)")
-    parser.add_argument("--skip-c3", action="store_true",
-                        help="Skip C3 stage")
-    parser.add_argument("--from-stage", choices=["c2", "summary", "c3", "d1", "d2", "d3", "d4"],
-                        default="c2", help="Start from this stage (default: c2)")
+    parser.add_argument(
+        "--heal-budget",
+        type=int,
+        default=200,
+        help="Max models per D3 healing pass (default 200)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be done without doing it",
+    )
+    parser.add_argument(
+        "--skip-c2",
+        action="store_true",
+        help="Skip C2 stage (e.g. workers already running)",
+    )
+    parser.add_argument("--skip-c3", action="store_true", help="Skip C3 stage")
+    parser.add_argument(
+        "--from-stage",
+        choices=["c2", "summary", "c3", "d1", "d2", "d3", "d4"],
+        default="c2",
+        help="Start from this stage (default: c2)",
+    )
     args = parser.parse_args()
 
     stages = ["c2", "summary", "c3", "d1", "d2", "d3", "d4"]
