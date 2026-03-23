@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 # Input examples for _render_frontmatter:
 #   content = _render_frontmatter(
 #   content = _render_frontmatter(
@@ -53,7 +55,7 @@ def test__render_page_body_characterization():
     """Characterization: capture current behavior of _render_page_body."""
     # Arrange — fill in from call-site inference
     page = PageConfig(id="test", title="test", audience="test")
-    repo_root = None  # TODO: fill from call site
+    repo_root = Path(".")  # placeholder
 
     # Act
     result = _render_page_body(page, repo_root)

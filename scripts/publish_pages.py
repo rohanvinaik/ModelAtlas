@@ -16,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-import markdown
+import markdown  # type: ignore[import-untyped]
 from wiki_transforms import (
     apply_common_transforms,
     load_metrics,

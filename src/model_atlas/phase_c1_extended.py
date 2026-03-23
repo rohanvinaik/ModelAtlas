@@ -97,7 +97,7 @@ def _load_skip_set(output_path: str) -> set[str]:
 
 def _load_librarian_bots_ids() -> set[str]:
     """Stream librarian-bots dataset and collect all model_ids."""
-    from datasets import load_dataset
+    from datasets import load_dataset  # type: ignore[import-untyped]
 
     print("Loading librarian-bots model_id set (streaming)...", file=sys.stderr)
     ids: set[str] = set()
@@ -402,7 +402,7 @@ def _run_tier1(
 
 def _run_tier2(ctx: _ProcessCtx) -> tuple[int, int]:
     """Process librarian-bots corpus via streaming dataset."""
-    from datasets import load_dataset
+    from datasets import load_dataset  # type: ignore[import-untyped]
 
     print(
         "=== Tier 2: librarian-bots/model_cards_with_metadata (streaming) ===",

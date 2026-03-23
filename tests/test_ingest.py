@@ -169,9 +169,11 @@ class TestPhaseB:
         assert count == 2
 
         hf = db.get_model(network_conn, "test/HFModel")
+        assert hf is not None
         assert hf["source"] == "huggingface"
 
         ollama = db.get_model(network_conn, "ollama/llama3:8b")
+        assert ollama is not None
         assert ollama["source"] == "ollama"
 
     def test_resume_after_partial(self, ingest_conn, network_conn):

@@ -122,6 +122,7 @@ def test_transaction_rollback_on_error(conn):
         pass
 
     model = db.get_model(conn, "test/Rollback")
+    assert model is not None
     assert model["author"] == "test"  # rolled back to original
 
 
@@ -144,6 +145,7 @@ def test_set_position_with_path_nodes(conn):
     conn.commit()
 
     model = db.get_model(conn, "test/Model")
+    assert model is not None
     arch = model["positions"]["ARCHITECTURE"]
     assert arch["sign"] == 1
     assert arch["depth"] == 2

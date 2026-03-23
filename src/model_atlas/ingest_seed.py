@@ -247,7 +247,7 @@ def seed(
 
     results: dict[str, int] = {}
     for pass_def in SEED_PASSES:
-        pass_name = pass_def["name"]
+        pass_name = str(pass_def["name"])
         if passes and pass_name not in passes:
             continue
         if _shutdown:

@@ -8,6 +8,7 @@ and link rewriting never diverge between targets.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -79,7 +80,7 @@ def build_breadcrumb(
     page_config: dict,
     rails: dict,
     all_pages: list[dict],
-    link_fn: callable,
+    link_fn: Callable,
 ) -> str:
     """Build a breadcrumb line for a page.
 
@@ -133,7 +134,7 @@ def apply_common_transforms(
     rails: dict,
     all_pages: list[dict],
     page_map: dict[str, str],
-    link_fn: callable,
+    link_fn: Callable,
 ) -> str:
     """Apply the shared transform pipeline to a page.
 

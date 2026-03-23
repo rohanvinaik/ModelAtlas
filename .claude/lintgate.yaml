@@ -14,6 +14,16 @@ pipeline_critical_paths:
 # Suppress too-many-args for these functions.
 # Format: dict keyed by linter name, then by file path.
 exemptions:
+  lint:
+    "tests/test_extraction.py":
+      codes: ["maintainability"]
+      reason: "Large test file with many small test functions — low MI is structural, not a quality issue"
+    "tests/test_patterns.py":
+      codes: ["maintainability"]
+      reason: "Large test file with many small test functions — low MI is structural, not a quality issue"
+    "tests/generated/test_prescriptive_deterministic.py":
+      codes: ["maintainability"]
+      reason: "Prescriptive test file accumulating tests for all deterministic.py functions — MI not meaningful for test files"
   structure:
     "src/model_atlas/server.py":
       codes: ["too-many-args"]

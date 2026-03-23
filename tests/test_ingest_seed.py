@@ -97,6 +97,7 @@ class TestSafetensorsToDict:
     def test_object_with_both(self):
         obj = SimpleNamespace(parameters={"layer": 32}, total=7_000_000_000)
         result = _safetensors_to_dict(obj)
+        assert result is not None
         assert result["parameters"] == {"layer": 32}
         assert result["total"] == 7_000_000_000
 
@@ -184,6 +185,7 @@ class TestHfModelToInput:
         config = {"architectures": ["BertModel"], "model_type": "bert"}
         model = _make_hf_model(config=config)
         inp = _hf_model_to_input(model)
+        assert inp.config is not None
         assert inp.config == config
         assert inp.config["architectures"] == ["BertModel"]
 
@@ -251,7 +253,7 @@ class TestSeedPassesConfig:
 
     def test_likes_descending(self):
         """Each pass has progressively lower min_likes threshold."""
-        likes = [p["min_likes"] for p in SEED_PASSES]
+        likes = [int(p["min_likes"]) for p in SEED_PASSES]  # type: ignore[arg-type]
         assert likes[0] > likes[1] > likes[2]
 
     def test_core_has_no_tag_filter(self):
@@ -260,8 +262,9 @@ class TestSeedPassesConfig:
 
     def test_niche_has_tag_filter(self):
         niche = SEED_PASSES[2]
-        assert niche["pipeline_tags"] is not None
-        assert "text-generation" in niche["pipeline_tags"]
+        tags = niche["pipeline_tags"]
+        assert tags is not None
+        assert "text-generation" in tags  # type: ignore[operator]
 
     def test_all_passes_have_required_keys(self):
         required = {

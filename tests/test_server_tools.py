@@ -55,6 +55,7 @@ class TestSetModelVibe:
 
         # Verify stored in metadata
         model = db.get_model(populated_conn, "meta-llama/Llama-3.1-8B-Instruct")
+        assert model is not None
         vibe_meta = model["metadata"].get("vibe_summary", {})
         assert (
             vibe_meta["value"]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from src.model_atlas.wiki.manifest import (
     PageEntry,
     compute_aggregate_hash,
@@ -52,7 +54,7 @@ def test_compute_source_hash_characterization():
     """Characterization: capture current behavior of compute_source_hash."""
     # Arrange — fill in from call-site inference
     source_paths = []
-    repo_root = None  # TODO: fill from call site
+    repo_root = Path(".")  # placeholder
 
     # Act
     result = compute_source_hash(source_paths, repo_root)
@@ -84,7 +86,7 @@ def test_compute_aggregate_hash_characterization():
             source_hash="test",
             spec_hash="test",
             file_hash="test.py",
-            sources="test",
+            sources=["test"],
             audience="test",
             theory_scope=False,
         )

@@ -269,7 +269,7 @@ class TestWorkerMain:
         mock_client = self._make_mock_client(llm_output)
         mock_openai.return_value = mock_client
 
-        worker_mod._shutdown = True
+        worker_mod._shutdown = True  # type: ignore[assignment]
         try:
             with patch(
                 "sys.argv", ["worker", "--input", str(inp), "--output", str(out)]
