@@ -170,3 +170,124 @@ class TestLicenseAnchors:
     def test_mit(self):
         result = _license_anchors("mit")
         assert isinstance(result, list)
+
+
+# === _extract_efficiency (σ=7) ===
+
+from model_atlas.extraction.deterministic import _extract_efficiency, BankPosition
+
+
+class TestExtractEfficiency:
+    """Pin the parameter-to-position mapping."""
+
+    def test_none_returns_default(self):
+        pos, anchors = _extract_efficiency(None)
+        assert pos.sign == 0 and pos.depth == 0
+        assert anchors == []
+
+    def test_sub_1b(self):
+        pos, anchors = _extract_efficiency(0.3)
+        assert pos.sign == -1 and pos.depth == 3
+        assert "sub-1B" in anchors
+        assert "edge-deployable" in anchors
+        assert "consumer-GPU-viable" in anchors
+
+    def test_1b_class(self):
+        pos, anchors = _extract_efficiency(1.0)
+        assert pos.sign == -1 and pos.depth == 2
+        assert "1B-class" in anchors
+        assert "consumer-GPU-viable" in anchors
+
+    def test_3b_class(self):
+        pos, anchors = _extract_efficiency(3.0)
+        assert pos.sign == -1 and pos.depth == 1
+        assert "3B-class" in anchors
+        assert "consumer-GPU-viable" in anchors
+
+    def test_7b_class(self):
+        pos, anchors = _extract_efficiency(7.0)
+        assert pos.sign == 0 and pos.depth == 0
+        assert "7B-class" in anchors
+        assert "consumer-GPU-viable" not in anchors
+
+    def test_13b_class(self):
+        pos, anchors = _extract_efficiency(13.0)
+        assert pos.sign == 1 and pos.depth == 1
+        assert "13B-class" in anchors
+
+    def test_70b_class(self):
+        pos, anchors = _extract_efficiency(70.0)
+        assert pos.sign == 1 and pos.depth == 3
+        assert "70B-class" in anchors
+
+    def test_frontier_class(self):
+        pos, anchors = _extract_efficiency(200.0)
+        assert pos.sign == 1 and pos.depth == 4
+        assert "frontier-class" in anchors
+
+    def test_boundary_0_5(self):
+        """0.5 is 1B-class, not sub-1B."""
+        pos, _ = _extract_efficiency(0.5)
+        assert pos.depth == 2  # 1B-class
+
+    def test_boundary_5(self):
+        """5.0 is 7B-class, not 3B-class."""
+        pos, _ = _extract_efficiency(5.0)
+        assert pos.sign == 0  # 7B-class
+
+    def test_consumer_gpu_boundary(self):
+        """4.0 is NOT consumer-GPU-viable (< 4, not <=)."""
+        _, anchors = _extract_efficiency(4.0)
+        assert "consumer-GPU-viable" not in anchors
+
+
+# === _extract_quality (σ=33) ===
+
+from model_atlas.extraction.deterministic import _extract_quality
+
+
+class TestExtractQuality:
+    """Pin popularity scoring and anchor derivation."""
+
+    def test_zero_popularity(self):
+        pos, anchors = _extract_quality(0, 0, None)
+        assert pos.sign == -1
+
+    def test_high_likes(self):
+        pos, anchors = _extract_quality(5000, 1000000, None)
+        assert pos.sign == 1
+        assert "community-favorite" in anchors
+
+    def test_high_downloads(self):
+        pos, anchors = _extract_quality(100, 2000000, None)
+        assert "high-downloads" in anchors
+
+    def test_low_downloads_no_anchor(self):
+        _, anchors = _extract_quality(10, 500000, None)
+        assert "high-downloads" not in anchors
+
+    def test_community_favorite_threshold(self):
+        """Needs > 1000 likes."""
+        _, anchors_below = _extract_quality(1000, 0, None)
+        _, anchors_above = _extract_quality(1001, 0, None)
+        assert "community-favorite" not in anchors_below
+        assert "community-favorite" in anchors_above
+
+    def test_trending_recent_model(self):
+        """Recent model (< 90 days) gets trending anchor."""
+        from datetime import datetime, timezone, timedelta
+        recent = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        _, anchors = _extract_quality(100, 100000, recent)
+        assert "trending" in anchors
+
+    def test_not_trending_old_model(self):
+        """Old model (> 90 days) does NOT get trending."""
+        from datetime import datetime, timezone, timedelta
+        old = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+        _, anchors = _extract_quality(100, 100000, old)
+        assert "trending" not in anchors
+
+    def test_invalid_date_no_crash(self):
+        """Invalid date string should not crash."""
+        pos, anchors = _extract_quality(100, 100000, "not-a-date")
+        assert isinstance(anchors, list)
