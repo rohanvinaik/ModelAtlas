@@ -3,11 +3,11 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:959 LG_TS:1772423092 -->
+<!-- LG_GEN:3921 LG_TS:1774279544 -->
 # Session State
 
-Mode: habit (score: 0.75)
-Focus: [lintgate.yaml, ingest.py, ingest_seed.py, query.py, db.py]
-Coherence: degraded
+Mode: habit (score: 0.55)
+Focus: [auto_pipeline.py, README.md, DESIGN.md, antigravity_validation.md, antigravity_validation.jsonl]
+Coherence: isolated | Warnings: 30
 
-Context: 76% used | Tools: 564 | Compactions: 7
+Context: 369% used | Tools: 2900 | Compactions: 43

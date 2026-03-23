@@ -190,13 +190,25 @@ if opposed:          score = 1 / (1 + |alignment|)        # wrong side: decay
 
 **Multiplicative** across all specified banks. Omitted banks don't contribute (neutral 1.0). Missing bank position on a model → 0.3 penalty.
 
+**Gradient decay in practice:** The hyperbolic formula `1 / (1 + distance)` produces super-linear dropoff from the requested direction. Asking for `efficiency=-1` (small models):
+
+| Model | Position | Alignment | Score |
+|-------|----------|-----------|-------|
+| 1B (sign=-1, depth=2) | Correct direction | +2 | **1.0** |
+| 3B (sign=-1, depth=1) | Correct direction | +1 | **1.0** |
+| 7B (sign=0) | Neutral | 0 | **0.5** |
+| 13B (sign=+1, depth=1) | Wrong direction | -1 | **0.5** |
+| 70B (sign=+1, depth=3) | Wrong direction | -3 | **0.25** |
+
+Because bank scores are **multiplicative**, wrong-direction penalties compound across banks. A 70B model (efficiency=0.25) that also lacks the requested compatibility format (compatibility=0.5) scores `0.25 × 0.5 = 0.125` before anchor relevance is even considered.
+
 #### Anchor Relevance (IDF-weighted)
 
 Three anchor lists with different treatments:
 
-- **require**: Hard SQL pre-filter. `SELECT model_id ... HAVING COUNT(DISTINCT anchor_id) = N`. Missing any required anchor → model excluded before scoring.
-- **prefer**: IDF-weighted overlap. `score = sum(idf[matched]) / sum(idf[all_preferred])`. Rare anchors (e.g. "proof-assistant" on 12 models) count far more than ubiquitous ones ("decoder-only" on 17K models).
-- **avoid**: Penalty. Each avoided anchor present halves the score: `0.5 ^ count`.
+- **require**: Hard SQL pre-filter. `SELECT model_id ... HAVING COUNT(DISTINCT anchor_id) = N`. Missing any required anchor → model excluded before scoring. This is binary — no partial credit.
+- **prefer**: IDF-weighted overlap. `score = sum(idf[matched]) / sum(idf[all_preferred])`. Rare anchors (e.g. "proof-assistant" on 12 models) count far more than ubiquitous ones ("decoder-only" on 17K models). A model matching none of the preferred anchors scores near zero; matching all scores 1.0.
+- **avoid**: Exponential penalty. Each avoided anchor present halves the score: `0.5 ^ count`. One avoided anchor → 0.5. Two → 0.25. Three → 0.125. This is the sharpest penalty in the system — stacking avoidances eliminates candidates rapidly.
 
 IDF = `log(N / count_models_with_anchor)`, computed once and cached at module level. Invalidated after index builds.
 
