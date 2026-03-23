@@ -36,6 +36,9 @@ tests_dir = ["tests/"]
 src = ["src", "tests"]
 exclude = ["mutants", "deploy", ".claude"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/generated/*.py" = ["F401", "F811", "E402"]
+
 [tool.mypy]
 files = ["src", "tests"]
 exclude = ["^mutants/", "^deploy/", "^\\.claude/"]
