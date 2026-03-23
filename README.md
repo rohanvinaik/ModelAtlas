@@ -1,10 +1,12 @@
 # ModelAtlas
 
-**Navigate HuggingFace's 800K models by semantic coordinates, not keywords.**
+**Google for open-source AI models.** Search by what you *mean*, not by keywords.
 
 [![CI](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml/badge.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=coverage)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
+
+`29,657 models · 166 semantic anchors · <100ms queries · No embeddings · No GPU`
 
 You want a small code model with tool-calling.
 
@@ -72,6 +74,7 @@ Multi-constraint queries with direction + domain + negation. HuggingFace cannot 
 | Multilingual chat, NOT code/math/embedding | *Impossible to express* | PaddleOCR-VL-1.5 (sub-1B), Nanbeige4.1-3B-GGUF |
 | Tiny on-device TTS | *No results* | **MioTTS-0.1B** (100M params), CosyVoice3-0.5B |
 | Biology classifier, encoder-only | *No results* | BiomedBERT, gliner-biomed, **PoetschLab/GROVER** (genomics) |
+| Small finance classifier | *No results* — "finance" isn't a pipeline tag | **FutureMa/Eva-4B** (finance+classification, trending), DMindAI/DMind-3-mini |
 | Distilled reasoning, sub-3B, NOT a fine-tune | *No results* | Qwen3.5-0.8B-Opus-Reasoning-Distilled (score: 1.0) |
 
 A 100-million-parameter TTS model. A genomics classifier with 7 anchors. A 0.8B model distilled from Claude Opus. These models exist on HuggingFace but they are **invisible** to keyword search. ModelAtlas finds them because `biology-domain + classification + encoder-only` is a precise intersection in a coordinate system, not a string match.
@@ -138,7 +141,7 @@ mkdir -p ~/.cache/model-atlas
 curl -L -o ~/.cache/model-atlas/network.db \
   https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
 
-# 3. Add to Claude Code (.mcp.json) or Claude Desktop config
+# 3. Add to your MCP client config (Claude Code, Cursor, VS Code, etc.)
 ```
 
 ```json
@@ -152,7 +155,7 @@ curl -L -o ~/.cache/model-atlas/network.db \
 }
 ```
 
-That's it. Your LLM can now see model space.
+Works with any MCP-compatible client. Your LLM can now see model space.
 
 ## Tools
 
@@ -174,7 +177,7 @@ That's it. Your LLM can now see model space.
 
 ## Status
 
-29,657 models. 166 anchors. 195K model-anchor links. 26K prose summaries. 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
+29,657 models. 166 anchors. 195K model-anchor links. 26K prose summaries. 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. Models with <10 likes are not yet indexed — the 29K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
 
 Part of a research program on structured navigation through constrained semantic spaces — the same paradigm applied to [theorem proving](https://github.com/rohanvinaik/Wayfinder) and [code quality supervision](https://github.com/rohanvinaik/LintGate).
 
