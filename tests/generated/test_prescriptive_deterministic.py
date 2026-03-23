@@ -514,3 +514,29 @@ class TestConfigAnchors:
         cfg = ConfigSignals()
         anchors = _config_anchors(cfg)
         assert anchors == []
+
+
+# === _compute_structural_fingerprint (σ=4) ===
+
+from model_atlas.extraction.deterministic import _compute_structural_fingerprint
+
+
+class TestComputeStructuralFingerprint:
+    def test_missing_field_returns_none(self):
+        cfg = ConfigSignals(hidden_size=4096, num_layers=32)  # missing num_heads, vocab_size
+        assert _compute_structural_fingerprint(cfg) is None
+
+    def test_all_fields_returns_hash(self):
+        cfg = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
+        result = _compute_structural_fingerprint(cfg)
+        assert isinstance(result, str)
+        assert len(result) == 16
+
+    def test_deterministic(self):
+        cfg = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
+        assert _compute_structural_fingerprint(cfg) == _compute_structural_fingerprint(cfg)
+
+    def test_different_configs_different_hash(self):
+        cfg1 = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
+        cfg2 = ConfigSignals(hidden_size=2048, num_layers=24, num_heads=16, vocab_size=50257)
+        assert _compute_structural_fingerprint(cfg1) != _compute_structural_fingerprint(cfg2)
