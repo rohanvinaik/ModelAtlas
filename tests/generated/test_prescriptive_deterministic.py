@@ -560,3 +560,128 @@ class TestComputeStructuralFingerprint:
         cfg1 = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
         cfg2 = ConfigSignals(hidden_size=2048, num_layers=24, num_heads=16, vocab_size=50257)
         assert _compute_structural_fingerprint(cfg1) != _compute_structural_fingerprint(cfg2)
+
+
+# === _collect_metadata (σ=40) ===
+
+from model_atlas.extraction.deterministic import _collect_metadata, ModelInput
+
+
+class TestCollectMetadata:
+    """Pin the declarative metadata collection function."""
+
+    def test_param_b_stored(self):
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, 7.0)
+        assert meta["parameter_count_b"] == ("7.0", "float")
+
+    def test_param_b_none(self):
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None)
+        assert "parameter_count_b" not in meta
+
+    def test_license_stored(self):
+        inp = ModelInput(model_id="test", license_str="apache-2.0")
+        meta = _collect_metadata(inp, None)
+        assert meta["license"] == ("apache-2.0", "str")
+
+    def test_license_empty_excluded(self):
+        inp = ModelInput(model_id="test", license_str="")
+        meta = _collect_metadata(inp, None)
+        assert "license" not in meta
+
+    def test_created_at_stored(self):
+        inp = ModelInput(model_id="test", created_at="2026-01-01")
+        meta = _collect_metadata(inp, None)
+        assert meta["created_at"] == ("2026-01-01", "datetime")
+
+    def test_likes_stored(self):
+        inp = ModelInput(model_id="test", likes=500)
+        meta = _collect_metadata(inp, None)
+        assert meta["likes"] == ("500", "int")
+
+    def test_likes_zero_excluded(self):
+        inp = ModelInput(model_id="test", likes=0)
+        meta = _collect_metadata(inp, None)
+        assert "likes" not in meta
+
+    def test_downloads_stored(self):
+        inp = ModelInput(model_id="test", downloads=1000000)
+        meta = _collect_metadata(inp, None)
+        assert meta["downloads"] == ("1000000", "int")
+
+    def test_pipeline_tag_stored(self):
+        inp = ModelInput(model_id="test", pipeline_tag="text-generation")
+        meta = _collect_metadata(inp, None)
+        assert meta["pipeline_tag"] == ("text-generation", "str")
+
+    def test_library_name_stored(self):
+        inp = ModelInput(model_id="test", library_name="transformers")
+        meta = _collect_metadata(inp, None)
+        assert meta["library_name"] == ("transformers", "str")
+
+    def test_config_context_length(self):
+        cfg = ConfigSignals(context_length=4096)
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert meta["context_length"] == ("4096", "int")
+
+    def test_config_vocab_size(self):
+        cfg = ConfigSignals(vocab_size=32000)
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert meta["vocab_size"] == ("32000", "int")
+
+    def test_config_hidden_size(self):
+        cfg = ConfigSignals(hidden_size=4096)
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert meta["hidden_size"] == ("4096", "int")
+
+    def test_config_model_type(self):
+        cfg = ConfigSignals(model_type="llama")
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert meta["model_type"] == ("llama", "str")
+
+    def test_config_model_type_empty_excluded(self):
+        cfg = ConfigSignals(model_type="")
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert "model_type" not in meta
+
+    def test_config_torch_dtype(self):
+        cfg = ConfigSignals(torch_dtype="bfloat16")
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, cfg)
+        assert meta["torch_dtype"] == ("bfloat16", "str")
+
+    def test_config_none_no_config_fields(self):
+        inp = ModelInput(model_id="test")
+        meta = _collect_metadata(inp, None, None)
+        assert "context_length" not in meta
+        assert "model_type" not in meta
+
+    def test_full_integration(self):
+        cfg = ConfigSignals(
+            context_length=4096, vocab_size=32000, hidden_size=4096,
+            num_layers=32, num_heads=32, num_kv_heads=8,
+            model_type="llama", torch_dtype="bfloat16",
+            structural_fingerprint="abc123",
+        )
+        inp = ModelInput(
+            model_id="meta-llama/Llama-3.1-8B",
+            license_str="llama3.1",
+            likes=5000, downloads=10000000,
+            pipeline_tag="text-generation",
+            library_name="transformers",
+            created_at="2025-07-01",
+        )
+        meta = _collect_metadata(inp, 8.0, cfg)
+        assert meta["parameter_count_b"] == ("8.0", "float")
+        assert meta["license"] == ("llama3.1", "str")
+        assert meta["likes"] == ("5000", "int")
+        assert meta["downloads"] == ("10000000", "int")
+        assert meta["context_length"] == ("4096", "int")
+        assert meta["model_type"] == ("llama", "str")
+        assert meta["structural_fingerprint"] == ("abc123", "str")

@@ -3,7 +3,7 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:4034 LG_TS:1774296383 -->
-Focus: Edit test_prescriptive_deterministic.py
-Files: test_prescriptive_deterministic.py, test_patterns.py, ingest_seed.py
-Blocking: 1 | Mode: habit
+<!-- LG_GEN:4041 LG_TS:1774299668 -->
+Focus: Edit test_spreading_internals.py
+Files: test_spreading_internals.py, test_prescriptive_deterministic.py, test_patterns.py
+Mode: habit
