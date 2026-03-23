@@ -23,40 +23,26 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Compute metrics
-        id: metrics
-        run: |
-          # Test count
-          TEST_COUNT=$(uv run pytest tests/ --co -q 2>/dev/null | grep "::" | wc -l | tr -d ' ')
-          echo "TEST_COUNT=$TEST_COUNT" >> "$GITHUB_ENV"
-
-          # Coverage (from pytest-cov)
-          COV_LINE=$(uv run pytest tests/ --cov=src/model_atlas --cov-report=term -q 2>/dev/null | grep "^TOTAL" | awk '{print $NF}' | tr -d '%')
-          echo "COVERAGE=$COV_LINE" >> "$GITHUB_ENV"
-
-          # Mutation data from cache (populated by LintGate during development)
-          KILLED=576
-          TOTAL=578
-          KILL_PCT=99
-          echo "MUTATION_KILLED=$KILLED" >> "$GITHUB_ENV"
-          echo "MUTATION_TOTAL=$TOTAL" >> "$GITHUB_ENV"
-          echo "MUTATION_KILL_PCT=$KILL_PCT" >> "$GITHUB_ENV"
-
-          # Mean σ from profiled functions
-          # Computed during LintGate session: total σ across 50 functions
-          MEAN_SIGMA=11.6
-          echo "MEAN_SIGMA=$MEAN_SIGMA" >> "$GITHUB_ENV"
-
-          echo "Tests: $TEST_COUNT | Coverage: $COV_LINE% | Mutation: $KILL_PCT% ($KILLED/$TOTAL) | σ̄: $MEAN_SIGMA"
+      - name: Compute specification metrics
+        run: uv run python scripts/compute_spec_metrics.py
 
       # ── Badge generation ──────────────────────────────────────────
+
+      - name: Compute mutation badge color
+        id: mutation_color
+        run: |
+          pct=${{ env.MUTATION_KILL_PCT }}
+          if [ "$pct" -ge 80 ]; then echo "color=success" >> "$GITHUB_OUTPUT"
+          elif [ "$pct" -ge 60 ]; then echo "color=yellow" >> "$GITHUB_OUTPUT"
+          else echo "color=critical" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate Mutation Kill Rate Badge
         uses: emibcn/badge-action@v2.0.2
         with:
           label: "Mutation Kill Rate"
           status: "${{ env.MUTATION_KILL_PCT }}% (${{ env.MUTATION_KILLED }}/${{ env.MUTATION_TOTAL }})"
-          color: "success"
+          color: "${{ steps.mutation_color.outputs.color }}"
           path: ".github/badges/mutation-kill-rate.svg"
 
       - name: "Generate Mean σ Badge"
@@ -71,7 +57,7 @@ jobs:
         uses: emibcn/badge-action@v2.0.2
         with:
           label: "Tests"
-          status: "${{ env.TEST_COUNT }}"
+          status: "${{ env.TEST_COUNT }} (${{ env.TEST_RATIO }})"
           color: "success"
           path: ".github/badges/test-count.svg"
 
@@ -103,5 +89,5 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update spec badges (kill=${{ env.MUTATION_KILL_PCT }}%, σ̄=${{ env.MEAN_SIGMA }}, tests=${{ env.TEST_COUNT }})"
+          git commit -m "Update spec badges (kill=${{ env.MUTATION_KILL_PCT }}%, σ̄=${{ env.MEAN_SIGMA }}, tests=${{ env.TEST_COUNT }}, ratio=${{ env.TEST_RATIO }})"
           git push origin badges
