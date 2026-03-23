@@ -4,7 +4,6 @@ These void functions mutate shared state (activation dict + priority queue).
 Tests verify effects through the mutated state.
 """
 
-import heapq
 import sqlite3
 
 import pytest
