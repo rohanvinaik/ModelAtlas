@@ -3,7 +3,7 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:4137 LG_TS:1774304927 -->
-Focus: Run `ls .lintgate/mutation/ | grep server`
-Files: compute_spec_metrics.py, test_src_model_atlas_wiki_renderer.py, test_src_model_atlas_wiki_manifest.py
-Blocking: 26 | Mode: habit
+<!-- LG_GEN:4153 LG_TS:1774306912 -->
+Focus: Edit query.py
+Files: query.py, query_navigate.py, compute_spec_metrics.py
+Blocking: 4 | Mode: habit
