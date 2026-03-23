@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from tests.conftest import conn, populated_conn
-
-

@@ -9,8 +9,8 @@ import pytest
 
 from model_atlas.query import _gradient_decay
 
-
 # --- VALUE mutation killers (σ=2: these 2 tests pin every constant) ---
+
 
 def test_distance_zero_returns_one():
     """Kills VALUE_0: replace 1.0 with 0.0 in numerator."""
@@ -24,6 +24,7 @@ def test_distance_one_returns_half():
 
 # --- Formula verification (kills any arithmetic mutation) ---
 
+
 def test_formula_exact():
     """Invariant: returns 1/(1+|distance|) for all tested values."""
     for d in range(-10, 11):
@@ -31,6 +32,7 @@ def test_formula_exact():
 
 
 # --- Property: result always in (0, 1] ---
+
 
 def test_result_bounded():
     """Invariant: result always in (0,1]."""
@@ -40,6 +42,7 @@ def test_result_bounded():
 
 
 # --- Property: monotonically decreasing ---
+
 
 def test_monotonically_decreasing():
     """Invariant: monotonically decreasing for positive distance."""
@@ -51,6 +54,7 @@ def test_monotonically_decreasing():
 
 
 # --- Purity: same input → same output ---
+
 
 def test_pure():
     """Invariant: must be pure — calling twice gives same result."""

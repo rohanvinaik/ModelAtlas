@@ -25,7 +25,10 @@ def extract_sections(source: SourceSpec, repo_root: Path) -> str:
     if source.sections == "all":
         return _strip_yaml_frontmatter(text)
 
-    return _extract_heading_sections(text, source.sections)
+    sections = (
+        source.sections if isinstance(source.sections, list) else [source.sections]
+    )
+    return _extract_heading_sections(text, sections)
 
 
 def _strip_yaml_frontmatter(text: str) -> str:

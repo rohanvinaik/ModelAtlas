@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "model-atlas": {
+      "command": "uv",
+      "args": ["--directory", "/Users/rohanvinaik/tools/infrastructure/ModelAtlas", "run", "model-atlas"]
+    }
+  }
+}

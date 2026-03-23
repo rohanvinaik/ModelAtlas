@@ -11,7 +11,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from typing import Iterator
+from dataclasses import dataclass
+from typing import Any, Iterator
 
 from .config import NETWORK_DB_PATH
 from .db_bootstrap import BOOTSTRAP_ANCHORS
@@ -378,66 +379,95 @@ def finish_phase_d_run(
     )
 
 
+@dataclass
+class AuditFinding:
+    """Data for one audit finding row."""
+
+    run_id: str
+    model_id: str
+    mismatch_type: str
+    bank: str | None = None
+    c2_anchor: str | None = None
+    det_anchor: str | None = None
+    severity: float = 0.5
+    detail: dict | None = None
+
+
 def insert_audit_finding(
     conn: sqlite3.Connection,
-    run_id: str,
-    model_id: str,
-    mismatch_type: str,
-    bank: str | None = None,
-    c2_anchor: str | None = None,
-    det_anchor: str | None = None,
-    severity: float = 0.5,
-    detail: dict | None = None,
+    finding: AuditFinding | None = None,
+    /,
+    **kwargs: Any,
 ) -> int:
-    """Insert an audit finding. Returns finding_id."""
+    """Insert an audit finding. Returns finding_id.
+
+    Accepts either an AuditFinding dataclass or keyword arguments
+    (backward-compatible with the old positional signature).
+    """
+    if finding is None:
+        finding = AuditFinding(**kwargs)
     cursor = conn.execute(
         """INSERT INTO audit_findings
            (run_id, model_id, mismatch_type, bank, c2_anchor, det_anchor, severity, detail)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            run_id,
-            model_id,
-            mismatch_type,
-            bank,
-            c2_anchor,
-            det_anchor,
-            severity,
-            json.dumps(detail) if detail else None,
+            finding.run_id,
+            finding.model_id,
+            finding.mismatch_type,
+            finding.bank,
+            finding.c2_anchor,
+            finding.det_anchor,
+            finding.severity,
+            json.dumps(finding.detail) if finding.detail else None,
         ),
     )
     return cursor.lastrowid or 0
 
 
+@dataclass
+class CorrectionEvent:
+    """Data for one correction event row."""
+
+    run_id: str
+    model_id: str
+    tier: str
+    original_prompt: str | None = None
+    original_response: str | None = None
+    healed_response: str | None = None
+    anchors_added: list[str] | None = None
+    anchors_removed: list[str] | None = None
+    rationale: str | None = None
+
+
 def insert_correction_event(
     conn: sqlite3.Connection,
-    run_id: str,
-    model_id: str,
-    tier: str,
-    original_prompt: str | None = None,
-    original_response: str | None = None,
-    healed_response: str | None = None,
-    anchors_added: list[str] | None = None,
-    anchors_removed: list[str] | None = None,
-    rationale: str | None = None,
+    event: CorrectionEvent | None = None,
+    /,
+    **kwargs: Any,
 ) -> int:
-    """Insert a correction event. Returns event_id."""
+    """Insert a correction event. Returns event_id.
+
+    Accepts either a CorrectionEvent dataclass or keyword arguments.
+    """
     from datetime import datetime, timezone
 
+    if event is None:
+        event = CorrectionEvent(**kwargs)
     cursor = conn.execute(
         """INSERT INTO correction_events
            (run_id, model_id, tier, original_prompt, original_response,
             healed_response, anchors_added, anchors_removed, rationale, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            run_id,
-            model_id,
-            tier,
-            original_prompt,
-            original_response,
-            healed_response,
-            json.dumps(anchors_added) if anchors_added else None,
-            json.dumps(anchors_removed) if anchors_removed else None,
-            rationale,
+            event.run_id,
+            event.model_id,
+            event.tier,
+            event.original_prompt,
+            event.original_response,
+            event.healed_response,
+            json.dumps(event.anchors_added) if event.anchors_added else None,
+            json.dumps(event.anchors_removed) if event.anchors_removed else None,
+            event.rationale,
             datetime.now(timezone.utc).isoformat(),
         ),
     )

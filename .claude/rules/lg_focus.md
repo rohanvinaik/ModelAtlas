@@ -3,7 +3,7 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:3966 LG_TS:1774293403 -->
-Focus: Edit test_prescriptive_deterministic.py
-Files: test_prescriptive_deterministic.py, test_prescriptive__bank_score_single.py, test_prescriptive__nav_anchor_relevance.py
+<!-- LG_GEN:3995 LG_TS:1774294211 -->
+Focus: Edit ingest_seed.py
+Files: ingest_seed.py, huggingface.py, extractor.py
 Mode: habit

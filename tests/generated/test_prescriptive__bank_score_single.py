@@ -10,8 +10,8 @@ import pytest
 
 from model_atlas.query import _bank_score_single
 
-
 # --- Branch: direction == 0 (want zero state) ---
+
 
 def test_direction_zero_at_origin():
     """direction=0, position=0 → 1/(1+0) = 1.0"""
@@ -30,6 +30,7 @@ def test_direction_zero_penalizes_negative():
 
 # --- Branch: aligned (same sign as direction) ---
 
+
 def test_positive_direction_positive_position():
     """direction=+1, position=+2 → aligned → 1.0"""
     assert _bank_score_single(2, 1) == 1.0
@@ -42,6 +43,7 @@ def test_negative_direction_negative_position():
 
 # --- Branch: neutral (position == 0, direction != 0) ---
 
+
 def test_positive_direction_at_zero():
     """direction=+1, position=0 → neutral → 0.5"""
     assert _bank_score_single(0, 1) == 0.5
@@ -53,6 +55,7 @@ def test_negative_direction_at_zero():
 
 
 # --- Branch: opposed (wrong direction) ---
+
 
 def test_positive_direction_negative_position():
     """direction=+1, position=-1 → opposed, alignment=-1 → 1/(1+1) = 0.5"""
@@ -71,6 +74,7 @@ def test_negative_direction_positive_position():
 
 # --- SWAP mutation killer: arg order matters ---
 
+
 def test_arg_order_matters():
     """Kills SWAP_0: position and direction args are not interchangeable.
     pos=-3, dir=0 → want-zero → 1/(1+3) = 0.25
@@ -81,15 +85,19 @@ def test_arg_order_matters():
 
 # --- Boundary: result always in [0, 1] ---
 
+
 def test_result_bounded():
     """Invariant: result always in [0, 1]."""
     for pos in range(-5, 6):
         for direction in (-1, 0, 1):
             r = _bank_score_single(pos, direction)
-            assert 0 <= r <= 1.0, f"Out of bounds: pos={pos}, dir={direction}, result={r}"
+            assert 0 <= r <= 1.0, (
+                f"Out of bounds: pos={pos}, dir={direction}, result={r}"
+            )
 
 
 # --- Purity ---
+
 
 def test_pure():
     """Invariant: must be pure."""

@@ -1,0 +1,422 @@
+{
+  "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa",
+  "version": "1.0.0",
+  "createdAt": "2026-03-01T19:27:47.278Z",
+  "trigger": "manual",
+  "session": {
+    "id": "5b44da4f-9635-4eed-bd61-da3f544ecd37",
+    "projectPath": "/Users/rohanvinaik/tools/infrastructure/ModelAtlas",
+    "gitBranch": "main",
+    "gitCommit": "31e9a1aef4289ec5b471b28bf033c785399c9786",
+    "claudeVersion": "unknown",
+    "duration_minutes": 0
+  },
+  "decisions": [
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-0",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "architecture",
+      "description": "LintGate's parallel ensemble architecture is correct - channels must remain independent instruments with uncorrelated errors",
+      "rationale": "I initially proposed converting ControlPlane from parallel fan-out to sequential pipeline (purity→mutation→gate→hints). User corrected this: chaining heuristics serially amplifies error, while parallel execution with post-hoc coherence reading absorbs error. The value of the ensemble comes from independent measurement, not sequential data flow. A bug in purity analysis should not propagate through mutation filtering into gate decisions.",
+      "alternatives_considered": [
+        "Sequential pipeline where purity feeds mutation which feeds optimization hints (rejected: correlates error profiles, single-point failure propagation)",
+        "Current parallel-only with no changes (insufficient: performance channel emits ungated hints at full confidence)"
+      ],
+      "confidence": "high",
+      "relatedFiles": [
+        "lintgate/controlplane/runtime.py",
+        "lintgate/controlplane/cross_channel.py",
+        "lintgate/channels/performance_channel.py"
+      ]
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-1",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "architecture",
+      "description": "MUTATION UNKNOWN must be a first-class epistemic state in classify_properties()",
+      "rationale": "When mutation_state is None in classify_properties() (line 326 of properties.py), the function silently proceeds at confidence 0.8. This caused the cascade failure: performance channel emitted 365 'cacheable' functions at full confidence, agent applied @lru_cache to functions whose specification completeness was unknown. The fix is ~10 lines: when mutation_state is absent, emit [MUTATION UNKNOWN] at confidence 0.4. The channel knows structurally that purity alone is insufficient to license optimization.",
+      "alternatives_considered": [],
+      "confidence": "high",
+      "relatedFiles": [
+        "lintgate/linters/performance_checks/properties.py"
+      ]
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-2",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "architecture",
+      "description": "Purity manifest should be a shared pre-pass artifact, not computed inside PerformanceChannel",
+      "rationale": "Currently build_manifest() is called inside PerformanceChannel.execute(). The mutation channel and test_effectiveness channel don't have access to it. Making it a pre-pass artifact (computed once before channels execute, like the structure snapshot) would enable Monty Hall filtering in the mutation channel and TEFF005 detection in test_effectiveness, without creating channel dependencies.",
+      "alternatives_considered": [],
+      "confidence": "high",
+      "relatedFiles": [
+        "lintgate/channels/performance_channel.py",
+        "lintgate/linters/performance_checks/manifest.py"
+      ]
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-3",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "architecture",
+      "description": "Asynchronous convergence is the right model for mutation data accumulation, not synchronous completeness",
+      "rationale": "The mutation theory paper's Section 7 describes two tiers: inline sampling (2-5s) and background profiling (progressive). First ControlPlane run produces hints at low confidence. Background work accumulates between sessions. Subsequent runs read richer state. The system converges through repeated measurement rather than requiring everything to complete in one pass. This preserves channel independence while solving the data-availability problem.",
+      "alternatives_considered": [],
+      "confidence": "high",
+      "relatedFiles": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-4",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "tradeoff",
+      "description": "Most @lru_cache additions were cargo-cult optimization with near-zero cache hit rates",
+      "rationale": "Of 7 functions cached, only 3 have meaningful hit rates (_parse_query, _context_length_anchors, _tokenize_query - all on query/shared-value paths). The remaining 4 (_detect_capabilities, _detect_domain, _detect_compatibility, _detect_quantization_level) take unique per-model strings as input, producing ~50K cache entries with zero hits. The caching agent added lru_cache without profiling. Additionally, caching _detect_compatibility introduced a mutation bug (cached list mutated via .append in extract()).",
+      "alternatives_considered": [],
+      "confidence": "high",
+      "relatedFiles": [
+        "src/model_atlas/extraction/patterns.py",
+        "src/model_atlas/extraction/deterministic.py",
+        "src/model_atlas/search/fuzzy.py",
+        "src/model_atlas/query.py"
+      ]
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-decision-5",
+      "timestamp": "2026-03-01T19:27:47.278Z",
+      "category": "tradeoff",
+      "description": "Kuramoto coherence model is nice-to-have, not fundamental to LintGate",
+      "rationale": "The tool's bottleneck is not coherence classification quality. It's that the mutation gate doesn't fire (MUTATION UNKNOWN missing), the purity manifest isn't shared, and background orchestration doesn't auto-start. Kuramoto adds temporal dynamics (converging/oscillating/diverging) which is genuinely new information, but you can get most of that with a simple per-channel trend tracker. The continuous order parameter R becomes valuable only after the core measurement-and-gating loop works.",
+      "alternatives_considered": [],
+      "confidence": "high",
+      "relatedFiles": []
+    }
+  ],
+  "taskState": {
+    "currentGoal": "Implemented background ingestion daemon for ModelAtlas, then refactored codebase following LintGate ControlPlane guidance, then conducted deep analysis of LintGate's mutation theory paper and architecture gaps",
+    "activeTask": null,
+    "completedTasks": [
+      {
+        "description": "Implemented three-phase ingest daemon (ingest.py ~370 lines): Phase A multi-source fetch from HF/Ollama, Phase B Tier 1+2 extraction, Phase C Outlines-based vibe extraction",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Rewrote vibes.py with VibeExtractor class using Outlines for structured LLM output with JSON schema constraints",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Added source field to ModelInput, threaded through pipeline.py for multi-source support",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Extended config.py with 6 ingest constants, db.py with ingest_state schema",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Created deploy/com.modelatlas.ingest.plist for launchd daemon on Mac Pro",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Updated pyproject.toml with ingest optional deps and entry point",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "LintGate refactoring: synced uv.lock, added @lru_cache to 7 pure functions across 4 files",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Extracted query_types.py from query.py for better module cohesion (SICP-motivated data/procedure separation)",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Fixed 15+ regex patterns in patterns.py that missed morphological variants (reasoning, classification, tool-calling, etc.)",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Fixed cache mutation bug: _detect_compatibility's cached list was mutated by extract() via .append()",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Created 203 new tests across 5 files (test_config, test_cache, test_pipeline, test_fuzzy, test_patterns) - total 343 passing",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Deep analysis of LintGate mutation-theory.md: agreed with core thesis that mutation score is specification completeness metric",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Identified three critical gaps in LintGate: MUTATION UNKNOWN missing, no shared purity pre-pass, no background orchestration",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      },
+      {
+        "description": "Evaluated Kuramoto coherence proposal as nice-to-have, not fundamental improvement",
+        "completedAt": "2026-03-01T19:27:47.278Z",
+        "outcome": "success"
+      }
+    ],
+    "blockedTasks": [],
+    "pendingTasks": []
+  },
+  "fileContext": {
+    "touchedFiles": [
+      {
+        "path": "src/model_atlas/ingest.py",
+        "operation": "create",
+        "purpose": "Three-phase ingestion daemon: multi-source fetch, Tier 1+2 extraction, Outlines vibe extraction",
+        "keyChanges": [
+          "phase_a(): HF streaming + Ollama local fetch",
+          "phase_b(): batch extraction from cached JSON",
+          "phase_c(): Outlines structured vibe generation",
+          "CLI: --phase, --daemon, --status",
+          "SIGTERM handler for graceful shutdown"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/extraction/vibes.py",
+        "operation": "write",
+        "purpose": "Complete rewrite for Outlines structured output",
+        "keyChanges": [
+          "VibeOutput dataclass with JSON schema",
+          "VibeExtractor class (load/extract)",
+          "build_vibe_prompt() function",
+          "Backward-compatible extract_vibe_summary() stub"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/query_types.py",
+        "operation": "create",
+        "purpose": "Extracted dataclasses from query.py for better cohesion (SICP data/procedure separation)",
+        "keyChanges": [
+          "BankConstraint, ParsedQuery, SearchResult, ComparisonResult dataclasses"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/query.py",
+        "operation": "edit",
+        "purpose": "Refactored to import from query_types.py, added lru_cache",
+        "keyChanges": [
+          "Import and re-export from query_types for backward compat",
+          "@lru_cache(maxsize=1024) on _parse_query"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/extraction/patterns.py",
+        "operation": "edit",
+        "purpose": "Fixed 15+ regex patterns and cache mutation bug",
+        "keyChanges": [
+          "Removed trailing \\b from stem patterns (reason→reasoning, classif→classification, etc.)",
+          "Fixed domain patterns (scien, creat, financ, etc.)",
+          "Fixed C++ pattern (\\bc\\+\\+ without trailing \\b)",
+          "Added list(compat_anchors) copy to prevent cached list mutation",
+          "Added @lru_cache to _detect_capabilities, _detect_compatibility, _detect_domain, _detect_quantization_level"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/extraction/deterministic.py",
+        "operation": "edit",
+        "purpose": "Added source field and lru_cache",
+        "keyChanges": [
+          "source: str = 'huggingface' field on ModelInput",
+          "@lru_cache(maxsize=256) on _context_length_anchors"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/extraction/pipeline.py",
+        "operation": "edit",
+        "purpose": "Thread source field through extraction",
+        "keyChanges": [
+          "source=inp.source instead of hardcoded 'huggingface'"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/config.py",
+        "operation": "edit",
+        "purpose": "Added ingest daemon constants",
+        "keyChanges": [
+          "INGEST_DB_PATH, INGEST_BATCH_SIZE, INGEST_MIN_LIKES, INGEST_VIBE_MIN_LIKES, VIBE_MODEL_NAME, VIBE_MAX_RETRIES"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "src/model_atlas/db.py",
+        "operation": "edit",
+        "purpose": "Added ingest state tracking schema",
+        "keyChanges": [
+          "_INGEST_SCHEMA SQL",
+          "init_ingest_db()",
+          "get_ingest_connection()"
+        ],
+        "linesModified": null
+      },
+      {
+        "path": "deploy/com.modelatlas.ingest.plist",
+        "operation": "create",
+        "purpose": "launchd daemon config for Mac Pro",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_ingest.py",
+        "operation": "create",
+        "purpose": "12 tests for ingest daemon",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_vibes.py",
+        "operation": "create",
+        "purpose": "8 tests for vibe extraction",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_config.py",
+        "operation": "create",
+        "purpose": "31 tests for config constants",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_cache.py",
+        "operation": "create",
+        "purpose": "16 tests for disk cache module",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_pipeline.py",
+        "operation": "create",
+        "purpose": "15 tests for extraction pipeline",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_fuzzy.py",
+        "operation": "create",
+        "purpose": "25 tests for fuzzy search module",
+        "keyChanges": [],
+        "linesModified": null
+      },
+      {
+        "path": "tests/test_patterns.py",
+        "operation": "create",
+        "purpose": "116 tests for pattern extraction",
+        "keyChanges": [],
+        "linesModified": null
+      }
+    ],
+    "relationships": [],
+    "keyPatterns": []
+  },
+  "openQuestions": [
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-question-0",
+      "question": "Should the cargo-cult @lru_cache decorators on _detect_capabilities, _detect_domain, _detect_compatibility, _detect_quantization_level be removed?",
+      "context": "These functions take unique per-model strings as input during batch ingestion, so cache hit rate is near zero. They add memory overhead and import complexity for no benefit. However, removing them is a value judgment about whether potential future use patterns might benefit.",
+      "potentialAnswers": [
+        "Remove the 4 low-hit-rate caches and keep the 3 meaningful ones",
+        "Keep all but add a comment noting the hit-rate assumption",
+        "Profile during actual ingestion before deciding"
+      ],
+      "priority": "medium"
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-question-1",
+      "question": "Are the seven semantic banks truly orthogonal? DOMAIN and CAPABILITY overlap on code-generation signals.",
+      "context": "A model can have code-generation as both a CAPABILITY anchor and code-domain as a DOMAIN anchor. This could cause double-counting in the weighted query scoring function.",
+      "potentialAnswers": [],
+      "priority": "medium"
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-question-2",
+      "question": "Should the 343 tests be pruned to remove low-value assertions that mostly verify Python stdlib works?",
+      "context": "Many test_config.py tests assert isinstance(X, Path) and test_patterns.py tests assert regex matches. Property-based tests with Hypothesis would provide better coverage with fewer tests.",
+      "potentialAnswers": [],
+      "priority": "low"
+    }
+  ],
+  "nextSteps": [
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-0",
+      "description": "Deploy ingest daemon to Mac Pro: pip install -e '.[ingest]', test Phase A+B with --min-likes 100, verify MCP server returns results",
+      "type": "implement",
+      "priority": 1,
+      "estimatedComplexity": "small",
+      "blockedBy": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-1",
+      "description": "File LintGate issue: MUTATION UNKNOWN as first-class state in classify_properties() — ~10 line fix at line 326 of properties.py to emit confidence 0.4 when mutation_state is None",
+      "type": "implement",
+      "priority": 2,
+      "estimatedComplexity": "trivial",
+      "blockedBy": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-2",
+      "description": "File LintGate issue: shared purity pre-pass manifest — extract build_manifest() from PerformanceChannel.execute() into a pre-pass computed in ControlPlane runtime before channel execution",
+      "type": "refactor",
+      "priority": 3,
+      "estimatedComplexity": "medium",
+      "blockedBy": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-3",
+      "description": "File LintGate issue: background mutation orchestration — ControlPlane integration that spawns progressive background mutation work, priority queue: no-data > confirmed-gaps > stale > refresh",
+      "type": "implement",
+      "priority": 4,
+      "estimatedComplexity": "large",
+      "blockedBy": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-4",
+      "description": "Profile @lru_cache hit rates during actual ingestion of 5K+ models to validate or remove cargo-cult caches",
+      "type": "investigate",
+      "priority": 5,
+      "estimatedComplexity": "small",
+      "blockedBy": []
+    },
+    {
+      "id": "fa106a5f-a96f-4127-8b39-c8d7056865fa-step-5",
+      "description": "Consider replacing bulk test_patterns.py assertions with Hypothesis property-based tests",
+      "type": "refactor",
+      "priority": 6,
+      "estimatedComplexity": "medium",
+      "blockedBy": []
+    }
+  ],
+  "learningMeta": {
+    "outcome": "pending",
+    "outcomeNotes": null,
+    "tags": [
+      "modelatlas",
+      "lintgate",
+      "mutation-theory",
+      "specification-completeness",
+      "ensemble-architecture",
+      "ingest-daemon",
+      "outlines",
+      "SICP"
+    ],
+    "similarSessions": [],
+    "lessonsLearned": []
+  }
+}

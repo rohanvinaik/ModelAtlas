@@ -26,6 +26,25 @@ _TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
 _SEPARATOR_ROW = re.compile(r"^\s*\|(?=[-:\s|]*-)[-:\s|]+\|\s*$")
 
 
+def _extract_row_score(cells: list[str]) -> tuple[str, str] | None:
+    """Extract benchmark name and score from a parsed table row.
+
+    Returns (name, score_text) or None if the row has no valid score.
+    """
+    if len(cells) < 2 or not cells[0]:
+        return None
+    name = cells[0].lower().replace(" ", "-")
+    for cell in cells[1:]:
+        if cell and re.search(r"\d", cell):
+            return name, cell
+    return None
+
+
+def _is_benchmark_table(header_cells: list[str]) -> bool:
+    """Check if a table header contains benchmark-related keywords."""
+    return bool(_BENCHMARK_KEYWORDS.search(" ".join(header_cells)))
+
+
 def extract_benchmarks(card_text: str) -> dict[str, tuple[str, str]]:
     """Extract benchmark scores from markdown tables in model card text.
 
@@ -40,7 +59,6 @@ def extract_benchmarks(card_text: str) -> dict[str, tuple[str, str]]:
     i = 0
 
     while i < len(lines):
-        # Look for a table header row
         header_match = _TABLE_ROW.match(lines[i])
         if not header_match:
             i += 1
@@ -48,33 +66,23 @@ def extract_benchmarks(card_text: str) -> dict[str, tuple[str, str]]:
 
         header_cells = [c.strip() for c in header_match.group(1).split("|")]
 
-        # Check if next line is a separator
         if i + 1 >= len(lines) or not _SEPARATOR_ROW.match(lines[i + 1]):
             i += 1
             continue
 
-        # Check if header contains benchmark keywords
-        header_text = " ".join(header_cells)
-        if not _BENCHMARK_KEYWORDS.search(header_text):
-            i += 2  # skip header + separator
+        if not _is_benchmark_table(header_cells):
+            i += 2
             continue
 
-        # Parse data rows
-        i += 2  # skip header + separator
+        i += 2
         while i < len(lines):
             row_match = _TABLE_ROW.match(lines[i])
             if not row_match:
                 break
             cells = [c.strip() for c in row_match.group(1).split("|")]
-            if len(cells) >= 2 and cells[0]:
-                # First cell = benchmark name, remaining cells = scores
-                name = cells[0].lower().replace(" ", "-")
-                # Take the first non-empty score cell
-                for cell in cells[1:]:
-                    if cell and re.search(r"\d", cell):
-                        key = f"benchmark:{name}"
-                        results[key] = (cell, "str")
-                        break
+            row_score = _extract_row_score(cells)
+            if row_score:
+                results[f"benchmark:{row_score[0]}"] = (row_score[1], "str")
             i += 1
 
     return results

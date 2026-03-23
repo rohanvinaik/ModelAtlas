@@ -8,13 +8,13 @@ _license_anchors (σ=1), _config_anchors (σ=6), _compute_structural_fingerprint
 import pytest
 
 from model_atlas.extraction.deterministic import (
-    _parse_param_from_text,
     _estimate_params_billions,
     _license_anchors,
+    _parse_param_from_text,
 )
 
-
 # === _parse_param_from_text (σ=17, pure) ===
+
 
 class TestParseParamFromText:
     """Pin every constant and boundary in the character-walking parser."""
@@ -67,7 +67,9 @@ class TestParseParamFromText:
 
     def test_b_at_position_zero(self):
         """BOUNDARY killer: 'B' at index 0 → i > 0 fails, must return None."""
-        assert _parse_param_from_text("B7") is None or _parse_param_from_text("B") is None
+        assert (
+            _parse_param_from_text("B7") is None or _parse_param_from_text("B") is None
+        )
 
     def test_single_digit_before_b(self):
         """VALUE killer: text[i-1] must be the char before B, not at B itself."""
@@ -113,6 +115,7 @@ class TestParseParamFromText:
 
 # === _estimate_params_billions (σ=12) ===
 
+
 class TestEstimateParamsBillions:
     """Tests for parameter estimation from multiple sources."""
 
@@ -146,11 +149,14 @@ class TestEstimateParamsBillions:
 
     def test_safetensors_takes_priority(self):
         """Safetensors is most reliable, should take priority."""
-        result = _estimate_params_billions("model-7b", ["13b"], {"total": 14_000_000_000})
+        result = _estimate_params_billions(
+            "model-7b", ["13b"], {"total": 14_000_000_000}
+        )
         assert result == pytest.approx(7.0)
 
 
 # === _license_anchors (σ=1) ===
+
 
 class TestLicenseAnchors:
     def test_apache(self):

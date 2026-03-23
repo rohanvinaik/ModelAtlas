@@ -6,13 +6,12 @@ Tests the IDF-weighted prefer scoring and exponential avoid penalty.
 """
 
 import pytest
-import math
 
-from model_atlas.query import _nav_anchor_relevance
 from model_atlas.config import NAVIGATE_AVOID_DECAY
-
+from model_atlas.query import _nav_anchor_relevance
 
 # --- No constraints → 1.0 ---
+
 
 def test_no_constraints_returns_one():
     """Invariant: no prefer set and no avoid set returns 1.0."""
@@ -29,6 +28,7 @@ def test_no_constraints_returns_one():
 
 # --- Avoid penalty: 0.5^count ---
 
+
 def test_one_avoided_anchor_halves_score():
     """Invariant: avoid_penalty is 0.5^1 = 0.5."""
     result = _nav_anchor_relevance(
@@ -39,7 +39,7 @@ def test_one_avoided_anchor_halves_score():
         prefer_idf_total=0.0,
         has_constraints=True,
     )
-    assert result == pytest.approx(NAVIGATE_AVOID_DECAY ** 1)
+    assert result == pytest.approx(NAVIGATE_AVOID_DECAY**1)
 
 
 def test_two_avoided_anchors_quarter_score():
@@ -52,7 +52,7 @@ def test_two_avoided_anchors_quarter_score():
         prefer_idf_total=0.0,
         has_constraints=True,
     )
-    assert result == pytest.approx(NAVIGATE_AVOID_DECAY ** 2)
+    assert result == pytest.approx(NAVIGATE_AVOID_DECAY**2)
 
 
 def test_three_avoided_anchors_eighth_score():
@@ -65,7 +65,7 @@ def test_three_avoided_anchors_eighth_score():
         prefer_idf_total=0.0,
         has_constraints=True,
     )
-    assert result == pytest.approx(NAVIGATE_AVOID_DECAY ** 3)
+    assert result == pytest.approx(NAVIGATE_AVOID_DECAY**3)
 
 
 def test_avoided_anchor_not_present_no_penalty():
@@ -82,6 +82,7 @@ def test_avoided_anchor_not_present_no_penalty():
 
 
 # --- Prefer scoring: IDF-weighted fraction ---
+
 
 def test_prefer_all_matched():
     """All preferred anchors matched → prefer_score = 1.0."""
@@ -131,6 +132,7 @@ def test_prefer_partial_idf_weighted():
 
 # --- Combined: prefer × avoid ---
 
+
 def test_prefer_and_avoid_multiply():
     """Invariant: result = prefer_score × avoid_penalty."""
     idf = {"x": 2.0, "y": 3.0}
@@ -150,6 +152,7 @@ def test_prefer_and_avoid_multiply():
 
 # --- BOUNDARY: prefer_idf_total > 0 vs >= 0 ---
 
+
 def test_prefer_idf_total_zero_returns_one():
     """When prefer_idf_total=0 (no prefer set), prefer_score defaults to 1.0."""
     result = _nav_anchor_relevance(
@@ -164,6 +167,7 @@ def test_prefer_idf_total_zero_returns_one():
 
 
 # --- Result bounded ---
+
 
 def test_result_in_zero_one():
     """Invariant: result always in [0, 1]."""

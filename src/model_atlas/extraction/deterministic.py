@@ -188,30 +188,46 @@ def _estimate_params_billions(
     return None
 
 
+def _walk_number_backwards(text: str, end: int) -> str:
+    """Walk backwards from position `end` to find the start of a number.
+
+    Returns the numeric substring (may include one dot).
+    """
+    start = end
+    has_dot = text[start] == "."
+    while start > 0:
+        prev = text[start - 1]
+        if prev.isdigit():
+            start -= 1
+        elif prev == "." and not has_dot:
+            has_dot = True
+            start -= 1
+        else:
+            break
+    return text[start:end]
+
+
+def _validate_param_value(num_str: str) -> float | None:
+    """Parse and validate a parameter count string. Returns billions or None."""
+    if not num_str or num_str == ".":
+        return None
+    try:
+        val = float(num_str)
+    except ValueError:
+        return None
+    if 0.1 <= val <= 1000:
+        return val
+    return None
+
+
 def _parse_param_from_text(text: str) -> float | None:
     """Extract parameter count from a string like '7B' or '1.5b' without regex."""
     for i, ch in enumerate(text):
         if ch in "bB" and i > 0 and (text[i - 1].isdigit() or text[i - 1] == "."):
-            # Walk backwards to find the start of the number
-            start = i - 1
-            has_dot = text[start] == "."
-            while start > 0:
-                prev = text[start - 1]
-                if prev.isdigit():
-                    start -= 1
-                elif prev == "." and not has_dot:
-                    has_dot = True
-                    start -= 1
-                else:
-                    break
-            num_str = text[start:i]
-            if num_str and num_str != ".":
-                try:
-                    val = float(num_str)
-                    if 0.1 <= val <= 1000:
-                        return val
-                except ValueError:
-                    pass
+            num_str = _walk_number_backwards(text, i)
+            result = _validate_param_value(num_str)
+            if result is not None:
+                return result
     return None
 
 
@@ -469,6 +485,28 @@ def _context_length_anchors(context_length: int | None) -> list[str]:
     return anchors
 
 
+def _add_if_truthy(
+    meta: dict[str, tuple[str, str]],
+    key: str,
+    value: object,
+    value_type: str,
+) -> None:
+    """Add a metadata entry if the value is truthy (not None/0/empty)."""
+    if value is not None and value:
+        meta[key] = (str(value), value_type)
+
+
+def _add_if_not_none(
+    meta: dict[str, tuple[str, str]],
+    key: str,
+    value: object,
+    value_type: str,
+) -> None:
+    """Add a metadata entry if the value is not None (allows 0)."""
+    if value is not None:
+        meta[key] = (str(value), value_type)
+
+
 def _collect_metadata(
     inp: ModelInput,
     param_b: float | None,
@@ -478,39 +516,31 @@ def _collect_metadata(
     meta: dict[str, tuple[str, str]] = {}
     if param_b:
         meta["parameter_count_b"] = (str(round(param_b, 2)), "float")
-    if inp.license_str:
-        meta["license"] = (inp.license_str, "str")
-    if inp.created_at:
-        meta["created_at"] = (inp.created_at, "datetime")
-    if inp.likes:
-        meta["likes"] = (str(inp.likes), "int")
-    if inp.downloads:
-        meta["downloads"] = (str(inp.downloads), "int")
-    if inp.pipeline_tag:
-        meta["pipeline_tag"] = (inp.pipeline_tag, "str")
-    if inp.library_name:
-        meta["library_name"] = (inp.library_name, "str")
+
+    _add_if_truthy(meta, "license", inp.license_str, "str")
+    _add_if_truthy(meta, "created_at", inp.created_at, "datetime")
+    _add_if_truthy(meta, "likes", inp.likes, "int")
+    _add_if_truthy(meta, "downloads", inp.downloads, "int")
+    _add_if_truthy(meta, "pipeline_tag", inp.pipeline_tag, "str")
+    _add_if_truthy(meta, "library_name", inp.library_name, "str")
+
     if cfg:
-        if cfg.context_length is not None:
-            meta["context_length"] = (str(cfg.context_length), "int")
-        if cfg.vocab_size is not None:
-            meta["vocab_size"] = (str(cfg.vocab_size), "int")
-        if cfg.hidden_size is not None:
-            meta["hidden_size"] = (str(cfg.hidden_size), "int")
-        if cfg.num_layers is not None:
-            meta["num_layers"] = (str(cfg.num_layers), "int")
-        if cfg.num_heads is not None:
-            meta["num_heads"] = (str(cfg.num_heads), "int")
-        if cfg.num_kv_heads is not None:
-            meta["num_kv_heads"] = (str(cfg.num_kv_heads), "int")
-        if cfg.intermediate_size is not None:
-            meta["intermediate_size"] = (str(cfg.intermediate_size), "int")
-        if cfg.model_type:
-            meta["model_type"] = (cfg.model_type, "str")
-        if cfg.torch_dtype:
-            meta["torch_dtype"] = (cfg.torch_dtype, "str")
-        if cfg.structural_fingerprint:
-            meta["structural_fingerprint"] = (cfg.structural_fingerprint, "str")
+        for key, val in [
+            ("context_length", cfg.context_length),
+            ("vocab_size", cfg.vocab_size),
+            ("hidden_size", cfg.hidden_size),
+            ("num_layers", cfg.num_layers),
+            ("num_heads", cfg.num_heads),
+            ("num_kv_heads", cfg.num_kv_heads),
+            ("intermediate_size", cfg.intermediate_size),
+        ]:
+            _add_if_not_none(meta, key, val, "int")
+        _add_if_truthy(meta, "model_type", cfg.model_type, "str")
+        _add_if_truthy(meta, "torch_dtype", cfg.torch_dtype, "str")
+        _add_if_truthy(
+            meta, "structural_fingerprint", cfg.structural_fingerprint, "str"
+        )
+
     return meta
 
 

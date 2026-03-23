@@ -69,7 +69,7 @@ class HuggingFaceAdapter(SourceAdapter):
 
     def get_detail(self, model_id: str) -> ModelInput:
         """Get full model details from HuggingFace."""
-        info = self._api.model_info(model_id, cardData=True)
+        info = self._api.model_info(model_id)
         config = self.fetch_config(model_id)
         return ModelInput(
             model_id=info.id or model_id,

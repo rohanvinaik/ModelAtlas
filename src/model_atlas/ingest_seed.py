@@ -260,7 +260,7 @@ def seed(
             pass_def["min_likes"],
         )
 
-        count = _seed_single_pass(network_conn, pass_def, existing)
+        count: int = _seed_single_pass(network_conn, pass_def, existing)
         network_conn.commit()
         results[pass_name] = count
 

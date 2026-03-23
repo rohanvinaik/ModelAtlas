@@ -3,11 +3,11 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:3966 LG_TS:1774293403 -->
+<!-- LG_GEN:3995 LG_TS:1774294211 -->
 # Session State
 
-Mode: habit (score: 0.60)
-Focus: [test_prescriptive_deterministic.py, test_prescriptive__bank_score_single.py, test_prescriptive__nav_anchor_relevance.py, test_prescriptive__gradient_decay.py, auto_pipeline.py]
-Coherence: isolated | Warnings: 95
+Mode: habit (score: 0.62)
+Focus: [ingest_seed.py, huggingface.py, extractor.py, deterministic.py, db.py]
+Coherence: isolated | Warnings: 2
 
-Context: 374% used | Tools: 2936 | Compactions: 43
+Context: 377% used | Tools: 2955 | Compactions: 44
