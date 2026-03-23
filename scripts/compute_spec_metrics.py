@@ -50,8 +50,10 @@ def count_functions(filepath: str) -> list[tuple[str, int]]:
             # Estimate σ from number of: comparisons, returns, constants, branches
             comparisons = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Compare))
             returns = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Return))
-            constants = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Constant))
-            branches = sum(1 for _ in ast.walk(node) if isinstance(_, (ast.If, ast.IfExp)))
+            sum(1 for _ in ast.walk(node) if isinstance(_, ast.Constant))
+            branches = sum(
+                1 for _ in ast.walk(node) if isinstance(_, (ast.If, ast.IfExp))
+            )
             sigma_est = max(comparisons + returns + branches, 1)
             functions.append((node.name, sigma_est))
     return functions
@@ -61,7 +63,9 @@ def count_tests() -> int:
     """Count total test functions via pytest collection."""
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "--co", "-q"],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     return sum(1 for line in result.stdout.splitlines() if "::" in line)
 
@@ -81,7 +85,9 @@ def run_test_suite() -> bool:
     """Run tests and return True if all pass."""
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-x"],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     return result.returncode == 0
 
@@ -147,6 +153,7 @@ def main():
 
     # Write to GITHUB_ENV if available
     import os
+
     env_file = os.environ.get("GITHUB_ENV")
     if env_file:
         with open(env_file, "a") as f:

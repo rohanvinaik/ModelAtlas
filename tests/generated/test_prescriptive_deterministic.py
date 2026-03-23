@@ -180,7 +180,6 @@ class TestLicenseAnchors:
 # === _extract_efficiency (σ=7) ===
 
 
-
 class TestExtractEfficiency:
     """Pin the parameter-to-position mapping."""
 
@@ -248,7 +247,6 @@ class TestExtractEfficiency:
 # === _extract_quality (σ=33) ===
 
 
-
 class TestExtractQuality:
     """Pin popularity scoring and anchor derivation."""
 
@@ -278,14 +276,16 @@ class TestExtractQuality:
 
     def test_trending_recent_model(self):
         """Recent model (< 90 days) gets trending anchor."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         recent = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         _, anchors = _extract_quality(100, 100000, recent)
         assert "trending" in anchors
 
     def test_not_trending_old_model(self):
         """Old model (> 90 days) does NOT get trending."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         old = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
         _, anchors = _extract_quality(100, 100000, old)
         assert "trending" not in anchors
@@ -297,7 +297,6 @@ class TestExtractQuality:
 
 
 # === _walk_number_backwards (σ=7, pure) ===
-
 
 
 class TestWalkNumberBackwards:
@@ -385,7 +384,7 @@ class TestValidateParamValue:
 
 # === _extract_from_config (σ=33) ===
 
-from model_atlas.extraction.deterministic import _extract_from_config, ConfigSignals
+from model_atlas.extraction.deterministic import ConfigSignals, _extract_from_config
 
 
 class TestExtractFromConfig:
@@ -410,10 +409,12 @@ class TestExtractFromConfig:
 
     def test_context_length_priority(self):
         """max_position_embeddings takes priority over max_seq_len."""
-        cfg = _extract_from_config({
-            "max_position_embeddings": 4096,
-            "max_seq_len": 2048,
-        })
+        cfg = _extract_from_config(
+            {
+                "max_position_embeddings": 4096,
+                "max_seq_len": 2048,
+            }
+        )
         assert cfg.context_length == 4096
 
     def test_vocab_size(self):
@@ -445,17 +446,21 @@ class TestExtractFromConfig:
         assert cfg.num_kv_heads == 8
 
     def test_gqa_detection(self):
-        cfg = _extract_from_config({
-            "num_attention_heads": 32,
-            "num_key_value_heads": 8,
-        })
+        cfg = _extract_from_config(
+            {
+                "num_attention_heads": 32,
+                "num_key_value_heads": 8,
+            }
+        )
         assert cfg.uses_gqa is True
 
     def test_no_gqa_when_equal(self):
-        cfg = _extract_from_config({
-            "num_attention_heads": 32,
-            "num_key_value_heads": 32,
-        })
+        cfg = _extract_from_config(
+            {
+                "num_attention_heads": 32,
+                "num_key_value_heads": 32,
+            }
+        )
         assert cfg.uses_gqa is False
 
     def test_model_type(self):
@@ -488,17 +493,19 @@ class TestExtractFromConfig:
 
     def test_full_llama_config(self):
         """Integration: full Llama-style config."""
-        cfg = _extract_from_config({
-            "model_type": "llama",
-            "hidden_size": 4096,
-            "num_hidden_layers": 32,
-            "num_attention_heads": 32,
-            "num_key_value_heads": 8,
-            "intermediate_size": 11008,
-            "vocab_size": 32000,
-            "max_position_embeddings": 4096,
-            "torch_dtype": "bfloat16",
-        })
+        cfg = _extract_from_config(
+            {
+                "model_type": "llama",
+                "hidden_size": 4096,
+                "num_hidden_layers": 32,
+                "num_attention_heads": 32,
+                "num_key_value_heads": 8,
+                "intermediate_size": 11008,
+                "vocab_size": 32000,
+                "max_position_embeddings": 4096,
+                "torch_dtype": "bfloat16",
+            }
+        )
         assert cfg.model_type == "llama"
         assert cfg.hidden_size == 4096
         assert cfg.num_layers == 32
@@ -543,28 +550,42 @@ from model_atlas.extraction.deterministic import _compute_structural_fingerprint
 
 class TestComputeStructuralFingerprint:
     def test_missing_field_returns_none(self):
-        cfg = ConfigSignals(hidden_size=4096, num_layers=32)  # missing num_heads, vocab_size
+        cfg = ConfigSignals(
+            hidden_size=4096, num_layers=32
+        )  # missing num_heads, vocab_size
         assert _compute_structural_fingerprint(cfg) is None
 
     def test_all_fields_returns_hash(self):
-        cfg = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
+        cfg = ConfigSignals(
+            hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000
+        )
         result = _compute_structural_fingerprint(cfg)
         assert isinstance(result, str)
         assert len(result) == 16
 
     def test_deterministic(self):
-        cfg = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
-        assert _compute_structural_fingerprint(cfg) == _compute_structural_fingerprint(cfg)
+        cfg = ConfigSignals(
+            hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000
+        )
+        assert _compute_structural_fingerprint(cfg) == _compute_structural_fingerprint(
+            cfg
+        )
 
     def test_different_configs_different_hash(self):
-        cfg1 = ConfigSignals(hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000)
-        cfg2 = ConfigSignals(hidden_size=2048, num_layers=24, num_heads=16, vocab_size=50257)
-        assert _compute_structural_fingerprint(cfg1) != _compute_structural_fingerprint(cfg2)
+        cfg1 = ConfigSignals(
+            hidden_size=4096, num_layers=32, num_heads=32, vocab_size=32000
+        )
+        cfg2 = ConfigSignals(
+            hidden_size=2048, num_layers=24, num_heads=16, vocab_size=50257
+        )
+        assert _compute_structural_fingerprint(cfg1) != _compute_structural_fingerprint(
+            cfg2
+        )
 
 
 # === _collect_metadata (σ=40) ===
 
-from model_atlas.extraction.deterministic import _collect_metadata, ModelInput
+from model_atlas.extraction.deterministic import ModelInput, _collect_metadata
 
 
 class TestCollectMetadata:
@@ -664,15 +685,21 @@ class TestCollectMetadata:
 
     def test_full_integration(self):
         cfg = ConfigSignals(
-            context_length=4096, vocab_size=32000, hidden_size=4096,
-            num_layers=32, num_heads=32, num_kv_heads=8,
-            model_type="llama", torch_dtype="bfloat16",
+            context_length=4096,
+            vocab_size=32000,
+            hidden_size=4096,
+            num_layers=32,
+            num_heads=32,
+            num_kv_heads=8,
+            model_type="llama",
+            torch_dtype="bfloat16",
             structural_fingerprint="abc123",
         )
         inp = ModelInput(
             model_id="meta-llama/Llama-3.1-8B",
             license_str="llama3.1",
-            likes=5000, downloads=10000000,
+            likes=5000,
+            downloads=10000000,
             pipeline_tag="text-generation",
             library_name="transformers",
             created_at="2025-07-01",

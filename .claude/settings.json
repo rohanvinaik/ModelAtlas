@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.session_start",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.session_start",
             "timeout": 5
           }
         ],
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.user_prompt",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.user_prompt",
             "timeout": 2
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.pre_tool",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.pre_tool",
             "timeout": 3
           }
         ],
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.pre_compact",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.pre_compact",
             "timeout": 5
           }
         ],
@@ -52,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.stop_gate",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.stop_gate",
             "timeout": 3
           }
         ]
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m lintgate.hooks.session_end",
+            "command": "/Users/rohanvinaik/tools/lintgate/scripts/run_hook.sh lintgate.hooks.session_end",
             "timeout": 10,
             "async": true
           }
