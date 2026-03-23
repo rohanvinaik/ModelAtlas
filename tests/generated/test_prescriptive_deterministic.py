@@ -328,6 +328,26 @@ class TestWalkNumberBackwards:
         result = _walk_number_backwards("xB", 1)
         assert result == "x" or result == ""
 
+    def test_dot_start_walks_back_through_dot(self):
+        """VALUE killer: '.5' — start char IS a dot, has_dot must be True.
+        Mutant sets has_dot = (text[start] == '') which is always False,
+        so it would allow a second dot. Test: '1..5B' should only walk back to '.5'."""
+        # In '3.5B', end=3 (the B). Walk back: text[2]='5' (digit), text[1]='.' (dot, has_dot=True),
+        # text[0]='3' (digit). Result = '3.5'
+        assert _walk_number_backwards("3.5B", 3) == "3.5"
+        # In '.5B', end=2 (the B). Walk back: text[1]='5' (digit), text[0]='.' (dot, has_dot=True).
+        # Result = '.5'
+        assert _walk_number_backwards(".5B", 2) == ".5"
+        # Key test: if has_dot detection is broken, a second dot would be included
+        # In '1.2.5B', end=5. text[4]='5', text[3]='.' (first dot), text[2]='2', text[1]='.'
+        # With correct code: has_dot=False initially, text[3]='.' sets has_dot=True,
+        # then text[1]='.' but has_dot is True → stop. Result = '2.5'
+        # With mutant: has_dot = (text[start] == '') = False always, so BOTH dots pass.
+        # Result would be '1.2.5' (invalid)
+        result = _walk_number_backwards("1.2.5B", 5)
+        assert "." in result  # must contain at least one dot
+        assert result.count(".") == 1  # but only ONE dot
+
 
 # === _validate_param_value (σ=4, pure) ===
 
