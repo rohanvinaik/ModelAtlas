@@ -3,11 +3,11 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:4095 LG_TS:1774300891 -->
+<!-- LG_GEN:4112 LG_TS:1774302562 -->
 # Session State
 
-Mode: habit (score: 0.75)
+Mode: habit (score: 0.60)
 Focus: [test_src_model_atlas_wiki_renderer.py, test_src_model_atlas_wiki_manifest.py, test_src_model_atlas_phase_d_audit.py, publish_pages.py, ingest_seed.py]
-Coherence: coupled | Blocking: 2 | Warnings: 94
+Coherence: structural_debt | Blocking: 30 | Warnings: 1560
 
-Context: 383% used | Tools: 3032 | Compactions: 45
+Context: 384% used | Tools: 3047 | Compactions: 45

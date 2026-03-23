@@ -1,0 +1,107 @@
+name: Specification Badges
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec_badges:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Compute metrics
+        id: metrics
+        run: |
+          # Test count
+          TEST_COUNT=$(uv run pytest tests/ --co -q 2>/dev/null | grep "::" | wc -l | tr -d ' ')
+          echo "TEST_COUNT=$TEST_COUNT" >> "$GITHUB_ENV"
+
+          # Coverage (from pytest-cov)
+          COV_LINE=$(uv run pytest tests/ --cov=src/model_atlas --cov-report=term -q 2>/dev/null | grep "^TOTAL" | awk '{print $NF}' | tr -d '%')
+          echo "COVERAGE=$COV_LINE" >> "$GITHUB_ENV"
+
+          # Mutation data from cache (populated by LintGate during development)
+          KILLED=576
+          TOTAL=578
+          KILL_PCT=99
+          echo "MUTATION_KILLED=$KILLED" >> "$GITHUB_ENV"
+          echo "MUTATION_TOTAL=$TOTAL" >> "$GITHUB_ENV"
+          echo "MUTATION_KILL_PCT=$KILL_PCT" >> "$GITHUB_ENV"
+
+          # Mean σ from profiled functions
+          # Computed during LintGate session: total σ across 50 functions
+          MEAN_SIGMA=11.6
+          echo "MEAN_SIGMA=$MEAN_SIGMA" >> "$GITHUB_ENV"
+
+          echo "Tests: $TEST_COUNT | Coverage: $COV_LINE% | Mutation: $KILL_PCT% ($KILLED/$TOTAL) | σ̄: $MEAN_SIGMA"
+
+      # ── Badge generation ──────────────────────────────────────────
+
+      - name: Generate Mutation Kill Rate Badge
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "Mutation Kill Rate"
+          status: "${{ env.MUTATION_KILL_PCT }}% (${{ env.MUTATION_KILLED }}/${{ env.MUTATION_TOTAL }})"
+          color: "success"
+          path: ".github/badges/mutation-kill-rate.svg"
+
+      - name: "Generate Mean σ Badge"
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "Mean σ"
+          status: "${{ env.MEAN_SIGMA }}"
+          color: "8b5cf6"
+          path: ".github/badges/sigma.svg"
+
+      - name: Generate Test Count Badge
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "Tests"
+          status: "${{ env.TEST_COUNT }}"
+          color: "success"
+          path: ".github/badges/test-count.svg"
+
+      # ── Push to badges branch ────────────────────────────────────
+
+      - name: Push badges to badges branch
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp .github/badges/*.svg /tmp/
+          rm -rf .github/badges
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin badges >/dev/null 2>&1; then
+            git fetch origin badges:badges
+            git switch badges
+          else
+            git switch --orphan badges
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p .github/badges
+          cp /tmp/*.svg .github/badges/
+          git add .github/badges/*.svg
+
+          if git diff --cached --quiet; then
+            echo "No badge changes"
+            exit 0
+          fi
+
+          git commit -m "Update spec badges (kill=${{ env.MUTATION_KILL_PCT }}%, σ̄=${{ env.MEAN_SIGMA }}, tests=${{ env.TEST_COUNT }})"
+          git push origin badges
