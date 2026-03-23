@@ -105,14 +105,18 @@ controlplane:
     theory_coherence_check: true
     living_context: true
     session_gate: true
+
+# Evidence-based exemptions approved via propose_exemption
+# Each requires mutation kill rate >= 80% + rationale + evidence
+approved_exemptions:
   - file: src/model_atlas/server.py
     code: too-many-args
-    rationale: "MCP tool function — 13 arguments map directly to the LLM-visible tool schema. Reducing args would require the LLM to construct a nested object, breaking the flat parameter convention MCP tools use."
+    rationale: "MCP tool function — 13 args map to LLM tool schema."
     kill_rate: 1.0
     approved_at: 2026-03-23 18:51:05
   - file: src/model_atlas/spreading.py
     code: too-many-args
-    rationale: "Internal spreading function passes through activation state (conn, model_id, current_act, depth, decay, anchor_slice, banks, activation dict, priority queue). These are the Bellman-Ford algorithm's working state — grouping them into a dataclass would add indirection without reducing actual coupling."
+    rationale: "Bellman-Ford algorithm state passthrough."
     kill_rate: 1.0
     approved_at: 2026-03-23 18:51:28
   - file: src/model_atlas/extraction/vibes.py
