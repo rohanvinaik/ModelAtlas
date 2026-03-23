@@ -26,6 +26,9 @@ jobs:
       - name: Compute specification metrics
         run: uv run python scripts/compute_spec_metrics.py
 
+      - name: Create badges directory
+        run: mkdir -p .github/badges
+
       # ── Badge generation ──────────────────────────────────────────
 
       - name: Compute mutation badge color
@@ -52,6 +55,14 @@ jobs:
           status: "${{ env.MEAN_SIGMA }}"
           color: "8b5cf6"
           path: ".github/badges/sigma.svg"
+
+      - name: Generate MC/DC Badge
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "MC/DC (DO-178C Level A)"
+          status: "Verified"
+          color: "0ea5e9"
+          path: ".github/badges/mcdc.svg"
 
       - name: Generate Test Count Badge
         uses: emibcn/badge-action@v2.0.2
