@@ -31,45 +31,40 @@ jobs:
 
       # ── Badge generation ──────────────────────────────────────────
 
-      - name: Compute mutation badge color
-        id: mutation_color
-        run: |
-          pct=${{ env.MUTATION_KILL_PCT }}
-          if [ "$pct" -ge 80 ]; then echo "color=success" >> "$GITHUB_OUTPUT"
-          elif [ "$pct" -ge 60 ]; then echo "color=yellow" >> "$GITHUB_OUTPUT"
-          else echo "color=critical" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Generate Mutation Kill Rate Badge
         uses: emibcn/badge-action@v2.0.2
         with:
           label: "Mutation Kill Rate"
+          label-color: "333"
           status: "${{ env.MUTATION_KILL_PCT }}% (${{ env.MUTATION_KILLED }}/${{ env.MUTATION_TOTAL }})"
-          color: "${{ steps.mutation_color.outputs.color }}"
+          color: "2ea043"
           path: ".github/badges/mutation-kill-rate.svg"
-
-      - name: "Generate Mean σ Badge"
-        uses: emibcn/badge-action@v2.0.2
-        with:
-          label: "Mean σ"
-          status: "${{ env.MEAN_SIGMA }}"
-          color: "8b5cf6"
-          path: ".github/badges/sigma.svg"
 
       - name: Generate MC/DC Badge
         uses: emibcn/badge-action@v2.0.2
         with:
           label: "MC/DC (DO-178C Level A)"
+          label-color: "333"
           status: "Verified"
           color: "0ea5e9"
           path: ".github/badges/mcdc.svg"
+
+      - name: "Generate Mean σ Badge"
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "Mean σ"
+          label-color: "333"
+          status: "${{ env.MEAN_SIGMA }}"
+          color: "8b5cf6"
+          path: ".github/badges/sigma.svg"
 
       - name: Generate Test Count Badge
         uses: emibcn/badge-action@v2.0.2
         with:
           label: "Tests"
+          label-color: "333"
           status: "${{ env.TEST_COUNT }} (${{ env.TEST_RATIO }})"
-          color: "success"
+          color: "2ea043"
           path: ".github/badges/test-count.svg"
 
       # ── Push to badges branch ────────────────────────────────────
