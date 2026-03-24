@@ -15,9 +15,6 @@ from pathlib import Path
 from typing import Any
 
 from wesker_engine import (
-    MutationCategory,
-    evaluate_mutant,
-    generate_mutants,
     run_function_sampling,
 )
 from wesker_filter import filter_categories
@@ -40,13 +37,22 @@ def discover_test_files(project_root: str, source_file: str) -> list[str]:
         safe = safe[:-3]
     generated_name = f"test_{safe}.py"
 
-    # Also try partial stems — e.g., query_navigate -> query, navigate
+    # Parent-aware matching for files in subdirs (wiki/config.py -> test_wiki_config)
+    parent_dir = Path(source_file).parent.name
+    parent_qualified = f"{parent_dir}_{base}" if parent_dir not in ("model_atlas", "src") else None
+
+    # Partial stems — e.g., query_navigate -> query, navigate
     partial_stems = set()
     for part in base_stripped.split("_"):
-        if len(part) >= 4:  # Skip very short parts
+        if len(part) >= 4:
             partial_stems.add(part)
 
-    found: list[str] = []
+    # Two-pass: high-confidence matches first, then broad matches.
+    # If high-confidence matches find enough tests, skip broad matches
+    # to avoid pulling in tests for a different module with the same stem.
+    high_confidence: list[str] = []
+    broad: list[str] = []
+
     for search_dir in [tests_dir, generated_dir]:
         if not search_dir.is_dir():
             continue
@@ -54,21 +60,59 @@ def discover_test_files(project_root: str, source_file: str) -> list[str]:
             if not entry.name.endswith(".py"):
                 continue
             name = entry.name
-            match = (
+            path_str = str(entry)
+
+            # High confidence: generated name or parent-qualified
+            if name == generated_name:
+                high_confidence.append(path_str)
+            elif parent_qualified and (
+                name == f"test_{parent_qualified}.py"
+                or name.startswith(f"test_{parent_qualified}_")
+            ):
+                high_confidence.append(path_str)
+            elif (
+                (name.endswith(f"_{base}.py") or name.endswith(f"_{base_stripped}.py"))
+                # Suffix match is only high-confidence if the name also contains
+                # the parent dir (avoids test_config.py matching wiki/config.py)
+                and (not parent_qualified or parent_dir in name)
+            ):
+                high_confidence.append(path_str)
+            # Broad: bare stem match, partial stem match, parent dir match,
+            # and contains-stem match (catches test_prescriptive_deterministic.py)
+            elif (
                 name == f"test_{base}.py"
                 or name == f"test_{base_stripped}.py"
                 or name.startswith(f"test_{base}_")
                 or name.startswith(f"test_{base_stripped}_")
-                or name == generated_name
-                # Suffix match for generated tests
-                or name.endswith(f"_{base}.py")
-                or name.endswith(f"_{base_stripped}.py")
-                # Partial stem match — catches test_navigate.py for query_navigate.py
                 or any(name == f"test_{stem}.py" for stem in partial_stems)
                 or any(name.startswith(f"test_{stem}_") for stem in partial_stems)
-            )
-            if match and str(entry) not in found:
-                found.append(str(entry))
+                # Parent dir match (extraction/deterministic.py -> test_extraction.py)
+                or (parent_qualified and name == f"test_{parent_dir}.py")
+                # Contains-stem (test_prescriptive_deterministic.py contains "deterministic")
+                or (f"_{base_stripped}." in name or f"_{base_stripped}_" in name)
+            ):
+                broad.append(path_str)
+
+    # For files with very common names in subdirectories (wiki/config.py),
+    # broad stem matches pull in wrong-module tests (test_config.py tests
+    # model_atlas/config.py, not wiki/config.py). Only suppress broad matches
+    # when the stem is ambiguous (exists at multiple paths).
+    ambiguous_stems = {"config", "base", "__main__"}
+    suppress_broad = parent_qualified is not None and base_stripped in ambiguous_stems
+    if suppress_broad and high_confidence:
+        return list(dict.fromkeys(high_confidence))
+    return list(dict.fromkeys(high_confidence + broad))
+
+
+def _discover_all_test_files(project_root: str) -> list[str]:
+    """Find all test_*.py files under tests/."""
+    found: list[str] = []
+    tests_dir = Path(project_root) / "tests"
+    if not tests_dir.is_dir():
+        return found
+    for py in sorted(tests_dir.rglob("*.py")):
+        if py.name.startswith("test_") and "__pycache__" not in str(py):
+            found.append(str(py))
     return found
 
 
@@ -141,6 +185,16 @@ def profile_file(
     test_files = discover_test_files(project_root, full_path)
     tests = load_test_callables(test_files)
 
+    # Fallback: if convention matching found few tests, load all test files.
+    # This mirrors LintGate's Layer 3 discovery — convention-matched files are
+    # already scoped, so the fallback is bounded and catches indirect callers.
+    if len(tests) < 5:
+        all_test_files = _discover_all_test_files(project_root)
+        extra = [f for f in all_test_files if f not in set(test_files)]
+        if extra:
+            fallback_tests = load_test_callables(extra)
+            tests.extend(fallback_tests)
+
     results: list[dict] = []
     for qualname, func_node in walk_functions(tree):
         cats = filter_categories(func_node)
@@ -178,7 +232,8 @@ def profile_codebase(
 
     for target in targets:
         results = profile_file(
-            project_root, target,
+            project_root,
+            target,
             budget_ms=budget_ms_per_file,
             max_per_category=max_per_category,
         )
