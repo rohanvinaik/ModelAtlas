@@ -137,6 +137,20 @@ def _build_searchable_strings(
     }
 
 
+def _build_fuzzy_score(best_field, best_value, model, results, token_scores):
+    avg_score = sum(token_scores) / len(token_scores) if token_scores else 0.0
+
+    results.append(
+        FuzzyScore(
+            model_id=model["model_id"],
+            score=avg_score,
+            best_match_field=best_field,
+            best_match_value=best_value,
+        )
+    )
+    return results
+
+
 def score_models(
     query: str,
     models: list[dict],
@@ -193,15 +207,6 @@ def score_models(
                 best_field = token_field
                 best_value = token_value
 
-        avg_score = sum(token_scores) / len(token_scores) if token_scores else 0.0
-
-        results.append(
-            FuzzyScore(
-                model_id=model["model_id"],
-                score=avg_score,
-                best_match_field=best_field,
-                best_match_value=best_value,
-            )
-        )
+        results = _build_fuzzy_score(best_field, best_value, model, results, token_scores)
 
     return results
