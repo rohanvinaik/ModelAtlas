@@ -109,6 +109,12 @@ controlplane:
 # Evidence-based exemptions approved via propose_exemption
 # Each requires mutation kill rate >= 80% + rationale + evidence
 approved_exemptions:
+  - file: src/model_atlas/query.py
+    function: search
+    code: complexity
+    rationale: "Compound scoring across 4 signal types requires sequential accumulation"
+    kill_rate: 1.00
+    approved_at: "2026-03-24 00:30:44"
   - file: src/model_atlas/extraction/deterministic.py
     function: ConfigSignals
     code: too-many-attributes

@@ -102,6 +102,19 @@ def _load_skip_set(output_path: str) -> set[str]:
     return skip
 
 
+def _call_ollama(args, client, model_id, prompt):
+    response = client.chat.completions.create(
+        model=args.model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.3,
+    )
+    text = response.choices[0].message.content or ""
+    result = _parse_and_validate(text)
+    out = json.dumps({"model_id": model_id, **result})
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Standalone Phase C3 quality gate worker"
@@ -160,15 +173,7 @@ def main() -> None:
                 continue
 
             try:
-                response = client.chat.completions.create(
-                    model=args.model,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.3,
-                )
-                text = response.choices[0].message.content or ""
-                result = _parse_and_validate(text)
-                out = json.dumps({"model_id": model_id, **result})
+                out = _call_ollama(args, client, model_id, prompt)
             except Exception as e:
                 out = json.dumps({"model_id": model_id, "error": str(e)})
                 errors += 1

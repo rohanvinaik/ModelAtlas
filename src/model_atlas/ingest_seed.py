@@ -176,6 +176,31 @@ def _passes_seed_filters(
     return model_id
 
 
+def _try_index_model(
+    network_conn: sqlite3.Connection,
+    model: object,
+    model_id: str,
+    existing: set[str],
+    count: int,
+    pass_name: str,
+) -> int:
+    """Try to extract and store a single model. Returns updated count."""
+    try:
+        inp = _hf_model_to_input(model)
+        extract_and_store(network_conn, inp)
+        existing.add(model_id)
+        count += 1
+
+        if count % INGEST_BATCH_SIZE == 0:
+            network_conn.commit()
+            logger.info(
+                "Seed pass '%s': %d models indexed...", pass_name, count
+            )
+    except Exception:
+        logger.warning("Seed: failed %s", model_id, exc_info=True)
+    return count
+
+
 def _seed_single_pass(
     network_conn: sqlite3.Connection,
     pass_def: dict,
@@ -210,19 +235,9 @@ def _seed_single_pass(
                     break
                 continue
 
-            try:
-                inp = _hf_model_to_input(model)
-                extract_and_store(network_conn, inp)
-                existing.add(model_id)
-                count += 1
-
-                if count % INGEST_BATCH_SIZE == 0:
-                    network_conn.commit()
-                    logger.info(
-                        "Seed pass '%s': %d models indexed...", pass_name, count
-                    )
-            except Exception:
-                logger.warning("Seed: failed %s", model_id, exc_info=True)
+            count = _try_index_model(
+                network_conn, model, model_id, existing, count, pass_name
+            )
 
     return count
 

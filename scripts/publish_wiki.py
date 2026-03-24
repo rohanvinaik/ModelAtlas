@@ -39,6 +39,75 @@ def wiki_link_fn(page_id: str, title: str) -> str:
     return f"[{title}]({page_id_to_wiki_name(page_id)})"
 
 
+def _process_wiki_page(
+    page_config: dict,
+    page_map: dict,
+    materialized_dir: Path,
+    wiki_dir: Path,
+    metrics: dict,
+    rails: dict,
+    all_pages: list[dict],
+    dry_run: bool,
+) -> None:
+    """Transform and write a single wiki page."""
+    page_id = page_config["id"]
+    wiki_name = page_map[page_id]
+    source_path = materialized_dir / f"{page_id}.md"
+
+    if not source_path.exists():
+        print(f"  SKIP {page_id} (not materialized)")
+        return
+
+    content = apply_common_transforms(
+        source_path,
+        page_config,
+        metrics,
+        rails,
+        all_pages,
+        page_map,
+        link_fn=wiki_link_fn,
+    )
+
+    dest = wiki_dir / f"{wiki_name}.md"
+    if dry_run:
+        lines = content.count("\n")
+        print(f"  {page_id} -> {wiki_name}.md ({lines} lines)")
+    else:
+        dest.write_text(content)
+        print(f"  {page_id} -> {wiki_name}.md")
+
+
+def _copy_special_files(
+    docs_wiki: Path, wiki_dir: Path, page_map: dict, metrics: dict, dry_run: bool
+) -> None:
+    """Copy and transform _Sidebar.md and _Footer.md."""
+    for special in ["_Sidebar.md", "_Footer.md"]:
+        src = docs_wiki / special
+        if src.exists():
+            content = src.read_text()
+            content = rewrite_links(content, page_map)
+            content = interpolate_metrics(content, metrics)
+            dest = wiki_dir / special
+            if dry_run:
+                print(f"  {special} (special)")
+            else:
+                dest.write_text(content)
+                print(f"  {special}")
+
+
+def _push_wiki(wiki_dir: Path, message: str | None) -> None:
+    """Commit and push wiki changes."""
+    msg = message or "Update wiki from materializer"
+    subprocess.run(["git", "add", "-A"], cwd=wiki_dir, check=True)
+    result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=wiki_dir)
+    if result.returncode == 0:
+        print("\nNo changes to push.")
+    else:
+        subprocess.run(["git", "commit", "-m", msg], cwd=wiki_dir, check=True)
+        subprocess.run(["git", "push"], cwd=wiki_dir, check=True)
+        print("\nPushed to wiki repo.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Publish wiki to GitHub Wiki repo")
     parser.add_argument(
@@ -104,59 +173,16 @@ def main() -> int:
             (wiki_dir / old_file).unlink()
             print(f"  REMOVED {old_file}")
 
-    # Process each page
     for page_config in all_pages:
-        page_id = page_config["id"]
-        wiki_name = page_map[page_id]
-        source_path = materialized_dir / f"{page_id}.md"
-
-        if not source_path.exists():
-            print(f"  SKIP {page_id} (not materialized)")
-            continue
-
-        content = apply_common_transforms(
-            source_path,
-            page_config,
-            metrics,
-            rails,
-            all_pages,
-            page_map,
-            link_fn=wiki_link_fn,
+        _process_wiki_page(
+            page_config, page_map, materialized_dir, wiki_dir,
+            metrics, rails, all_pages, args.dry_run,
         )
 
-        dest = wiki_dir / f"{wiki_name}.md"
-        if args.dry_run:
-            lines = content.count("\n")
-            print(f"  {page_id} -> {wiki_name}.md ({lines} lines)")
-        else:
-            dest.write_text(content)
-            print(f"  {page_id} -> {wiki_name}.md")
+    _copy_special_files(docs_wiki, wiki_dir, page_map, metrics, args.dry_run)
 
-    # Copy special files (_Sidebar.md, _Footer.md)
-    for special in ["_Sidebar.md", "_Footer.md"]:
-        src = docs_wiki / special
-        if src.exists():
-            content = src.read_text()
-            content = rewrite_links(content, page_map)
-            content = interpolate_metrics(content, metrics)
-            dest = wiki_dir / special
-            if args.dry_run:
-                print(f"  {special} (special)")
-            else:
-                dest.write_text(content)
-                print(f"  {special}")
-
-    # Push if requested
     if args.push and not args.dry_run:
-        msg = args.message or "Update wiki from materializer"
-        subprocess.run(["git", "add", "-A"], cwd=wiki_dir, check=True)
-        result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=wiki_dir)
-        if result.returncode == 0:
-            print("\nNo changes to push.")
-        else:
-            subprocess.run(["git", "commit", "-m", msg], cwd=wiki_dir, check=True)
-            subprocess.run(["git", "push"], cwd=wiki_dir, check=True)
-            print("\nPushed to wiki repo.")
+        _push_wiki(wiki_dir, args.message)
 
     return 0
 

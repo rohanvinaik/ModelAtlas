@@ -51,6 +51,29 @@ def _load_skip_set(output_path: str) -> set[str]:
     return skip
 
 
+def _run_inference(args, card_text, device, model, tokenizer, torch):
+    prompt = f"<MODEL_CARD>{card_text}</MODEL_CARD>"
+    inputs = tokenizer(
+        prompt,
+        return_tensors="pt",
+        max_length=args.max_length,
+        truncation=True,
+    ).to(device)
+    input_length = inputs["input_ids"].shape[1]
+
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=args.max_new_tokens,
+            temperature=TEMPERATURE,
+            do_sample=True,
+        )
+
+    new_tokens = outputs[0][input_length:]
+    summary = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    return summary
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Standalone Phase C1 Smol-Hub-tldr worker"
@@ -118,25 +141,7 @@ def main() -> None:
                 continue
 
             try:
-                prompt = f"<MODEL_CARD>{card_text}</MODEL_CARD>"
-                inputs = tokenizer(
-                    prompt,
-                    return_tensors="pt",
-                    max_length=args.max_length,
-                    truncation=True,
-                ).to(device)
-                input_length = inputs["input_ids"].shape[1]
-
-                with torch.no_grad():
-                    outputs = model.generate(
-                        **inputs,
-                        max_new_tokens=args.max_new_tokens,
-                        temperature=TEMPERATURE,
-                        do_sample=True,
-                    )
-
-                new_tokens = outputs[0][input_length:]
-                summary = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+                summary = _run_inference(args, card_text, device, model, tokenizer, torch)
                 out = json.dumps({"model_id": model_id, "smol_summary": summary})
             except Exception as e:
                 out = json.dumps({"model_id": model_id, "error": str(e)})

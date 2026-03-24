@@ -218,6 +218,33 @@ def generate_sitemap(all_pages: list[dict], base_url: str) -> str:
     return "\n".join(lines)
 
 
+def _is_valid_href(href: str, html_file: Path, out_dir: Path) -> bool:
+    """Check whether an href from an HTML file resolves to a valid target."""
+    # Skip external links, anchors-only, assets
+    if href.startswith(("http://", "https://", "#", "mailto:")):
+        return True
+    if href.endswith((".css", ".js")):
+        return True
+
+    # Strip fragment before resolving
+    href_path = href.split("#")[0]
+    if not href_path or href_path == "./":
+        return True
+
+    # Resolve relative to the HTML file's directory
+    target = (html_file.parent / href_path).resolve()
+
+    # Valid if it's a directory with index.html, or is the out_dir root
+    if target == out_dir.resolve():
+        return True
+    if target.is_dir() and (target / "index.html").exists():
+        return True
+    if target.is_file():
+        return True
+
+    return False
+
+
 def check_links(out_dir: Path, all_pages: list[dict]) -> list[str]:
     """Check for broken internal links in generated HTML files."""
     errors = []
@@ -225,32 +252,92 @@ def check_links(out_dir: Path, all_pages: list[dict]) -> list[str]:
         content = html_file.read_text()
         for match in re.finditer(r'href="([^"]*)"', content):
             href = match.group(1)
-            # Skip external links, anchors-only, assets
-            if href.startswith(("http://", "https://", "#", "mailto:")):
-                continue
-            if href.endswith((".css", ".js")):
-                continue
-
-            # Strip fragment before resolving
-            href_path = href.split("#")[0]
-            if not href_path or href_path == "./":
-                continue
-
-            # Resolve relative to the HTML file's directory
-            target = (html_file.parent / href_path).resolve()
-
-            # Valid if it's a directory with index.html, or is the out_dir root
-            if target == out_dir.resolve():
-                continue
-            if target.is_dir() and (target / "index.html").exists():
-                continue
-            if target.is_file():
-                continue
-
-            rel = html_file.relative_to(out_dir)
-            errors.append(f"  {rel}: broken link -> {href}")
+            if not _is_valid_href(href, html_file, out_dir):
+                rel = html_file.relative_to(out_dir)
+                errors.append(f"  {rel}: broken link -> {href}")
 
     return errors
+
+
+def _render_single_page(
+    source_path: Path,
+    page_config: dict,
+    page_id: str,
+    metrics: dict,
+    rails: dict,
+    all_pages: list[dict],
+    page_map: dict,
+    template: str,
+    out_dir: Path,
+    dry_run: bool,
+) -> None:
+    """Transform a single wiki page to HTML and write it."""
+    md_content = apply_common_transforms(
+        source_path,
+        page_config,
+        metrics,
+        rails,
+        all_pages,
+        page_map,
+        link_fn=pages_link_fn,
+    )
+
+    # Second pass: rewrite any remaining Wiki-Case links from source content
+    md_content = rewrite_wiki_case_links(md_content, all_pages)
+
+    # Root page: convert ../ prefix to ./ since index.html is at site root
+    if page_id == "home":
+        md_content = md_content.replace("](../", "](./")
+
+    # Convert markdown to HTML
+    content_html = md_to_html(md_content)
+    sidebar_html = build_sidebar_html(all_pages, rails, page_id)
+    prev_next_html = build_prev_next(page_config, all_pages, page_id)
+    description = extract_description(md_content)
+
+    page_html = render_page(
+        template,
+        title=page_config["title"],
+        content_html=content_html,
+        sidebar_html=sidebar_html,
+        prev_next_html=prev_next_html,
+        description=description,
+        is_root=(page_id == "home"),
+    )
+
+    # Write as page-id/index.html (home -> index.html at root)
+    if page_id == "home":
+        dest = out_dir / "index.html"
+    else:
+        dest = out_dir / page_id / "index.html"
+
+    if dry_run:
+        print(f"  {page_id} -> {dest.relative_to(out_dir)}")
+    else:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(page_html)
+        print(f"  {page_id} -> {dest.relative_to(out_dir)}")
+
+
+def _write_static_assets(out_dir: Path, all_pages: list[dict], base_url: str) -> None:
+    """Copy static assets, generate sitemap, robots.txt, and .nojekyll."""
+    if STYLE_PATH.exists():
+        shutil.copy2(STYLE_PATH, out_dir / "style.css")
+        print("  style.css")
+    if SCRIPT_PATH.exists():
+        shutil.copy2(SCRIPT_PATH, out_dir / "script.js")
+        print("  script.js")
+
+    sitemap = generate_sitemap(all_pages, base_url)
+    (out_dir / "sitemap.xml").write_text(sitemap)
+    print("  sitemap.xml")
+
+    robots = f"User-agent: *\nAllow: /\nSitemap: {base_url}sitemap.xml\n"
+    (out_dir / "robots.txt").write_text(robots)
+    print("  robots.txt")
+
+    (out_dir / ".nojekyll").write_text("")
+    print("  .nojekyll")
 
 
 def main() -> int:
@@ -326,75 +413,13 @@ def main() -> int:
             print(f"  SKIP {page_id} (not materialized)")
             continue
 
-        # Apply shared transforms (breadcrumb links use pages format)
-        md_content = apply_common_transforms(
-            source_path,
-            page_config,
-            metrics,
-            rails,
-            all_pages,
-            page_map,
-            link_fn=pages_link_fn,
+        _render_single_page(
+            source_path, page_config, page_id, metrics, rails,
+            all_pages, page_map, template, out_dir, args.dry_run,
         )
-
-        # Second pass: rewrite any remaining Wiki-Case links from source content
-        md_content = rewrite_wiki_case_links(md_content, all_pages)
-
-        # Root page: convert ../ prefix to ./ since index.html is at site root
-        if page_id == "home":
-            md_content = md_content.replace("](../", "](./")
-
-        # Convert markdown to HTML
-        content_html = md_to_html(md_content)
-        sidebar_html = build_sidebar_html(all_pages, rails, page_id)
-        prev_next_html = build_prev_next(page_config, all_pages, page_id)
-        description = extract_description(md_content)
-
-        page_html = render_page(
-            template,
-            title=page_config["title"],
-            content_html=content_html,
-            sidebar_html=sidebar_html,
-            prev_next_html=prev_next_html,
-            description=description,
-            is_root=(page_id == "home"),
-        )
-
-        # Write as page-id/index.html (home -> index.html at root)
-        if page_id == "home":
-            dest = out_dir / "index.html"
-        else:
-            dest = out_dir / page_id / "index.html"
-
-        if args.dry_run:
-            print(f"  {page_id} -> {dest.relative_to(out_dir)}")
-        else:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(page_html)
-            print(f"  {page_id} -> {dest.relative_to(out_dir)}")
 
     if not args.dry_run:
-        # Copy static assets
-        if STYLE_PATH.exists():
-            shutil.copy2(STYLE_PATH, out_dir / "style.css")
-            print("  style.css")
-        if SCRIPT_PATH.exists():
-            shutil.copy2(SCRIPT_PATH, out_dir / "script.js")
-            print("  script.js")
-
-        # Generate sitemap
-        sitemap = generate_sitemap(all_pages, args.base_url)
-        (out_dir / "sitemap.xml").write_text(sitemap)
-        print("  sitemap.xml")
-
-        # robots.txt
-        robots = f"User-agent: *\nAllow: /\nSitemap: {args.base_url}sitemap.xml\n"
-        (out_dir / "robots.txt").write_text(robots)
-        print("  robots.txt")
-
-        # .nojekyll
-        (out_dir / ".nojekyll").write_text("")
-        print("  .nojekyll")
+        _write_static_assets(out_dir, all_pages, args.base_url)
 
     # Link check
     if args.check_links and not args.dry_run:

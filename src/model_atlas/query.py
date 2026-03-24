@@ -476,10 +476,6 @@ def lineage(conn: sqlite3.Connection, model_id: str) -> dict:
 # ModelAtlas does deterministic math.
 # ---------------------------------------------------------------------------
 
-# Module-level IDF cache, invalidated by clearing it after index builds.
-_idf_cache: dict[str, float] = {}
-
-
 # ---------------------------------------------------------------------------
-# navigate() scoring helpers — extracted to reduce cognitive complexity
+# navigate() scoring helpers — extracted to query_navigate.py
 # ---------------------------------------------------------------------------

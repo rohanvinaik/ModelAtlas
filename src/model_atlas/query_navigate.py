@@ -18,6 +18,9 @@ from .query_types import (  # noqa: F401 — re-exported for backward compat
     StructuredQuery,
 )
 
+# Module-level IDF cache, invalidated by clearing it after index builds.
+_idf_cache: dict[str, float] = {}
+
 
 def _get_idf(conn: sqlite3.Connection) -> dict[str, float]:
     """Return cached IDF dict, computing on first call."""
