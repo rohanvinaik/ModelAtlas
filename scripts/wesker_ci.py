@@ -185,15 +185,15 @@ def profile_file(
     test_files = discover_test_files(project_root, full_path)
     tests = load_test_callables(test_files)
 
-    # Fallback: if convention matching found few tests, load all test files.
-    # This mirrors LintGate's Layer 3 discovery — convention-matched files are
-    # already scoped, so the fallback is bounded and catches indirect callers.
-    if len(tests) < 5:
-        all_test_files = _discover_all_test_files(project_root)
-        extra = [f for f in all_test_files if f not in set(test_files)]
-        if extra:
-            fallback_tests = load_test_callables(extra)
-            tests.extend(fallback_tests)
+    # Always load all test files as fallback. Convention-matched files are loaded
+    # first (and their callables appear first for monkey-patching priority), but
+    # cross-cutting test files (test_mutation_gaps.py, test_integration.py) that
+    # exercise functions from multiple modules are also included.
+    all_test_files = _discover_all_test_files(project_root)
+    extra = [f for f in all_test_files if f not in set(test_files)]
+    if extra:
+        fallback_tests = load_test_callables(extra)
+        tests.extend(fallback_tests)
 
     results: list[dict] = []
     for qualname, func_node in walk_functions(tree):
