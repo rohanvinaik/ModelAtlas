@@ -46,6 +46,37 @@ exclude = ["^mutants/", "^deploy/", "^\\.claude/"]
 [tool.bandit]
 exclude_dirs = ["mutants", "deploy", ".claude", "tests"]
 
+[tool.coverage.run]
+source = ["src/model_atlas"]
+omit = [
+    # Worker scripts — standalone, no ModelAtlas imports, run on remote machines
+    "src/model_atlas/phase_c_worker.py",
+    "src/model_atlas/phase_c1_worker.py",
+    "src/model_atlas/phase_c1_extended.py",
+    "src/model_atlas/phase_c3_worker.py",
+    "src/model_atlas/phase_d_worker.py",
+    # CLI entry points — argparse + orchestration, tested via integration
+    "src/model_atlas/ingest_cli.py",
+    "src/model_atlas/ingest.py",
+    "src/model_atlas/ingest_seed.py",
+    "src/model_atlas/ingest_vibes.py",
+    # External API dependencies — require HF/Ollama/datasets at runtime
+    "src/model_atlas/sources/huggingface.py",
+    "src/model_atlas/sources/ollama.py",
+    "src/model_atlas/sources/base.py",
+    "src/model_atlas/ground_truth.py",
+    "src/model_atlas/search/structured.py",
+    # Wiki CLI
+    "src/model_atlas/wiki/__main__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
