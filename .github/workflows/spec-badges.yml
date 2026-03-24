@@ -21,10 +21,15 @@ jobs:
           version: "latest"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: |
+          uv sync --extra dev
+          uv pip install git+https://github.com/rohanvinaik/Wesker.git
 
-      - name: Compute specification metrics
-        run: uv run python scripts/compute_spec_metrics.py
+      # ── Wesker mutation testing ──────────────────────────────────
+      - name: Run Wesker specification metrics
+        run: uv run python -m Wesker.metrics
+        env:
+          WESKER_COLOR: "1"
 
       - name: Create badges directory
         run: mkdir -p .github/badges
@@ -37,7 +42,7 @@ jobs:
           label: "Mutation Kill Rate"
           label-color: "333"
           status: "${{ env.MUTATION_KILL_PCT }}% (${{ env.MUTATION_KILLED }}/${{ env.MUTATION_TOTAL }})"
-          color: "2ea043"
+          color: ${{ env.MUTATION_KILL_PCT == '100' && '2ea043' || 'e5534b' }}
           path: ".github/badges/mutation-kill-rate.svg"
 
       - name: Generate MC/DC Badge

@@ -32,10 +32,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure scripts/ is on the path for wesker_engine/wesker_filter imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from wesker_ci import profile_codebase  # noqa: E402
+# Try Wesker package first, fall back to local scripts
+try:
+    from Wesker.ci import profile_codebase  # noqa: E402
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from wesker_ci import profile_codebase  # noqa: E402
 
 # Files excluded from mutation profiling — same as coverage exclusions.
 _MUTATION_EXCLUDE = {

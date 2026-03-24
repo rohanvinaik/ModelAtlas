@@ -15,6 +15,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
+    "Wesker @ git+https://github.com/rohanvinaik/Wesker.git",
 ]
 ingest = [
     "outlines>=0.1.0",
