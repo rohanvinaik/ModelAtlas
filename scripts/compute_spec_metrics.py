@@ -11,7 +11,6 @@ Designed to run in CI in <5 minutes.
 from __future__ import annotations
 
 import ast
-import copy
 import json
 import random
 import subprocess
@@ -134,60 +133,73 @@ class _MutantCollector(ast.NodeTransformer):
         return node
 
 
-class _MutantApplier(ast.NodeTransformer):
-    """Apply a single mutation to an AST."""
-
-    def __init__(self, site: dict) -> None:
-        self.site = site
-        self.applied = False
-
-    def visit_Constant(self, node: ast.Constant) -> ast.Constant:
-        if (
-            self.site["type"] == "value"
-            and not self.applied
-            and node.lineno == self.site["line"]
-            and node.value == self.site["original"]
-        ):
-            self.applied = True
-            return ast.copy_location(ast.Constant(value=self.site["replacement"]), node)
-        return node
-
-    def visit_Compare(self, node: ast.Compare) -> ast.Compare:
-        if (
-            self.site["type"] == "compare"
-            and not self.applied
-            and node.lineno == self.site["line"]
-        ):
-            idx = self.site["op_index"]
-            if idx < len(node.ops) and type(node.ops[idx]).__name__ == self.site["original"]:
-                self.applied = True
-                new_node = copy.deepcopy(node)
-                swap_to = CMP_SWAPS[type(node.ops[idx])]
-                new_node.ops[idx] = swap_to()
-                return new_node
-        self.generic_visit(node)
-        return node
-
-
 def _collect_mutations(source: str) -> list[dict]:
-    """Parse source and collect all mutation sites."""
+    """Parse source and collect mutation sites within function bodies only.
+
+    Skips module-level constants (dict literals, config values) that produce
+    unkillable or irrelevant mutants. Only mutates code inside def/async def.
+    """
     tree = ast.parse(source)
-    collector = _MutantCollector()
-    collector.visit(tree)
-    return collector.sites
+    sites: list[dict] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            collector = _MutantCollector()
+            collector.visit(node)
+            sites.extend(collector.sites)
+    return sites
 
 
-def _apply_mutation(source: str, site: dict) -> str:
-    """Apply a single mutation and return modified source."""
-    tree = ast.parse(source)
-    applier = _MutantApplier(site)
-    new_tree = applier.visit(tree)
-    ast.fix_missing_locations(new_tree)
-    return ast.unparse(new_tree)
+
+def _apply_text_mutation(source: str, site: dict) -> str | None:
+    """Apply a mutation via text-level substitution on the specific line.
+
+    For value mutations: replace the literal on the target line.
+    For compare mutations: swap the operator token on the target line.
+    Returns None if the substitution couldn't be applied.
+    """
+    lines = source.splitlines(keepends=True)
+    idx = site["line"] - 1
+    if idx < 0 or idx >= len(lines):
+        return None
+
+    line = lines[idx]
+
+    if site["type"] == "value":
+        orig = site["original"]
+        repl = site["replacement"]
+        # Build text representations
+        orig_text = repr(orig)
+        repl_text = repr(repl)
+        if orig_text not in line:
+            # Try without repr for simple numbers (e.g., 0.5 vs '0.5')
+            orig_text = str(orig)
+            repl_text = str(repl)
+        if orig_text not in line:
+            return None
+        lines[idx] = line.replace(orig_text, repl_text, 1)
+
+    elif site["type"] == "compare":
+        op_name = site["original"]
+        swap_name = site["replacement"]
+        _op_map = {
+            "LtE": " <= ", "Lt": " < ", "GtE": " >= ", "Gt": " > ",
+            "Eq": " == ", "NotEq": " != ",
+        }
+        op_text = _op_map.get(op_name)
+        swap_text = _op_map.get(swap_name)
+        if not op_text or not swap_text or op_text not in line:
+            return None
+        lines[idx] = line.replace(op_text, swap_text, 1)
+
+    else:
+        return None
+
+    result = "".join(lines)
+    return result if result != source else None
 
 
 def run_mutation_sampling(targets: list[str], sample_per_file: int = 30) -> tuple[int, int]:
-    """Run AST-based mutation sampling. Returns (killed, total)."""
+    """Run text-level mutation sampling. Returns (killed, total)."""
     killed = 0
     total = 0
 
@@ -205,17 +217,15 @@ def run_mutation_sampling(targets: list[str], sample_per_file: int = 30) -> tupl
             sites = random.sample(sites, sample_per_file)
 
         for site in sites:
-            try:
-                mutated = _apply_mutation(source, site)
-            except Exception:
+            mutated = _apply_text_mutation(source, site)
+            if mutated is None:
                 continue
 
             # Write mutant, run tests, restore
             path.write_text(mutated)
             try:
                 result = subprocess.run(
-                    [sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=no",
-                     ],
+                    [sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=no"],
                     capture_output=True,
                     text=True,
                     timeout=60,
@@ -224,7 +234,7 @@ def run_mutation_sampling(targets: list[str], sample_per_file: int = 30) -> tupl
                     killed += 1
                 total += 1
             except subprocess.TimeoutExpired:
-                killed += 1  # Timeout = killed (mutant causes hang)
+                killed += 1  # Timeout = killed
                 total += 1
             finally:
                 path.write_text(source)
