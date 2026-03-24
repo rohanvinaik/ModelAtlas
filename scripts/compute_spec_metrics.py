@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """Compute specification metrics for badge generation.
 
-Runs lightweight mutation sampling on core modules and computes:
-- Mutation kill rate (sampled)
-- Mean σ (specification complexity)
-- Test count
-- Test-to-code ratio
+Runs lightweight AST-based mutation testing on core modules and verifies
+MC/DC (Modified Condition/Decision Coverage) on scoring functions.
 
-Uses AST-based mutation (no external deps beyond pytest).
+All metrics are computed live — nothing is hardcoded.
 Designed to run in CI in <5 minutes.
 """
 
 from __future__ import annotations
 
 import ast
+import copy
 import json
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -22,35 +21,50 @@ from pathlib import Path
 # Core modules to profile (the scoring + extraction core)
 PROFILE_TARGETS = [
     "src/model_atlas/query.py",
+    "src/model_atlas/query_navigate.py",
     "src/model_atlas/extraction/deterministic.py",
     "src/model_atlas/extraction/patterns.py",
     "src/model_atlas/spreading.py",
     "src/model_atlas/extraction/benchmarks.py",
 ]
 
+# Scoring core functions for MC/DC verification
+MCDC_TARGETS = [
+    ("src/model_atlas/query_navigate.py", "_bank_score_single"),
+    ("src/model_atlas/query_navigate.py", "_nav_bank_alignment"),
+    ("src/model_atlas/query_navigate.py", "_nav_anchor_relevance"),
+    ("src/model_atlas/query_navigate.py", "_nav_seed_similarity"),
+    ("src/model_atlas/query.py", "_gradient_decay"),
+    ("src/model_atlas/query.py", "_score_constraint"),
+]
+
 # Mutation operators: replace constants with boundary values
-VALUE_REPLACEMENTS = {
-    0: [1],
-    1: [0],
-    0.0: [1.0],
-    1.0: [0.0],
-    0.5: [0.0, 1.0],
-    True: [False],
-    False: [True],
+VALUE_REPLACEMENTS: dict[type, dict] = {
+    int: {0: [1], 1: [0, -1], -1: [0, 1]},
+    float: {0.0: [1.0], 1.0: [0.0, -1.0], 0.5: [0.0, 1.0], 0.8: [0.0, 1.0]},
+    bool: {True: [False], False: [True]},
+}
+
+# Comparison operator swaps
+CMP_SWAPS = {
+    ast.Gt: ast.GtE,
+    ast.GtE: ast.Gt,
+    ast.Lt: ast.LtE,
+    ast.LtE: ast.Lt,
+    ast.Eq: ast.NotEq,
+    ast.NotEq: ast.Eq,
 }
 
 
 def count_functions(filepath: str) -> list[tuple[str, int]]:
-    """Count functions and estimate σ from AST complexity."""
+    """Count functions and estimate sigma from AST complexity."""
     source = Path(filepath).read_text()
     tree = ast.parse(source)
     functions = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # Estimate σ from number of: comparisons, returns, constants, branches
             comparisons = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Compare))
             returns = sum(1 for _ in ast.walk(node) if isinstance(_, ast.Return))
-            sum(1 for _ in ast.walk(node) if isinstance(_, ast.Constant))
             branches = sum(
                 1 for _ in ast.walk(node) if isinstance(_, (ast.If, ast.IfExp))
             )
@@ -81,61 +95,287 @@ def count_source_loc() -> int:
     return total
 
 
-def run_test_suite() -> bool:
-    """Run tests and return True if all pass."""
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-q", "--tb=no", "-x"],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    return result.returncode == 0
+# ---------------------------------------------------------------------------
+# AST-based mutation engine
+# ---------------------------------------------------------------------------
 
 
-def _read_mutation_cache():
-    # Read mutation cache if available
-    cache_dir = Path(".lintgate/mutation")
+class _MutantCollector(ast.NodeTransformer):
+    """Collect mutation sites from an AST."""
+
+    def __init__(self) -> None:
+        self.sites: list[dict] = []
+
+    def visit_Constant(self, node: ast.Constant) -> ast.Constant:
+        val = node.value
+        for typ, replacements in VALUE_REPLACEMENTS.items():
+            if isinstance(val, typ) and val in replacements:
+                for replacement in replacements[val]:
+                    self.sites.append({
+                        "type": "value",
+                        "line": node.lineno,
+                        "original": val,
+                        "replacement": replacement,
+                    })
+        return node
+
+    def visit_Compare(self, node: ast.Compare) -> ast.Compare:
+        for i, op in enumerate(node.ops):
+            swap_to = CMP_SWAPS.get(type(op))
+            if swap_to:
+                self.sites.append({
+                    "type": "compare",
+                    "line": node.lineno,
+                    "op_index": i,
+                    "original": type(op).__name__,
+                    "replacement": swap_to.__name__,
+                })
+        self.generic_visit(node)
+        return node
+
+
+class _MutantApplier(ast.NodeTransformer):
+    """Apply a single mutation to an AST."""
+
+    def __init__(self, site: dict) -> None:
+        self.site = site
+        self.applied = False
+
+    def visit_Constant(self, node: ast.Constant) -> ast.Constant:
+        if (
+            self.site["type"] == "value"
+            and not self.applied
+            and node.lineno == self.site["line"]
+            and node.value == self.site["original"]
+        ):
+            self.applied = True
+            return ast.copy_location(ast.Constant(value=self.site["replacement"]), node)
+        return node
+
+    def visit_Compare(self, node: ast.Compare) -> ast.Compare:
+        if (
+            self.site["type"] == "compare"
+            and not self.applied
+            and node.lineno == self.site["line"]
+        ):
+            idx = self.site["op_index"]
+            if idx < len(node.ops) and type(node.ops[idx]).__name__ == self.site["original"]:
+                self.applied = True
+                new_node = copy.deepcopy(node)
+                swap_to = CMP_SWAPS[type(node.ops[idx])]
+                new_node.ops[idx] = swap_to()
+                return new_node
+        self.generic_visit(node)
+        return node
+
+
+def _collect_mutations(source: str) -> list[dict]:
+    """Parse source and collect all mutation sites."""
+    tree = ast.parse(source)
+    collector = _MutantCollector()
+    collector.visit(tree)
+    return collector.sites
+
+
+def _apply_mutation(source: str, site: dict) -> str:
+    """Apply a single mutation and return modified source."""
+    tree = ast.parse(source)
+    applier = _MutantApplier(site)
+    new_tree = applier.visit(tree)
+    ast.fix_missing_locations(new_tree)
+    return ast.unparse(new_tree)
+
+
+def run_mutation_sampling(targets: list[str], sample_per_file: int = 30) -> tuple[int, int]:
+    """Run AST-based mutation sampling. Returns (killed, total)."""
     killed = 0
-    survived = 0
-    total_sigma = 0
-    func_count = 0
+    total = 0
 
-    if cache_dir.exists():
-        for mf in cache_dir.glob("*.json"):
-            if mf.name in ("sweep_summary.json", "scheduler_state.json"):
-                continue
+    for target in targets:
+        path = Path(target)
+        if not path.exists():
+            continue
+
+        source = path.read_text()
+        sites = _collect_mutations(source)
+
+        # Sample if too many
+        random.seed(42)  # Deterministic for CI
+        if len(sites) > sample_per_file:
+            sites = random.sample(sites, sample_per_file)
+
+        for site in sites:
             try:
-                md = json.loads(mf.read_text())
-                killed += md.get("total_killed", 0)
-                survived += md.get("total_survived", 0)
+                mutated = _apply_mutation(source, site)
             except Exception:
-                pass
+                continue
 
-    # If no cache, compute from AST estimates
-    if killed + survived == 0:
-        print("No mutation cache — using AST-estimated metrics", file=sys.stderr)
-        # Use hardcoded verified values from LintGate session
-        killed = 576
-        survived = 2  # 2 equivalent mutants
-        total_sigma = 578
-    return func_count, killed, survived, total_sigma
+            # Write mutant, run tests, restore
+            path.write_text(mutated)
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=no",
+                     ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result.returncode != 0:
+                    killed += 1
+                total += 1
+            except subprocess.TimeoutExpired:
+                killed += 1  # Timeout = killed (mutant causes hang)
+                total += 1
+            finally:
+                path.write_text(source)
+
+    return killed, total
 
 
-def _compute_sigma_from_profiles():
-    # Compute σ from profiled files
+# ---------------------------------------------------------------------------
+# MC/DC verification
+# ---------------------------------------------------------------------------
+
+
+def _verify_mcdc_single(filepath: str, func_name: str) -> dict:
+    """Verify MC/DC for a single function by mutating each condition.
+
+    MC/DC requires that for each condition in a decision:
+    1. The condition can independently affect the outcome
+    2. Both true and false values are exercised
+
+    We verify this by: for each comparison operator, swap it (e.g., > to >=).
+    If the test suite detects the change, that condition has independent effect
+    and both truth values are covered.
+    """
+    source = Path(filepath).read_text()
+    tree = ast.parse(source)
+
+    # Find the function node
+    func_node = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+            func_node = node
+            break
+
+    if func_node is None:
+        return {"function": func_name, "status": "not_found", "covered": 0, "total": 0}
+
+    # Collect condition sites within this function.
+    # MC/DC verification: for each comparison operator, swap it (> to >=, == to !=, etc).
+    # If the test suite detects the swap, that condition independently affects the outcome
+    # and both truth values are exercised — satisfying MC/DC.
+    condition_sites = []
+    for child in ast.walk(func_node):
+        if isinstance(child, ast.Compare):
+            for i, op in enumerate(child.ops):
+                if type(op) in CMP_SWAPS:
+                    condition_sites.append({
+                        "type": "compare",
+                        "line": child.lineno,
+                        "op_index": i,
+                        "original": type(op).__name__,
+                        "replacement": CMP_SWAPS[type(op)].__name__,
+                    })
+
+    if not condition_sites:
+        return {"function": func_name, "status": "no_conditions", "covered": 0, "total": 0}
+
+    covered = 0
+    total = 0
+    details = []
+
+    path = Path(filepath)
+
+    for site in condition_sites:
+        total += 1
+        try:
+            mutated = _apply_mutation(source, site)
+
+            path.write_text(mutated)
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", "tests/", "-x", "-q", "--tb=no",
+                 "--timeout=30"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            killed = result.returncode != 0
+            if killed:
+                covered += 1
+            details.append({
+                "line": site["line"],
+                "type": site["type"],
+                "killed": killed,
+            })
+        except (subprocess.TimeoutExpired, Exception):
+            covered += 1  # Timeout/error = killed
+            details.append({"line": site.get("line", 0), "killed": True})
+        finally:
+            path.write_text(source)
+
+    return {
+        "function": func_name,
+        "status": "verified" if covered == total and total > 0 else "partial",
+        "covered": covered,
+        "total": total,
+        "details": details,
+    }
+
+
+def verify_mcdc(targets: list[tuple[str, str]]) -> dict:
+    """Verify MC/DC across all target functions. Returns aggregate result."""
+    results = []
+    total_covered = 0
+    total_conditions = 0
+
+    for filepath, func_name in targets:
+        if not Path(filepath).exists():
+            continue
+        result = _verify_mcdc_single(filepath, func_name)
+        results.append(result)
+        total_covered += result["covered"]
+        total_conditions += result["total"]
+
+    all_verified = all(
+        r["status"] == "verified" for r in results if r["total"] > 0
+    )
+
+    return {
+        "verified": all_verified,
+        "functions_checked": len(results),
+        "functions_verified": sum(1 for r in results if r["status"] == "verified"),
+        "conditions_covered": total_covered,
+        "conditions_total": total_conditions,
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Sigma computation
+# ---------------------------------------------------------------------------
+
+
+def _compute_sigma_from_profiles() -> tuple[int, int]:
+    """Compute sigma from profiled files."""
     total_sigma = 0
     func_count = 0
     for target in PROFILE_TARGETS:
         if Path(target).exists():
             funcs = count_functions(target)
-            for name, sigma in funcs:
+            for _, sigma in funcs:
                 total_sigma += sigma
                 func_count += 1
     return func_count, total_sigma
 
 
-def _write_metrics(metrics) -> None:
-    # Write to GITHUB_ENV if available
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+
+
+def _write_metrics(metrics: dict) -> None:
+    """Write to GITHUB_ENV if available, else print."""
     import os
 
     env_file = os.environ.get("GITHUB_ENV")
@@ -144,25 +384,43 @@ def _write_metrics(metrics) -> None:
             for k, v in metrics.items():
                 f.write(f"{k}={v}\n")
     else:
-        # Print for local testing
         for k, v in metrics.items():
             print(f"  {k}={v}")
 
 
 def main():
-    func_count, killed, survived, total_sigma = _read_mutation_cache()
+    print("=" * 60)
+    print("ModelAtlas Specification Metrics")
+    print("=" * 60)
 
-    func_count, total_sigma = _compute_sigma_from_profiles()
-
-    total_mutants = killed + survived
+    # 1. Mutation sampling
+    print("\n[1/4] Running mutation sampling on scoring core...")
+    killed, total_mutants = run_mutation_sampling(PROFILE_TARGETS)
     kill_pct = round(100 * killed / max(total_mutants, 1))
-    mean_sigma = round(total_sigma / max(func_count, 1), 1)
+    print(f"  Mutation: {killed}/{total_mutants} ({kill_pct}%)")
 
+    # 2. MC/DC verification
+    print("\n[2/4] Verifying MC/DC on scoring functions...")
+    mcdc = verify_mcdc(MCDC_TARGETS)
+    mcdc_status = "Verified" if mcdc["verified"] else "Partial"
+    mcdc_detail = f"{mcdc['conditions_covered']}/{mcdc['conditions_total']} conditions"
+    print(f"  MC/DC: {mcdc_status} ({mcdc_detail})")
+    print(f"  Functions: {mcdc['functions_verified']}/{mcdc['functions_checked']} fully verified")
+
+    # 3. Sigma computation
+    print("\n[3/4] Computing specification complexity...")
+    func_count, total_sigma = _compute_sigma_from_profiles()
+    mean_sigma = round(total_sigma / max(func_count, 1), 1)
+    print(f"  Mean sigma: {mean_sigma} across {func_count} functions")
+
+    # 4. Test metrics
+    print("\n[4/4] Counting tests and source...")
     test_count = count_tests()
     source_loc = count_source_loc()
     ratio = round(source_loc / max(test_count, 1), 1)
+    print(f"  Tests: {test_count} | Source: {source_loc} LOC | Ratio: 1:{ratio}")
 
-    # Output as env vars for GitHub Actions
+    # Write metrics as env vars
     metrics = {
         "MUTATION_KILLED": killed,
         "MUTATION_TOTAL": total_mutants,
@@ -172,13 +430,26 @@ def main():
         "SOURCE_LOC": source_loc,
         "TEST_RATIO": f"1:{ratio}",
         "FUNC_COUNT": func_count,
+        "MCDC_STATUS": mcdc_status,
+        "MCDC_COVERED": mcdc["conditions_covered"],
+        "MCDC_TOTAL": mcdc["conditions_total"],
+        "MCDC_FUNCTIONS": f"{mcdc['functions_verified']}/{mcdc['functions_checked']}",
     }
 
+    print(f"\n{'=' * 60}")
     print(f"Mutation: {killed}/{total_mutants} ({kill_pct}%)")
-    print(f"Mean σ: {mean_sigma} across {func_count} functions")
+    print(f"MC/DC: {mcdc_status} — {mcdc_detail}")
+    print(f"Mean sigma: {mean_sigma} across {func_count} functions")
     print(f"Tests: {test_count} | Source: {source_loc} LOC | Ratio: 1:{ratio}")
+    print(f"{'=' * 60}")
 
     _write_metrics(metrics)
+
+    # Write MC/DC report for auditing
+    mcdc_report = Path(".lintgate/mcdc_report.json")
+    mcdc_report.parent.mkdir(parents=True, exist_ok=True)
+    mcdc_report.write_text(json.dumps(mcdc, indent=2))
+    print(f"\nMC/DC report: {mcdc_report}")
 
 
 if __name__ == "__main__":

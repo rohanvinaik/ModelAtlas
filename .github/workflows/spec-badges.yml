@@ -45,8 +45,8 @@ jobs:
         with:
           label: "MC/DC (DO-178C Level A)"
           label-color: "333"
-          status: "Verified"
-          color: "0ea5e9"
+          status: "${{ env.MCDC_STATUS }} (${{ env.MCDC_COVERED }}/${{ env.MCDC_TOTAL }} conditions)"
+          color: ${{ env.MCDC_STATUS == 'Verified' && '0ea5e9' || 'e5534b' }}
           path: ".github/badges/mcdc.svg"
 
       - name: "Generate Mean σ Badge"
