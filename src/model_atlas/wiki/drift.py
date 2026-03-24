@@ -61,6 +61,40 @@ class DriftReport:
         return "\n".join(lines)
 
 
+def _check_single_page_drift(entry, output_dir, page, repo_root, report) -> None:
+    reasons: list[str] = []
+
+    # Check source hash
+    source_paths = [s.path for s in page.sources]
+    current_source_hash = compute_source_hash(source_paths, repo_root)
+    if current_source_hash != entry.source_hash:
+        changed = [s.path for s in page.sources if (repo_root / s.path).exists()]
+        reasons.append(f"source changed ({', '.join(changed)})")
+
+    # Check spec hash
+    current_spec_hash = page.spec_hash()
+    if current_spec_hash != entry.spec_hash:
+        reasons.append("page config changed")
+
+    # Check file on disk
+    page_path = output_dir / f"{page.id}.md"
+    if not page_path.exists():
+        reasons.append("page file missing")
+    else:
+        disk_hash = compute_file_hash(page_path)
+        if disk_hash != entry.file_hash:
+            reasons.append("page file modified on disk")
+
+    status = "stale" if reasons else "ok"
+    report.pages.append(
+        PageDrift(
+            page_id=page.id,
+            status=status,
+            reasons=reasons,
+        )
+    )
+
+
 def check_drift(
     config: WikiConfig,
     repo_root: Path,
@@ -114,37 +148,7 @@ def check_drift(
             )
             continue
 
-        reasons: list[str] = []
-
-        # Check source hash
-        source_paths = [s.path for s in page.sources]
-        current_source_hash = compute_source_hash(source_paths, repo_root)
-        if current_source_hash != entry.source_hash:
-            changed = [s.path for s in page.sources if (repo_root / s.path).exists()]
-            reasons.append(f"source changed ({', '.join(changed)})")
-
-        # Check spec hash
-        current_spec_hash = page.spec_hash()
-        if current_spec_hash != entry.spec_hash:
-            reasons.append("page config changed")
-
-        # Check file on disk
-        page_path = output_dir / f"{page.id}.md"
-        if not page_path.exists():
-            reasons.append("page file missing")
-        else:
-            disk_hash = compute_file_hash(page_path)
-            if disk_hash != entry.file_hash:
-                reasons.append("page file modified on disk")
-
-        status = "stale" if reasons else "ok"
-        report.pages.append(
-            PageDrift(
-                page_id=page.id,
-                status=status,
-                reasons=reasons,
-            )
-        )
+        _check_single_page_drift(entry, output_dir, page, repo_root, report)
 
     # Check for orphaned pages (in manifest but not in config)
     for entry in manifest.pages:
