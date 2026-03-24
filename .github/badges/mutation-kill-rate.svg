@@ -1,5 +1,5 @@
-<svg width="204.6" height="20" viewBox="0 0 2046 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mutation Kill Rate: 62% (111/179)">
-  <title>Mutation Kill Rate: 62% (111/179)</title>
+<svg width="204.6" height="20" viewBox="0 0 2046 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mutation Kill Rate: 68% (138/204)">
+  <title>Mutation Kill Rate: 68% (138/204)</title>
   <linearGradient id="a" x2="0" y2="100%">
     <stop offset="0" stop-opacity=".1" stop-color="#EEE"/>
     <stop offset="1" stop-opacity=".1"/>
@@ -13,8 +13,8 @@
   <g aria-hidden="true" fill="#fff" text-anchor="start" font-family="Verdana,DejaVu Sans,sans-serif" font-size="110">
     <text x="60" y="148" textLength="977" fill="#000" opacity="0.25">Mutation Kill Rate</text>
     <text x="50" y="138" textLength="977">Mutation Kill Rate</text>
-    <text x="1132" y="148" textLength="869" fill="#000" opacity="0.25">62% (111/179)</text>
-    <text x="1122" y="138" textLength="869">62% (111/179)</text>
+    <text x="1132" y="148" textLength="869" fill="#000" opacity="0.25">68% (138/204)</text>
+    <text x="1122" y="138" textLength="869">68% (138/204)</text>
   </g>
   
 </svg>
