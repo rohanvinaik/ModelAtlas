@@ -680,6 +680,24 @@ def list_model_sources() -> str:  # pragma: no cover — calls source adapters
     return json.dumps({"sources": sources}, indent=2)
 
 
+@mcp.tool()
+def phase_e_status() -> str:
+    """Show Phase E web enrichment progress and statistics.
+
+    Reports how many models have been enriched from web sources,
+    benchmark scores found, anchor links added, and recent run history.
+    """
+    from .ingest_phase_e import phase_e_status as _get_status
+
+    conn = db.get_connection()
+    try:
+        db.init_db(conn)
+        status = _get_status(conn)
+        return json.dumps(status, indent=2)
+    finally:
+        conn.close()
+
+
 def main():  # pragma: no cover — MCP entrypoint
     mcp.run()
 

@@ -67,6 +67,12 @@ VIBE_OLLAMA_BASE_URL = "http://localhost:11434/v1"
 # Phase C3 quality gate threshold
 QUALITY_GATE_MIN_SCORE = 0.5
 
+# Phase E web enrichment
+PHASE_E_WORK_DIR = CACHE_DIR / "phase_e_work"
+PHASE_E_OLLAMA_MODEL = "qwen3.5:4b"
+PHASE_E_WEB_DELAY = 2.0  # seconds between web requests
+WEB_EXTRACTION_CONFIDENCE = 0.4
+
 # Phase D work directories
 PHASE_D_WORK_DIR = CACHE_DIR / "phase_d_work"
 PHASE_D_TRAINING_DIR = CACHE_DIR / "phase_d_training"

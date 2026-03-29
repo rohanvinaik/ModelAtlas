@@ -180,9 +180,51 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 - **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose.
 - **Not a ranking system.** No "best model" score. Navigation, not leaderboard.
 
+## Enriching the network
+
+Each phase writes at a confidence tier. Lower tiers cannot overwrite higher ones.
+
+**Phases A–B: Deterministic extraction** (confidence 1.0 / 0.85). Fetch from HuggingFace, classify from config files and tags. No LLM.
+
+```bash
+python -m model_atlas.ingest --phase ab --min-likes 5
+```
+
+**Phase C: Constrained LLM classification** (confidence 0.5). A local model reads each model card and selects from the 166-anchor dictionary. It cannot invent labels — the output schema is the vocabulary.
+
+```bash
+python -m model_atlas.ingest --export-c2 4       # export shards
+python scripts/phase_c_worker.py --input shard_0.jsonl --output results_0.jsonl  # run anywhere
+python -m model_atlas.ingest --merge-c2 results_*.jsonl
+```
+
+**Phase D: Audit and heal** (confidence 0.6). Deterministic comparison of C2 anchors against Tier 1/2 ground truth. Mismatches get re-extracted.
+
+```bash
+python -m model_atlas.ingest --audit-c2
+python -m model_atlas.ingest --export-d3 4 && python -m model_atlas.ingest --merge-d3 results_*.jsonl --run-id <id>
+```
+
+**Phase E: Web enrichment** (confidence 0.4). Phases A–D work from HuggingFace metadata. Phase E searches the open web for fuzzier, more qualitative signal — benchmark mentions, comparison articles, community impressions. Same constrained selection from the anchor vocabulary, but the source material is noisier, so the confidence tier is the lowest.
+
+```bash
+# One-time: self-hosted search (aggregates Google/Bing/DDG, no rate limits)
+docker run -d --name searxng -p 8888:8080 \
+  -v /path/to/settings.yml:/etc/searxng/settings.yml searxng/searxng
+
+# Export → run → merge (same pattern as C/D)
+python -m model_atlas.ingest --export-e 4 --export-e-banks CAPABILITY,QUALITY
+python scripts/phase_e_worker.py --input shard_0.jsonl --output results_0.jsonl \
+    --model qwen3.5:4b --searxng http://localhost:8888 --snippets-only --resume
+python -m model_atlas.ingest --merge-e results_*.jsonl --merge-e-dry-run
+python -m model_atlas.ingest --merge-e results_*.jsonl
+```
+
+All workers are standalone scripts — `scp` to any machine, `--resume` from any crash, shard across as many machines as you have. [`docs/pipeline.md`](docs/pipeline.md) has the full reference.
+
 ## Status
 
-29,657 models. 166 anchors. 195K model-anchor links. 26K prose summaries. 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. Models with <10 likes are not yet indexed — the 29K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
+29,657 models. 166 anchors. 195K model-anchor links. 26K prose summaries. 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. Phase E web enrichment in progress across 3 machines. Models with <10 likes are not yet indexed — the 29K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
 
 Part of a research program on structured navigation through constrained semantic spaces — the same paradigm applied to [theorem proving](https://github.com/rohanvinaik/Wayfinder) and [code quality supervision](https://github.com/rohanvinaik/LintGate).
 

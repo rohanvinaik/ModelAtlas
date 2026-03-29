@@ -219,6 +219,62 @@ def _cmd_phase_d_status() -> None:
     network_conn.close()
 
 
+def _cmd_phase_e(args: argparse.Namespace) -> bool:
+    """Handle Phase E commands. Returns True if handled."""
+    if args.export_e is not None:
+        from .ingest_phase_e_export import export_phase_e
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        bank_list = args.export_e_banks.upper().split(",") if args.export_e_banks else None
+        n = export_phase_e(
+            network_conn,
+            num_shards=args.export_e,
+            banks=bank_list,
+            min_downloads=args.export_e_min_downloads,
+            full_corpus=args.export_e_full_corpus,
+        )
+        network_conn.close()
+        print(f"Phase E export: {n} models across {args.export_e} shards")
+        return True
+
+    if args.merge_e:
+        from .ingest_phase_e import merge_phase_e
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        result = merge_phase_e(
+            network_conn, args.merge_e, dry_run=args.merge_e_dry_run
+        )
+        network_conn.close()
+        dry = " (DRY RUN)" if args.merge_e_dry_run else ""
+        print(f"Phase E merge{dry}: {result}")
+        return True
+
+    if args.phase_e_status:
+        from .ingest_phase_e import phase_e_status
+
+        network_conn = db.get_connection()
+        db.init_db(network_conn)
+        status = phase_e_status(network_conn)
+        network_conn.close()
+        print("Phase E Web Enrichment Status")
+        print("=" * 50)
+        print(f"  Models enriched: {status['web_enriched_models']}/{status['total_models']} "
+              f"({status['coverage_pct']}%)")
+        print(f"  Web summaries: {status['web_summaries']}")
+        print(f"  Web anchor links: {status['web_anchor_links']}")
+        print(f"  Benchmark scores: {status['benchmark_scores']} "
+              f"({status['benchmark_models']} models)")
+        if status["recent_runs"]:
+            print("  Recent runs:")
+            for r in status["recent_runs"]:
+                print(f"    {r['run_id']}... status={r['status']} started={r['started']}")
+        return True
+
+    return False
+
+
 def _cmd_seed(args: argparse.Namespace) -> None:
     """Handle --seed command."""
     from .ingest_seed import seed
@@ -336,6 +392,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--phase-d-status", action="store_true", help="Phase D status")
 
+    # Phase E (web enrichment)
+    parser.add_argument(
+        "--export-e", type=int, metavar="NUM_SHARDS", help="Export Phase E web enrichment input"
+    )
+    parser.add_argument(
+        "--export-e-banks", default=None,
+        help="Comma-separated banks for Phase E export (default: all)",
+    )
+    parser.add_argument(
+        "--export-e-min-downloads", type=int, default=100,
+        help="Phase E priority download threshold (default: 100)",
+    )
+    parser.add_argument(
+        "--export-e-full-corpus", action="store_true",
+        help="Include models below download threshold",
+    )
+    parser.add_argument(
+        "--merge-e", nargs="+", metavar="FILE", help="Merge Phase E results"
+    )
+    parser.add_argument(
+        "--merge-e-dry-run", action="store_true", help="Phase E merge dry run"
+    )
+    parser.add_argument("--phase-e-status", action="store_true", help="Phase E status")
+
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     return parser
 
@@ -357,6 +437,9 @@ def main() -> None:
         return
 
     if _cmd_phase_d(args):
+        return
+
+    if _cmd_phase_e(args):
         return
 
     if args.seed is not None:
