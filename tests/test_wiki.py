@@ -130,6 +130,42 @@ class TestExtractor:
         result = extract_sections(source, wiki_tree)
         assert "source not found" in result
 
+    def test_extract_docstrings_single_line(self, wiki_tree: Path):
+        (wiki_tree / "mod.py").write_text('def f():\n    """Single line."""\n    pass\n')
+        source = SourceSpec(path="mod.py", extract="docstrings")
+        result = extract_sections(source, wiki_tree)
+        assert "Single line." in result
+
+    def test_extract_docstrings_multiline(self, wiki_tree: Path):
+        code = 'def f():\n    """First line.\n\n    More detail.\n    """\n    pass\n'
+        (wiki_tree / "mod.py").write_text(code)
+        source = SourceSpec(path="mod.py", extract="docstrings")
+        result = extract_sections(source, wiki_tree)
+        assert "First line." in result
+        assert "More detail." in result
+
+    def test_extract_docstrings_closing_with_text(self, wiki_tree: Path):
+        code = 'def f():\n    """Start.\n    End before close."""\n    pass\n'
+        (wiki_tree / "mod.py").write_text(code)
+        source = SourceSpec(path="mod.py", extract="docstrings")
+        result = extract_sections(source, wiki_tree)
+        assert "Start." in result
+        assert "End before close." in result
+
+    def test_extract_docstrings_single_quotes(self, wiki_tree: Path):
+        code = "def f():\n    '''Single quote doc.'''\n    pass\n"
+        (wiki_tree / "mod.py").write_text(code)
+        source = SourceSpec(path="mod.py", extract="docstrings")
+        result = extract_sections(source, wiki_tree)
+        assert "Single quote doc." in result
+
+    def test_extract_single_section_string(self, wiki_tree: Path):
+        """sections can be a single string, not a list."""
+        source = SourceSpec(path="docs/design.md", sections="Overview")
+        result = extract_sections(source, wiki_tree)
+        assert "This is the overview" in result
+        assert "API docs" not in result
+
 
 # ---------- Determinism ----------
 

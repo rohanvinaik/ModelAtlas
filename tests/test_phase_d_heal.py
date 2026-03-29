@@ -93,6 +93,74 @@ class TestSelectHealingCandidates:
             select_healing_candidates(network_conn, None, "invalid", budget=10)
 
 
+class TestGetAuditFindings:
+    def test_findings_with_json_detail(self, network_conn):
+        """Findings with valid JSON detail are parsed."""
+        _add_model(network_conn, "test/m")
+        run_id = db.create_phase_d_run(network_conn, "d1")
+        db.insert_audit_finding(
+            network_conn,
+            db.AuditFinding(
+                run_id=run_id,
+                model_id="test/m",
+                mismatch_type="contradiction",
+                bank="CAPABILITY",
+                c2_anchor="chat",
+                det_anchor="code-generation",
+                severity=0.8,
+                detail={"reason": "tag mismatch"},
+            ),
+        )
+        network_conn.commit()
+
+        from model_atlas.phase_d_heal import _get_audit_findings_for_model
+
+        findings = _get_audit_findings_for_model(network_conn, "test/m")
+        assert len(findings) == 1
+        assert findings[0]["detail"] == {"reason": "tag mismatch"}
+
+    def test_findings_with_invalid_json_detail(self, network_conn):
+        """Findings with non-JSON detail skip the detail field."""
+        _add_model(network_conn, "test/m")
+        run_id = db.create_phase_d_run(network_conn, "d1")
+        # Insert directly via SQL to bypass dataclass validation
+        network_conn.execute(
+            """INSERT INTO audit_findings
+               (run_id, model_id, mismatch_type, bank, severity, detail)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (run_id, "test/m", "gap", "DOMAIN", 0.5, "not valid json"),
+        )
+        network_conn.commit()
+
+        from model_atlas.phase_d_heal import _get_audit_findings_for_model
+
+        findings = _get_audit_findings_for_model(network_conn, "test/m")
+        assert len(findings) == 1
+        assert "detail" not in findings[0]
+
+    def test_findings_with_null_detail(self, network_conn):
+        """Findings with null detail have no detail key."""
+        _add_model(network_conn, "test/m")
+        run_id = db.create_phase_d_run(network_conn, "d1")
+        db.insert_audit_finding(
+            network_conn,
+            db.AuditFinding(
+                run_id=run_id,
+                model_id="test/m",
+                mismatch_type="gap",
+                bank="DOMAIN",
+                severity=0.5,
+            ),
+        )
+        network_conn.commit()
+
+        from model_atlas.phase_d_heal import _get_audit_findings_for_model
+
+        findings = _get_audit_findings_for_model(network_conn, "test/m")
+        assert len(findings) == 1
+        assert "detail" not in findings[0]
+
+
 class TestBuildHealingPrompt:
     def test_includes_model_info(self):
         """Prompt includes model_id and raw metadata."""
