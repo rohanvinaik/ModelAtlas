@@ -59,9 +59,7 @@ def _get_existing_anchor_confidence(
     return row[0] if row else None
 
 
-def _validate_anchor(
-    conn: sqlite3.Connection, label: str
-) -> int | None:
+def _validate_anchor(conn: sqlite3.Connection, label: str) -> int | None:
     """Look up anchor_id by label. Returns None if not in dictionary."""
     row = conn.execute(
         "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
@@ -83,6 +81,53 @@ def _qc_check_contradiction(
     return False
 
 
+def _link_bank_anchors(
+    conn: sqlite3.Connection,
+    model_id: str,
+    selected: list,
+    dry_run: bool,
+    stats: dict,
+) -> list[str]:
+    """Validate and link anchors for one bank. Returns list of newly linked labels."""
+    new_anchors: list[str] = []
+    for label in selected:
+        label = label.strip().lower()
+        anchor_id = _validate_anchor(conn, label)
+        if anchor_id is None:
+            stats["anchors_skipped_invalid"] += 1
+            continue
+
+        existing_conf = _get_existing_anchor_confidence(conn, model_id, anchor_id)
+        if existing_conf is not None and existing_conf >= WEB_EXTRACTION_CONFIDENCE:
+            stats["anchors_skipped_existing"] += 1
+            continue
+
+        if _qc_check_contradiction(conn, model_id, anchor_id):
+            stats["anchors_skipped_contradiction"] += 1
+            continue
+
+        if not dry_run:
+            db.link_anchor(conn, model_id, anchor_id, confidence=WEB_EXTRACTION_CONFIDENCE)
+        stats["anchors_linked"] += 1
+        new_anchors.append(label)
+    return new_anchors
+
+
+def _store_benchmarks(
+    conn: sqlite3.Connection,
+    model_id: str,
+    benchmarks: dict,
+    dry_run: bool,
+    stats: dict,
+) -> None:
+    """Validate and store benchmark scores."""
+    for bench_name, bench_val in benchmarks.items():
+        if isinstance(bench_val, (int, float)) and 0 <= bench_val <= 100:
+            if not dry_run:
+                db.set_metadata(conn, model_id, f"benchmark:{bench_name}", str(bench_val), "float")
+            stats["benchmarks_stored"] += 1
+
+
 def _merge_one_item(
     conn: sqlite3.Connection, item: dict, dry_run: bool = False
 ) -> dict:
@@ -100,7 +145,6 @@ def _merge_one_item(
         "benchmarks_stored": 0,
     }
 
-    # Verify model exists
     exists = conn.execute(
         "SELECT 1 FROM models WHERE model_id = ?", (model_id,)
     ).fetchone()
@@ -108,63 +152,19 @@ def _merge_one_item(
         return stats
 
     all_new_anchors: list[str] = []
-    all_evidence: dict[str, str] = {}
-
-    for bank, bank_result in banks.items():
+    for bank_result in banks.values():
         selected = bank_result.get("selected_anchors") or []
-        evidence = bank_result.get("evidence") or {}
         benchmarks = bank_result.get("benchmark_scores") or {}
 
-        # Link anchors
-        for label in selected:
-            label = label.strip().lower()
-            anchor_id = _validate_anchor(conn, label)
-            if anchor_id is None:
-                stats["anchors_skipped_invalid"] += 1
-                continue
+        new = _link_bank_anchors(conn, model_id, selected, dry_run, stats)
+        all_new_anchors.extend(new)
+        _store_benchmarks(conn, model_id, benchmarks, dry_run, stats)
 
-            # QC: don't overwrite high-confidence existing links
-            existing_conf = _get_existing_anchor_confidence(conn, model_id, anchor_id)
-            if existing_conf is not None:
-                if existing_conf >= WEB_EXTRACTION_CONFIDENCE:
-                    stats["anchors_skipped_existing"] += 1
-                    continue
-
-            # QC: check for contradiction
-            if _qc_check_contradiction(conn, model_id, anchor_id):
-                stats["anchors_skipped_contradiction"] += 1
-                continue
-
-            if not dry_run:
-                db.link_anchor(
-                    conn, model_id, anchor_id,
-                    confidence=WEB_EXTRACTION_CONFIDENCE,
-                )
-            stats["anchors_linked"] += 1
-            all_new_anchors.append(label)
-            if label in evidence:
-                all_evidence[label] = evidence[label]
-
-        # Store benchmark scores
-        for bench_name, bench_val in benchmarks.items():
-            if isinstance(bench_val, (int, float)) and 0 <= bench_val <= 100:
-                meta_key = f"benchmark:{bench_name}"
-                if not dry_run:
-                    db.set_metadata(
-                        conn, model_id, meta_key, str(bench_val), "float"
-                    )
-                stats["benchmarks_stored"] += 1
-
-    # Store web summary and source URLs
     if not dry_run and (all_new_anchors or web_summary):
         if web_summary:
             db.set_metadata(conn, model_id, "web_summary", web_summary, "str")
         if source_urls:
-            db.set_metadata(
-                conn, model_id, "web_sources",
-                json.dumps(source_urls[:5]), "json",
-            )
-        # Mark as web-enriched for skip-on-re-export
+            db.set_metadata(conn, model_id, "web_sources", json.dumps(source_urls[:5]), "json")
         db.set_metadata(conn, model_id, "web_enriched", "true", "str")
 
     return stats
@@ -185,7 +185,8 @@ def merge_phase_e(
     run_id = None
     if not dry_run:
         run_id = db.create_phase_d_run(
-            conn, phase="e1",
+            conn,
+            phase="e1",
             config={"files": [str(Path(f).name) for f in files]},
         )
         conn.commit()
@@ -238,8 +239,12 @@ def merge_phase_e(
     logger.info(
         "merge_phase_e %s: merged=%d skipped=%d errors=%d "
         "anchors_linked=%d benchmarks=%d",
-        action, merged, skipped, errors,
-        total_stats["anchors_linked"], total_stats["benchmarks_stored"],
+        action,
+        merged,
+        skipped,
+        errors,
+        total_stats["anchors_linked"],
+        total_stats["benchmarks_stored"],
     )
     return result
 

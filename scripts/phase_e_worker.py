@@ -49,13 +49,18 @@ def _handle_signal(signum: int, frame: object) -> None:
 # Stage 1: Web Search (SearXNG primary, DDG fallback)
 # ---------------------------------------------------------------------------
 
+
 def searxng_search(
     query: str, searxng_url: str, max_results: int = 5, timeout: int = 15
 ) -> list[dict]:
     """Search via local SearXNG instance. Returns [{url, title, snippet}]."""
-    params = urllib.parse.urlencode({
-        "q": query, "format": "json", "categories": "general",
-    })
+    params = urllib.parse.urlencode(
+        {
+            "q": query,
+            "format": "json",
+            "categories": "general",
+        }
+    )
     url = f"{searxng_url}/search?{params}"
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
@@ -72,11 +77,13 @@ def searxng_search(
         if not u or u in seen:
             continue
         seen.add(u)
-        results.append({
-            "url": u,
-            "title": r.get("title", ""),
-            "snippet": r.get("content", ""),
-        })
+        results.append(
+            {
+                "url": u,
+                "title": r.get("title", ""),
+                "snippet": r.get("content", ""),
+            }
+        )
     return results
 
 
@@ -147,6 +154,7 @@ def web_search(
 # Stage 2: Page Fetch
 # ---------------------------------------------------------------------------
 
+
 def fetch_page(url: str, max_chars: int = 50000, timeout: int = 15) -> str | None:
     """Fetch URL, strip HTML to readable text."""
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
@@ -166,9 +174,7 @@ def fetch_page(url: str, max_chars: int = 50000, timeout: int = 15) -> str | Non
             rf"<{tag}[^>]*>.*?</{tag}>", " ", raw, flags=re.DOTALL | re.IGNORECASE
         )
     # Block elements → newlines
-    raw = re.sub(
-        r"<(?:p|div|br|h[1-6]|li|tr)[^>]*>", "\n", raw, flags=re.IGNORECASE
-    )
+    raw = re.sub(r"<(?:p|div|br|h[1-6]|li|tr)[^>]*>", "\n", raw, flags=re.IGNORECASE)
     # Strip remaining tags
     raw = re.sub(r"<[^>]+>", " ", raw)
     # Collapse whitespace
@@ -183,12 +189,33 @@ def fetch_page(url: str, max_chars: int = 50000, timeout: int = 15) -> str | Non
 # ---------------------------------------------------------------------------
 
 _EVALUATIVE_TERMS = [
-    "excellent", "outstanding", "poor", "mediocre", "benchmark",
-    "compared to", "better than", "worse than", "outperforms",
-    "evaluation", "results", "score", "accuracy", "performance",
-    "beats", "state-of-the-art", "SOTA", "leaderboard",
-    "fine-tuned", "trained on", "capabilities", "limitations",
-    "mmlu", "humaneval", "gsm8k", "hellaswag", "arc",
+    "excellent",
+    "outstanding",
+    "poor",
+    "mediocre",
+    "benchmark",
+    "compared to",
+    "better than",
+    "worse than",
+    "outperforms",
+    "evaluation",
+    "results",
+    "score",
+    "accuracy",
+    "performance",
+    "beats",
+    "state-of-the-art",
+    "SOTA",
+    "leaderboard",
+    "fine-tuned",
+    "trained on",
+    "capabilities",
+    "limitations",
+    "mmlu",
+    "humaneval",
+    "gsm8k",
+    "hellaswag",
+    "arc",
 ]
 
 
@@ -386,18 +413,20 @@ def _ollama_chat(
     doesn't pass through think=false, causing qwen3.5 to waste all tokens
     on chain-of-thought reasoning instead of producing output.
     """
-    payload = json.dumps({
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "format": "json",
-        "stream": False,
-        "think": False,
-        "options": {
-            "temperature": temperature,
-            "num_predict": num_predict,
-            "num_ctx": num_ctx,
-        },
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "format": "json",
+            "stream": False,
+            "think": False,
+            "options": {
+                "temperature": temperature,
+                "num_predict": num_predict,
+                "num_ctx": num_ctx,
+            },
+        }
+    ).encode()
     req = urllib.request.Request(
         f"{base_url}/api/chat",
         data=payload,
@@ -442,6 +471,7 @@ def extract_bank(
 # Resume support
 # ---------------------------------------------------------------------------
 
+
 def _load_skip_set(output_path: str) -> set[str]:
     """Load model_ids from existing output for resume."""
     skip: set[str] = set()
@@ -467,6 +497,95 @@ def _load_skip_set(output_path: str) -> set[str]:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
+
+def _search_and_collect(
+    search_queries: list[str],
+    searxng_url: str | None,
+    max_pages: int,
+    timeout: int,
+    delay: float,
+    snippets_only: bool,
+) -> tuple[list[str], list[str]]:
+    """Run search queries and collect content. Returns (urls, pages)."""
+    all_urls: list[str] = []
+    all_pages: list[str] = []
+    search_failures = 0
+
+    for query in search_queries:
+        if _shutdown:
+            break
+        results = web_search(query, searxng_url, max_results=max_pages, timeout=timeout)
+        if not results:
+            search_failures += 1
+            if search_failures >= 2:
+                backoff = min(delay * (2**search_failures), 30.0)
+                print(
+                    f"  Search backoff: {backoff:.0f}s after {search_failures} failures",
+                    file=sys.stderr,
+                )
+                time.sleep(backoff)
+        else:
+            search_failures = 0
+
+        for r in results:
+            url = r["url"]
+            if url in set(all_urls):
+                continue
+            all_urls.append(url)
+
+            if snippets_only:
+                snippet = r.get("snippet", "")
+                title = r.get("title", "")
+                if snippet or title:
+                    all_pages.append(f"{title}\n{snippet}")
+            else:
+                page = fetch_page(url, timeout=timeout)
+                if page and len(page) > 100:
+                    all_pages.append(page)
+                time.sleep(delay * 0.5)
+
+        time.sleep(delay)
+
+    return all_urls, all_pages
+
+
+def _extract_all_banks(
+    ollama_url: str,
+    model_name: str,
+    model_id: str,
+    banks_dict: dict,
+    banks_filter: set[str] | None,
+    current_anchors: set[str],
+    existing_metadata: dict,
+    web_content: str,
+) -> tuple[dict[str, dict], list[str]]:
+    """Run LLM extraction for each bank. Returns (bank_results, supplements)."""
+    bank_results: dict[str, dict] = {}
+    supplements: list[str] = []
+
+    for bank, anchors in banks_dict.items():
+        if _shutdown:
+            break
+        if banks_filter and bank not in banks_filter:
+            continue
+        if not anchors:
+            continue
+
+        existing_for_bank = [
+            a for a in current_anchors if a in set(a2.lower() for a2 in anchors)
+        ]
+        result = extract_bank(
+            ollama_url, model_name, model_id, bank, anchors,
+            existing_for_bank, existing_metadata, web_content,
+        )
+        if result:
+            bank_results[bank] = result
+            if result.get("summary_supplement"):
+                supplements.append(result["summary_supplement"])
+
+    return bank_results, supplements
+
+
 def process_one_model(
     ollama_url: str,
     model_name: str,
@@ -486,45 +605,9 @@ def process_one_model(
     banks_dict = item.get("banks") or {}
     current_anchors = set(existing_metadata.get("current_anchors") or [])
 
-    # Stage 1+2: Search (and optionally fetch pages)
-    all_urls: list[str] = []
-    all_pages: list[str] = []
-    search_failures = 0
-
-    for query in search_queries:
-        if _shutdown:
-            break
-        results = web_search(query, searxng_url, max_results=max_pages, timeout=timeout)
-        if not results:
-            search_failures += 1
-            if search_failures >= 2:
-                backoff = min(delay * (2 ** search_failures), 30.0)
-                print(f"  Search backoff: {backoff:.0f}s after {search_failures} failures", file=sys.stderr)
-                time.sleep(backoff)
-        else:
-            search_failures = 0
-
-        for r in results:
-            url = r["url"]
-            if url in set(all_urls):
-                continue
-            all_urls.append(url)
-
-            if snippets_only:
-                # Use search snippet directly — no page fetch, no 403s
-                snippet = r.get("snippet", "")
-                title = r.get("title", "")
-                if snippet or title:
-                    all_pages.append(f"{title}\n{snippet}")
-            else:
-                page = fetch_page(url, timeout=timeout)
-                if page and len(page) > 100:
-                    all_pages.append(page)
-                time.sleep(delay * 0.5)
-
-        time.sleep(delay)
-
-    # Stage 3: Aggregate content
+    all_urls, all_pages = _search_and_collect(
+        search_queries, searxng_url, max_pages, timeout, delay, snippets_only,
+    )
     web_content = aggregate_content(all_pages, model_id, max_chars=context_limit)
 
     if not web_content:
@@ -536,29 +619,10 @@ def process_one_model(
             "web_summary": "",
         }
 
-    # Stage 4: Bank-specific extraction
-    bank_results: dict[str, dict] = {}
-    supplements: list[str] = []
-
-    for bank, anchors in banks_dict.items():
-        if _shutdown:
-            break
-        if banks_filter and bank not in banks_filter:
-            continue
-        if not anchors:
-            continue
-
-        existing_for_bank = [a for a in current_anchors if a in set(a2.lower() for a2 in anchors)]
-        result = extract_bank(
-            ollama_url, model_name, model_id, bank, anchors,
-            existing_for_bank, existing_metadata, web_content,
-        )
-        if result:
-            bank_results[bank] = result
-            if result.get("summary_supplement"):
-                supplements.append(result["summary_supplement"])
-
-    # Combine web summary
+    bank_results, supplements = _extract_all_banks(
+        ollama_url, model_name, model_id, banks_dict,
+        banks_filter, current_anchors, existing_metadata, web_content,
+    )
     web_summary = " ".join(supplements[:3]) if supplements else ""
 
     return {
@@ -571,32 +635,50 @@ def process_one_model(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Standalone Phase E web enrichment worker")
+    parser = argparse.ArgumentParser(
+        description="Standalone Phase E web enrichment worker"
+    )
     parser.add_argument("--input", required=True, help="Input shard JSONL file")
     parser.add_argument("--output", required=True, help="Output results JSONL file")
-    parser.add_argument("--model", default=None, help="Ollama model name (default: qwen3.5:4b)")
     parser.add_argument(
-        "--url", default=None,
+        "--model", default=None, help="Ollama model name (default: qwen3.5:4b)"
+    )
+    parser.add_argument(
+        "--url",
+        default=None,
         help="Ollama API base URL (env: OLLAMA_BASE_URL, default: http://localhost:11434)",
     )
-    parser.add_argument("--resume", action="store_true", help="Skip already-processed models")
     parser.add_argument(
-        "--banks", default=None,
+        "--resume", action="store_true", help="Skip already-processed models"
+    )
+    parser.add_argument(
+        "--banks",
+        default=None,
         help="Comma-separated banks to process (default: all in input)",
     )
     parser.add_argument(
-        "--searxng", default=None,
+        "--searxng",
+        default=None,
         help="SearXNG base URL (env: SEARXNG_URL, e.g. http://localhost:8888)",
     )
     parser.add_argument(
-        "--snippets-only", action="store_true",
+        "--snippets-only",
+        action="store_true",
         help="Use only search snippets (no page fetching — much faster)",
     )
-    parser.add_argument("--delay", type=float, default=2.0, help="Seconds between web requests")
-    parser.add_argument("--max-pages", type=int, default=3, help="Max pages per search query")
-    parser.add_argument("--timeout", type=int, default=15, help="HTTP request timeout seconds")
     parser.add_argument(
-        "--context-limit", type=int, default=8000,
+        "--delay", type=float, default=2.0, help="Seconds between web requests"
+    )
+    parser.add_argument(
+        "--max-pages", type=int, default=3, help="Max pages per search query"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=15, help="HTTP request timeout seconds"
+    )
+    parser.add_argument(
+        "--context-limit",
+        type=int,
+        default=8000,
         help="Max chars of web content for LLM context",
     )
     args = parser.parse_args()
@@ -654,8 +736,14 @@ def main() -> None:
             print(f"  Processing: {model_id}", file=sys.stderr)
             try:
                 result = process_one_model(
-                    base_url, model_name, item, banks_filter,
-                    args.delay, args.max_pages, args.timeout, args.context_limit,
+                    base_url,
+                    model_name,
+                    item,
+                    banks_filter,
+                    args.delay,
+                    args.max_pages,
+                    args.timeout,
+                    args.context_limit,
                     searxng_url=searxng_url,
                     snippets_only=args.snippets_only,
                 )

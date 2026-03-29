@@ -28,8 +28,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_WORK_DIR = Path.home() / ".cache" / "model-atlas" / "phase_e_work"
 
 ALL_BANKS = [
-    "ARCHITECTURE", "CAPABILITY", "COMPATIBILITY", "DOMAIN",
-    "EFFICIENCY", "LINEAGE", "QUALITY", "TRAINING",
+    "ARCHITECTURE",
+    "CAPABILITY",
+    "COMPATIBILITY",
+    "DOMAIN",
+    "EFFICIENCY",
+    "LINEAGE",
+    "QUALITY",
+    "TRAINING",
 ]
 
 
@@ -139,13 +145,17 @@ def _build_one_record(
 
     # Get domain anchors for query building
     domain_anchors = [
-        a for a in current_anchors
-        if any(a.endswith(s) for s in ("-domain", "-code"))
+        a for a in current_anchors if any(a.endswith(s) for s in ("-domain", "-code"))
     ]
 
     search_queries = _build_search_queries(
-        model_id, author, pipeline_tag, family, param_count,
-        vibe_summary, domain_anchors,
+        model_id,
+        author,
+        pipeline_tag,
+        family,
+        param_count,
+        vibe_summary,
+        domain_anchors,
     )
 
     return {
@@ -244,7 +254,9 @@ def export_phase_e(
 
     logger.info(
         "export_phase_e: wrote %d models across %d shards to %s",
-        len(model_ids), num_shards, out_dir,
+        len(model_ids),
+        num_shards,
+        out_dir,
     )
     return len(model_ids)
 
@@ -252,7 +264,9 @@ def export_phase_e(
 def main() -> None:
     """Standalone CLI for export (also callable via ingest_cli)."""
     parser = argparse.ArgumentParser(description="Export Phase E web enrichment input")
-    parser.add_argument("--db", default=str(Path.home() / ".cache/model-atlas/network.db"))
+    parser.add_argument(
+        "--db", default=str(Path.home() / ".cache/model-atlas/network.db")
+    )
     parser.add_argument("--num-shards", type=int, default=4)
     parser.add_argument("--banks", default=None, help="Comma-separated bank list")
     parser.add_argument("--min-downloads", type=int, default=100)

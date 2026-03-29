@@ -18,8 +18,14 @@ from .config import PHASE_E_WORK_DIR
 logger = logging.getLogger(__name__)
 
 ALL_BANKS = [
-    "ARCHITECTURE", "CAPABILITY", "COMPATIBILITY", "DOMAIN",
-    "EFFICIENCY", "LINEAGE", "QUALITY", "TRAINING",
+    "ARCHITECTURE",
+    "CAPABILITY",
+    "COMPATIBILITY",
+    "DOMAIN",
+    "EFFICIENCY",
+    "LINEAGE",
+    "QUALITY",
+    "TRAINING",
 ]
 
 
@@ -125,12 +131,16 @@ def _build_one_record(
     current_anchors = _get_all_anchor_labels(conn, model_id)
 
     domain_anchors = [
-        a for a in current_anchors
-        if any(a.endswith(s) for s in ("-domain", "-code"))
+        a for a in current_anchors if any(a.endswith(s) for s in ("-domain", "-code"))
     ]
 
     search_queries = _build_search_queries(
-        model_id, author, pipeline_tag, family, param_count, domain_anchors,
+        model_id,
+        author,
+        pipeline_tag,
+        family,
+        param_count,
+        domain_anchors,
     )
 
     return {
@@ -225,6 +235,8 @@ def export_phase_e(
 
     logger.info(
         "export_phase_e: wrote %d models across %d shards to %s",
-        len(model_ids), num_shards, out_dir,
+        len(model_ids),
+        num_shards,
+        out_dir,
     )
     return len(model_ids)
