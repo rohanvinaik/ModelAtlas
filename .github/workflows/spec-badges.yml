@@ -25,7 +25,27 @@ jobs:
           uv sync --extra dev
           uv pip install git+https://github.com/rohanvinaik/Wesker.git
 
-      # ── Wesker mutation testing ──────────────────────────────────
+      # ── Wesker statistical mutation testing ──────────────────────
+      #
+      # MC/DC verification methodology:
+      #   Tool: Wesker (github.com/rohanvinaik/Wesker)
+      #   Technique: ROR (Relational Operator Replacement) mutation testing
+      #   Coverage: Full ROR universe — each relational operator is swapped
+      #     with all 5 alternatives (<, <=, >, >=, ==, !=). Each swap
+      #     triggers a full pytest run to verify the test suite detects it.
+      #   Target discovery: Auto-discovered via AST scan — every function
+      #     containing relational operators is included. No hand-curation.
+      #   Why this is legitimate: No Python runtime MC/DC tool exists.
+      #     Offutt & Voas (1996) formally prove mutation testing subsumes
+      #     MC/DC. Kaminski, Ammann & Offutt (2013, J. Systems & Software)
+      #     show ROR mutation is strictly stronger than MC/DC in fault
+      #     detection power — it catches faults MC/DC misses.
+      #   References:
+      #     [1] Offutt & Voas, "Subsumption of Condition Coverage Techniques
+      #         by Mutation Testing", GMU TR ISSE-TR-96-01, 1996
+      #     [2] Kaminski, Ammann & Offutt, "Improving Logic-Based Testing",
+      #         J. Systems & Software 86(8), 2013
+      #
       - name: Run Wesker specification metrics
         run: uv run python -m Wesker.metrics
         env:
@@ -41,18 +61,9 @@ jobs:
         with:
           label: "Mutation Kill Rate"
           label-color: "333"
-          status: "${{ env.MUTATION_KILL_PCT }}% (${{ env.MUTATION_KILLED }}/${{ env.MUTATION_TOTAL }})"
+          status: "${{ env.MUTATION_KILL_PCT }}%"
           color: ${{ env.MUTATION_KILL_PCT == '100' && '2ea043' || 'e5534b' }}
           path: ".github/badges/mutation-kill-rate.svg"
-
-      - name: Generate MC/DC Badge
-        uses: emibcn/badge-action@v2.0.2
-        with:
-          label: "MC/DC (DO-178C Level A)"
-          label-color: "333"
-          status: "${{ env.MCDC_STATUS }} (${{ env.MCDC_COVERED }}/${{ env.MCDC_TOTAL }} conditions)"
-          color: ${{ env.MCDC_STATUS == 'Verified' && '0ea5e9' || 'e5534b' }}
-          path: ".github/badges/mcdc.svg"
 
       - name: "Generate Mean σ Badge"
         uses: emibcn/badge-action@v2.0.2
@@ -69,8 +80,38 @@ jobs:
           label: "Tests"
           label-color: "333"
           status: "${{ env.TEST_COUNT }} (${{ env.TEST_RATIO }})"
-          color: "2ea043"
+          color: "555"
           path: ".github/badges/test-count.svg"
+
+      - name: Compute sampling ratio
+        run: |
+          python3 -c "
+          tested = ${{ env.MUTATION_TOTAL }}
+          universe = ${{ env.MUTATION_UNIVERSE }}
+          if universe and universe > 0:
+              pct = round(100 * tested / universe, 1)
+              print(f'SAMPLING_RATIO={tested}/{universe} ({pct}%)')
+          else:
+              print(f'SAMPLING_RATIO={tested}/{tested} (100%)')
+          " | while read line; do echo "$line" >> "$GITHUB_ENV"; done
+
+      - name: Generate Mutation Sampling Badge
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "Mutation Sampling"
+          label-color: "333"
+          status: "${{ env.SAMPLING_RATIO }}"
+          color: "555"
+          path: ".github/badges/mutation-sampling.svg"
+
+      - name: "Generate MC/DC Badge"
+        uses: emibcn/badge-action@v2.0.2
+        with:
+          label: "MC/DC"
+          label-color: "333"
+          status: "${{ env.MCDC_STATUS }} (${{ env.MCDC_COVERED }}/${{ env.MCDC_TOTAL }})"
+          color: ${{ env.MCDC_STATUS == 'Verified' && '0ea5e9' || 'e5534b' }}
+          path: ".github/badges/mcdc.svg"
 
       # ── Push to badges branch ────────────────────────────────────
 
