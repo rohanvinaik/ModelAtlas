@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.searxng_keepalive</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/searxng_keepalive.sh</string>
+    </array>
+
+    <!-- Every 5 minutes. Idempotent; healthy probes return immediately. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <!-- Run at load (so we don't wait 5 min after a reboot for first check) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-searxng-keepalive.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-searxng-keepalive.err</string>
+
+    <!-- LowPriorityIO + Nice=10 to stay out of the way of foreground work -->
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>SEARXNG_CONFIG</key>
+        <string>/Users/rohanvinaik/searxng-config</string>
+    </dict>
+</dict>
+</plist>

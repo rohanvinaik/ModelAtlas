@@ -232,6 +232,12 @@ def _parse_param_from_text(text: str) -> float | None:
 
 
 _PIPELINE_TAG_ARCH_MAP: dict[str, tuple[int, int, list[str]]] = {
+    # text-generation is the canonical pipeline tag for decoder-only LLMs
+    # (Llama, Mistral, DeepSeek, GPT-OSS, etc.). Maps to ARCHITECTURE
+    # zero-state per docs/DESIGN.md (sign=0, depth=0). The "informative
+    # pipeline_tag" carve-out in the DESIGN doc applies here.
+    "text-generation": (0, 0, ["decoder-only"]),
+    "text2text-generation": (-1, 1, ["encoder-decoder"]),
     "object-detection": (1, 1, ["vision-transformer"]),
     "image-classification": (1, 1, ["vision-transformer"]),
     "text-to-image": (1, 2, ["diffusion"]),

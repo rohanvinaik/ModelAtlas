@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.sync</string>
+
+    <!--
+        Weekly sync + reconcile + coherence audit + audit-log rotation.
+        Matches PERSISTENT_KNOWLEDGE_GROUNDED_DATABASES.md §49.
+
+        Schedule: Mondays at 09:00 local time. Adjust the Hour/Minute
+        below to match your hub's cadence. The wrapper script is
+        idempotent — running more or less often is safe.
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/sync_and_reconcile.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-sync.err</string>
+</dict>
+</plist>

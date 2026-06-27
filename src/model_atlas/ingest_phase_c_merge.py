@@ -57,7 +57,20 @@ def _merge_c1_item(conn: sqlite3.Connection, item: dict) -> None:
         "SELECT 1 FROM models WHERE model_id = ?", (model_id,)
     ).fetchone()
     if not existing:
-        db.insert_model(conn, model_id, source="stub")
+        from .admin import insert_canonical
+
+        insert_canonical(
+            "models",
+            {
+                "model_id": model_id,
+                "author": "",
+                "source": "stub",
+                "display_name": model_id.split("/")[-1],
+            },
+            reason=f"C1 merge: stub for previously-unseen model {model_id}",
+            apply=True,
+            conn=conn,
+        )
     db.set_metadata(conn, model_id, "smol_summary", item["smol_summary"], "str")
 
 

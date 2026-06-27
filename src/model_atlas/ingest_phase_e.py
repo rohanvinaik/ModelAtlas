@@ -60,9 +60,16 @@ def _get_existing_anchor_confidence(
 
 
 def _validate_anchor(conn: sqlite3.Connection, label: str) -> int | None:
-    """Look up anchor_id by label. Returns None if not in dictionary."""
+    """Look up anchor_id by label (case-insensitive).
+
+    Caller already normalises the LLM-emitted label to lowercase, but canonical
+    anchors like ``GGUF-available``, ``Llama-family``, ``7B-class``, and
+    ``consumer-GPU-viable`` are stored mixed-case. Without the case-insensitive
+    comparison ~22% of emissions get silently dropped — see commit history /
+    Phase E audit log for the recovery counts.
+    """
     row = conn.execute(
-        "SELECT anchor_id FROM anchors WHERE label = ?", (label,)
+        "SELECT anchor_id FROM anchors WHERE lower(label) = ?", (label.lower(),)
     ).fetchone()
     return row[0] if row else None
 

@@ -12,7 +12,7 @@
 [![MC/DC](https://raw.githubusercontent.com/rohanvinaik/ModelAtlas/badges/.github/badges/mcdc.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/spec-badges.yml)
 [![Mutation Sampling](https://raw.githubusercontent.com/rohanvinaik/ModelAtlas/badges/.github/badges/mutation-sampling.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/spec-badges.yml)
 
-`29,657 models · 166 semantic anchors · <100ms queries · No embeddings · No GPU`
+`29,892 models · 180 semantic anchors · <100ms queries · No embeddings · No GPU`
 
 You want a small code model with tool-calling.
 
@@ -105,7 +105,7 @@ This is an MCP tool. An LLM calls it during conversation. One tool call returns:
 
 From this, the LLM *immediately knows*: small, code-focused, tool-calling, math-capable, consumer hardware, 128K context. The anchors are a vibe. The positions are a profile. The score explains *why this model and not another.*
 
-Without ModelAtlas, the LLM guesses from stale training data. With it, the LLM has live, structured awareness of 29,657 models for ~500 tokens — less than the cost of a follow-up question.
+Without ModelAtlas, the LLM guesses from stale training data. With it, the LLM has live, structured awareness of 29,892 models for ~500 tokens — less than the cost of a follow-up question.
 
 | Approach | Latency | Tokens | Quality |
 |----------|---------|--------|---------|
@@ -130,7 +130,7 @@ QUALITY         zero = established mainstream      →  +trending  / -legacy
 TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -simpler
 ```
 
-On top of coordinates, models share **anchors** — 166 semantic labels like `tool-calling`, `GGUF-available`, `Llama-family`. Similarity is emergent from shared labels, weighted by rarity (IDF). Every score traces back to specific anchors. Nothing is an opaque embedding.
+On top of coordinates, models share **anchors** — 180 semantic labels like `tool-calling`, `GGUF-available`, `Llama-family`. Similarity is emergent from shared labels, weighted by rarity (IDF). Every score traces back to specific anchors. Nothing is an opaque embedding.
 
 **Scoring:** `bank_alignment × anchor_relevance × seed_similarity`. Multiplicative — a model that nails efficiency but misses capability gets zero, not fifty percent. Wrong-direction models decay hyperbolically. Avoided anchors stack exponentially (each halves the score). Required anchors are hard filters. The result is a scoring surface that strongly favors precise matches and rapidly eliminates mismatches, without binary cutoffs. [Full scoring math →](docs/DESIGN.md)
 
@@ -174,6 +174,9 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 | `hf_build_index` | Ingest new models from HuggingFace or Ollama into the network |
 | `search_models` | Multi-source search (HuggingFace, Ollama, or all) |
 | `hf_index_status` | Network statistics: model count, anchor distribution, coverage |
+| `set_model_vibe` | Set/update the vibe summary and optional extra anchors for a model |
+| `list_model_sources` | List registered source adapters (HuggingFace, Ollama) and their availability |
+| `phase_e_status` | Phase E web-enrichment progress: enriched count, benchmark scores, recent runs |
 
 ## What this is not
 
@@ -191,7 +194,7 @@ Each phase writes at a confidence tier. Lower tiers cannot overwrite higher ones
 python -m model_atlas.ingest --phase ab --min-likes 5
 ```
 
-**Phase C: Constrained LLM classification** (confidence 0.5). A local model reads each model card and selects from the 166-anchor dictionary. It cannot invent labels — the output schema is the vocabulary.
+**Phase C: Constrained LLM classification** (confidence 0.5). A local model reads each model card and selects from the 180-anchor dictionary. It cannot invent labels — the output schema is the vocabulary.
 
 ```bash
 python -m model_atlas.ingest --export-c2 4       # export shards
@@ -223,9 +226,28 @@ python -m model_atlas.ingest --merge-e results_*.jsonl
 
 All workers are standalone scripts — `scp` to any machine, `--resume` from any crash, shard across as many machines as you have. [`docs/pipeline.md`](docs/pipeline.md) has the full reference.
 
+## Operational discipline
+
+Every write to a canonical table (`models`, `model_positions`, `model_links`, `anchors`) goes through one of two audit-logged primitives in `src/model_atlas/admin.py`:
+
+- `patch_field(table, pk, field, old, new, reason)` — single-field update, dry-run by default, requires sourced rationale.
+- `insert_canonical(table, row, reason)` — new row insert, same discipline.
+
+Worker-driven JSONL ingestion routes through `model_atlas.reconciler.reconcile_file()` which dispatches via the same primitives with SHA-256 line-hash idempotency (safe to re-run any merge). Every successful write appends one line to `data/patches.jsonl` — currently ~38K entries, rotated past 5 MB.
+
+```bash
+# Health audit (read-only): bank orthogonality, NULL coverage, anchor orphans/oversaturation
+python -m model_atlas.coherence
+
+# Weekly hub-and-spoke sync: rsync from spokes → reconciler → audit → rotate log
+./scripts/sync_and_reconcile.sh
+```
+
+See [`docs/admin.md`](docs/admin.md), [`docs/reconciler.md`](docs/reconciler.md), and [`docs/coherence.md`](docs/coherence.md) for the discipline. Legacy write paths (`ingest_phase_c_merge.py`, `phase_d_*`, `phase_e_postprocess.py`) predate the primitives and write canonical tables directly — they are *pre-existing*, not sanctioned. New code MUST use the primitives.
+
 ## Status
 
-29,657 models. 166 anchors. 195K model-anchor links. 26K prose summaries. 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. Phase E web enrichment in progress across 3 machines. Models with <10 likes are not yet indexed — the 29K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
+29,892 models. 180 anchors. 228K model-anchor links across 8 banks. 236K signed positions. 2,990 models web-enriched (Phase E, ongoing across 3 machines). 6,154 independently validated via Gemini. 700 corrected through audit/heal pipeline. 38K audit-log entries. Models with <10 likes are not yet indexed — the 30K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
 
 Part of a research program on structured navigation through constrained semantic spaces — the same paradigm applied to [theorem proving](https://github.com/rohanvinaik/Wayfinder) and [code quality supervision](https://github.com/rohanvinaik/LintGate).
 
@@ -234,6 +256,9 @@ Part of a research program on structured navigation through constrained semantic
 | Full docs | [rohanv.me/ModelAtlas](https://rohanv.me/ModelAtlas/) |
 | Pipeline reference | [`docs/pipeline.md`](docs/pipeline.md) |
 | Design deep dive | [`docs/DESIGN.md`](docs/DESIGN.md) |
+| Write primitives | [`docs/admin.md`](docs/admin.md) |
+| Reconciler (worker JSONL → canonical) | [`docs/reconciler.md`](docs/reconciler.md) |
+| Coherence audit | [`docs/coherence.md`](docs/coherence.md) |
 | Niche query showcase | [`docs/comparison.md`](docs/comparison.md) |
 | Theoretical foundation | [Sparse Wiki Grounding](https://github.com/rohanvinaik/sparse-wiki-grounding) |
 

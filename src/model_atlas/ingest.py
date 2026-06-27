@@ -43,13 +43,33 @@ def _now_iso() -> str:
 def _phase_a_huggingface(
     ingest_conn: sqlite3.Connection,
     min_likes: int = INGEST_MIN_LIKES,
+    *,
+    fetch_config: bool = True,
 ) -> int:
-    """Stream models from HuggingFace and cache raw JSON."""
+    """Stream models from HuggingFace and cache raw JSON.
+
+    When ``fetch_config=True`` (default), also downloads config.json for
+    each model and includes it in the raw payload. This is required for
+    accurate ARCHITECTURE bank classification — without config the
+    extractor falls back to the pipeline_tag heuristic, which classifies
+    everything outside a small set of tags as ``unknown``.
+
+    The config fetch adds one HTTP request per model. For a fresh full
+    Phase A run (~30K models), expect a meaningful wall-clock impact.
+    Pass ``fetch_config=False`` for fast tests / dry runs.
+    """
     from huggingface_hub import HfApi
 
+    from .sources.huggingface import HuggingFaceAdapter
+
     api = HfApi()
+    hf_source = HuggingFaceAdapter() if fetch_config else None
     count = 0
-    logger.info("Phase A [huggingface]: streaming models (min_likes=%d)...", min_likes)
+    logger.info(
+        "Phase A [huggingface]: streaming models (min_likes=%d, fetch_config=%s)...",
+        min_likes,
+        fetch_config,
+    )
 
     for model in api.list_models(full=True, cardData=True, sort="likes", direction=-1):
         if _shutdown:
@@ -62,6 +82,8 @@ def _phase_a_huggingface(
         model_id = model.id or ""
         if not model_id:
             continue
+
+        config = hf_source.fetch_config(model_id) if hf_source else None
 
         # Serialize model to JSON (INSERT OR IGNORE handles duplicates)
         raw = {
@@ -79,6 +101,7 @@ def _phase_a_huggingface(
                 if hasattr(model, "safetensors") and model.safetensors
                 else None
             ),
+            "config": config,
             "source": "huggingface",
         }
 

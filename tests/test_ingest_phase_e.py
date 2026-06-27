@@ -91,6 +91,15 @@ class TestAnchorValidation:
         result = _validate_anchor(network_conn, "nonexistent-anchor")
         assert result is None
 
+    def test_validate_case_insensitive(self, network_conn):
+        # Canonical anchors like "GGUF-available", "Llama-family", "7B-class",
+        # "consumer-GPU-viable" are stored mixed-case. The LLM emits lowercase.
+        # Validator must match across case.
+        aid = _add_anchor_to_db(network_conn, "GGUF-available")
+        assert _validate_anchor(network_conn, "gguf-available") == aid
+        assert _validate_anchor(network_conn, "GGUF-AVAILABLE") == aid
+        assert _validate_anchor(network_conn, "GGUF-available") == aid
+
     def test_get_confidence_unlinked(self, network_conn):
         _add_model(network_conn, "x/model")
         _add_anchor_to_db(network_conn, "chat")

@@ -50,6 +50,22 @@ class TestExtractArchitecture:
         pos = _extract_architecture(None, pipeline_tag="translation")
         assert pos.nodes == ["encoder-decoder"]
 
+    def test_pipeline_tag_text_generation_maps_to_decoder_only(self):
+        """text-generation → decoder-only (zero-state of ARCHITECTURE).
+
+        The canonical pipeline tag for decoder-only LLMs (Llama, Mistral,
+        DeepSeek, GPT-OSS, etc.). Pre-fix this fell through to 'unknown'.
+        """
+        pos = _extract_architecture(None, pipeline_tag="text-generation")
+        assert pos.nodes == ["decoder-only"]
+        assert pos.sign == 0
+        assert pos.depth == 0
+
+    def test_pipeline_tag_text2text_generation_maps_to_encoder_decoder(self):
+        """text2text-generation → encoder-decoder (T5, BART, etc.)."""
+        pos = _extract_architecture(None, pipeline_tag="text2text-generation")
+        assert pos.nodes == ["encoder-decoder"]
+
     def test_no_config_no_pipeline_returns_unknown(self):
         """No config, no pipeline_tag → unknown (not decoder-only)."""
         pos = _extract_architecture(None)

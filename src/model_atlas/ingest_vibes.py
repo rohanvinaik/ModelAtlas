@@ -38,8 +38,14 @@ def _store_vibe_result(
     for anchor_label in result.extra_anchors:  # type: ignore[union-attr]
         anchor_label = anchor_label.strip().lower()
         if anchor_label:
-            anchor_id = db.get_or_create_anchor(
-                network_conn, anchor_label, "CAPABILITY", source="vibe"
+            from .admin import ensure_anchor
+
+            anchor_id = ensure_anchor(
+                network_conn,
+                anchor_label,
+                "CAPABILITY",
+                source="vibe",
+                reason=f"vibe extraction for {model_id}",
             )
             db.link_anchor(network_conn, model_id, anchor_id, confidence=0.5)
 

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.phase_e.homebridge.4</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3</string>
+        <string>/Users/homebridge/phase_e/phase_e_worker.py</string>
+        <string>--input</string>
+        <string>/Users/homebridge/phase_e/shard_4.jsonl</string>
+        <string>--output</string>
+        <string>/Users/homebridge/phase_e/results_4.jsonl</string>
+        <string>--resume</string>
+        <string>--searxng</string>
+        <string>http://100.64.0.1:8888</string>
+        <string>--snippets-only</string>
+        <string>--model</string>
+        <string>qwen2.5:3b</string>
+        <string>--banks</string>
+        <string>CAPABILITY,QUALITY</string>
+        <string>--timeout</string>
+        <string>300</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/homebridge/phase_e</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>Nice</key>
+    <integer>20</integer>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-phase_e-homebridge-4.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-phase_e-homebridge-4.err</string>
+</dict>
+</plist>

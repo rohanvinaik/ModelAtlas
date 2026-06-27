@@ -205,8 +205,15 @@ def expand_dictionary(
         label_stats: dict[str, int] = {"matched": 0, "linked": 0, "queued": 0}
 
         if not existing and not dry_run:
-            db.get_or_create_anchor(
-                conn, label, bank, category=category, source="expansion"
+            from .admin import ensure_anchor
+
+            ensure_anchor(
+                conn,
+                label,
+                bank,
+                category=category,
+                source="expansion",
+                reason=f"D2 expansion run {run_id} added {label}",
             )
             result.anchors_created += 1
 
@@ -228,8 +235,15 @@ def expand_dictionary(
             if dry_run:
                 continue
 
-            anchor_id = db.get_or_create_anchor(
-                conn, label, bank, category=category, source="expansion"
+            from .admin import ensure_anchor
+
+            anchor_id = ensure_anchor(
+                conn,
+                label,
+                bank,
+                category=category,
+                source="expansion",
+                reason=f"D2 expansion run {run_id} linked {label} to {model_id}",
             )
 
             if mode == "auto_link":

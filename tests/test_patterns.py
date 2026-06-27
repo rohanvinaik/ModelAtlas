@@ -167,6 +167,37 @@ class TestDetectCompatibility:
         anchors, _ = _detect_compatibility("", "mlx")
         assert "MLX-compatible" in anchors
 
+    def test_mlx_implies_apple_silicon_native(self):
+        """MLX is Apple's framework — runs only on Apple Silicon.
+
+        Pre-fix the Apple-Silicon-native anchor was orphaned (defined in
+        bootstrap but never assigned to any model).
+        """
+        anchors, _ = _detect_compatibility("mlx compatible", "")
+        assert "Apple-Silicon-native" in anchors
+        anchors2, _ = _detect_compatibility("", "mlx")
+        assert "Apple-Silicon-native" in anchors2
+
+    def test_coreml_implies_apple_silicon_native(self):
+        """CoreML targets Apple Neural Engine on Apple Silicon."""
+        anchors, _ = _detect_compatibility("coreml model", "")
+        assert "Apple-Silicon-native" in anchors
+        anchors2, _ = _detect_compatibility("core-ml export", "")
+        assert "Apple-Silicon-native" in anchors2
+
+    def test_explicit_apple_silicon_tag(self):
+        anchors, _ = _detect_compatibility("apple-silicon native", "")
+        assert "Apple-Silicon-native" in anchors
+
+    def test_metal_performance_shaders_tag(self):
+        anchors, _ = _detect_compatibility("metal performance shaders", "")
+        assert "Apple-Silicon-native" in anchors
+
+    def test_non_apple_compat_does_not_add_apple_silicon(self):
+        """GGUF / vLLM / TensorRT shouldn't imply Apple-Silicon-native."""
+        anchors, _ = _detect_compatibility("gguf vllm tensorrt", "")
+        assert "Apple-Silicon-native" not in anchors
+
     def test_llama_cpp(self):
         anchors, _ = _detect_compatibility("llama-cpp compatible", "")
         assert "llama-cpp-compatible" in anchors

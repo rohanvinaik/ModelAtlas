@@ -1,6 +1,16 @@
-# Phase C Intelligence Extraction Pipeline
+# Pipeline Reference — Phases A through E
 
-Technical reference for ModelAtlas's multi-tier intelligence extraction pipeline. Phase C follows the completed fetch (Phase A) and deterministic extraction (Phase B) stages, applying LLM-based and offline validation methods to produce structured summaries, anchor tags, and quality scores for every model in the semantic network.
+Technical reference for ModelAtlas's multi-tier intelligence extraction pipeline.
+
+| Phase | Confidence tier | What it does | LLM? |
+|-------|----------------:|--------------|:----:|
+| **A** | — | Stream model metadata from HuggingFace Hub + Ollama, cache raw JSON, fetch `config.json` and model card text. | no |
+| **B** | 1.0 / 0.85 | Deterministic extraction (Tier 1: API fields, parameter math) + pattern matching (Tier 2: tags, names, configs) → bank positions, anchors, explicit links. | no |
+| **C** | 0.5 | Constrained LLM classification — local model reads card text and selects from the anchor dictionary; cannot invent labels. C1 summary, C2 anchors, C3 quality gate. | yes |
+| **D** | 0.6 | Audit-and-heal — deterministic comparison of C2 anchors against Tier 1/2 ground truth; mismatches re-extracted. | partial |
+| **E** | 0.4 | Web enrichment — SearXNG meta-search + constrained Ollama extraction from web snippets. Same vocabulary as C, noisier source, lowest confidence. | yes |
+
+This document focuses on Phase C in depth (§§1–11); Phase E follows the same shape (export → standalone worker → merge) and is summarized in §12. Phases A/B are described in `docs/DESIGN.md` §3.
 
 ---
 
@@ -886,16 +896,78 @@ All workers and the orchestrator register handlers for SIGTERM and SIGINT that s
 
 ---
 
-## 12. Related Work
+## 12. Phase E — Web Enrichment
 
-### 12.1 Documentation Coverage in ML
+Phase E adds qualitative signal that HuggingFace metadata doesn't carry — benchmark mentions, comparison-article impressions, ecosystem trends. Same constrained-classification pattern as C: a local LLM selects anchors from the fixed dictionary, never invents new ones. The source material is the open web (via self-hosted SearXNG), so confidence is the lowest tier (0.4) and outputs cannot overwrite higher-confidence assignments from B/C/D.
+
+### 12.1 Components
+
+| Piece | What it does |
+|-------|--------------|
+| `src/model_atlas/phase_d_expand.py` → `export_phase_e()` | Builds shards: `~/.cache/model-atlas/phase_e_work/shard_<n>.jsonl` |
+| `scripts/phase_e_worker.py` | Standalone worker (zero ModelAtlas imports). For each model: SearXNG query → fetch top N snippets → constrained Ollama JSON → emit result line. `--resume`, `--delay`, `--snippets-only`, `--banks <subset>`. |
+| `scripts/phase_e_postprocess.py` | Layer 1 (deterministic regex: synonym merges, name contradictions, size-class dedup, MoE bleed). Layer 2 (optional LLM: series-bleed detection via constrained Ollama). Writes `*_cleaned.jsonl`. |
+| `src/model_atlas/ingest_phase_e.py` → `merge_phase_e()` | Validates anchors against vocabulary (invalid ones silently dropped), checks higher-confidence contradiction, writes new anchor links + `web_summary` / `web_sources` / `web_enriched` metadata. Dry-run via `--merge-e-dry-run`. |
+| Backing search | SearXNG container on the hub, accessed by spokes via Headscale tailnet at `http://100.64.0.1:8888`. Per-engine auto-suspension absorbs individual rate limits. |
+
+### 12.2 Operational pattern
+
+```bash
+# Export N shards, restrict to specific banks (cuts irrelevant LLM work)
+python -m model_atlas.ingest_cli --export-e 6 --export-e-banks CAPABILITY,QUALITY
+
+# scp shards to workers, run with throttling on spokes
+scp shard_2.jsonl shard_3.jsonl macpro:~/phase_e/
+ssh macpro 'cd ~/phase_e && nohup python phase_e_worker.py \
+    --input shard_2.jsonl --output results_2.jsonl --resume \
+    --searxng http://100.64.0.1:8888 --snippets-only \
+    --model qwen2.5:3b --banks CAPABILITY,QUALITY --delay 5 \
+    > /tmp/modelatlas-phase_e-macpro-2.log 2>&1 &'
+
+# Postprocess (Layer 1 only; --llm adds Layer 2)
+python scripts/phase_e_postprocess.py --input-dir ~/.cache/model-atlas/phase_e_work/
+
+# Dry-run merge to see plan, then apply
+python -m model_atlas.ingest_cli --merge-e ~/.cache/model-atlas/phase_e_work/*_cleaned.jsonl --merge-e-dry-run
+python -m model_atlas.ingest_cli --merge-e ~/.cache/model-atlas/phase_e_work/*_cleaned.jsonl
+
+# Status
+python -m model_atlas.ingest_cli --phase-e-status
+```
+
+### 12.3 Merge accounting
+
+`merge_phase_e()` returns:
+
+```
+{
+  "merged": N,                          # records processed
+  "anchors_linked": K,                  # new model_anchors rows
+  "anchors_skipped_existing": K',       # already linked (Phase B/C/D got there first)
+  "anchors_skipped_invalid": K'',       # anchor not in vocabulary — silently dropped
+  "anchors_skipped_contradiction": K''',# higher-confidence assignment exists
+  "benchmarks_stored": B                # benchmark:<name> metadata rows
+}
+```
+
+A healthy run has `anchors_skipped_contradiction = 0`. A high `anchors_skipped_invalid` is signal — either the prompt needs a stricter schema or the vocabulary needs aliases.
+
+### 12.4 Hub-and-spoke deployment
+
+Spoke machines (`macpro`, `homebridge`) run workers; the hub runs `scripts/sync_and_reconcile.sh` weekly to pull JSONL, reconcile, audit, and rotate the audit log. Detailed runbook: `deploy/README.md` and `deploy/phase_e/README.md`. The wrapper invokes `model_atlas.ingest_cli` (not `model_atlas.ingest` — the latter has no CLI dispatch).
+
+---
+
+## 13. Related Work
+
+### 13.1 Documentation Coverage in ML
 
 Liang et al. (arXiv 2402.05160) analyzed documentation completeness across HuggingFace model cards and found significant gaps: 74.3% include training information, 17.4% document limitations, and only 2% report environmental impact. Phase C is designed to extract maximum signal from the documentation that does exist, and the C5 healing pass is planned to infer missing fields from structural signals.
 
-### 12.2 Machine-Readable Model Metadata (MRM3)
+### 13.2 Machine-Readable Model Metadata (MRM3)
 
 The MRM3 initiative proposes standardized machine-readable metadata for ML models. ModelAtlas's anchor dictionary and bank positions provide a complementary structured representation that can be aligned with MRM3 schemas.
 
-### 12.3 Transformers TrainingSummary
+### 13.3 Transformers TrainingSummary
 
 The `transformers/modelcard.py` module defines a canonical `TrainingSummary` schema with fields for model name, language, license, tags, datasets, and evaluation metrics. The C5 healing pass plans to use this schema as a template for inferring missing documentation fields from code-level signals.

@@ -9,6 +9,19 @@ import pytest
 from model_atlas import db
 
 
+@pytest.fixture(autouse=True)
+def _isolate_audit_log(tmp_path, monkeypatch):
+    """Route the audit log to a per-test tmp path.
+
+    Migrated canonical-write paths (admin.patch_field, admin.insert_canonical,
+    admin.ensure_anchor) require a derivable audit log location. In-memory
+    test connections cannot derive one, so we set MODEL_ATLAS_PATCHES_PATH
+    for every test. Tests that explicitly pass audit_log_path= override
+    this fixture per-call.
+    """
+    monkeypatch.setenv("MODEL_ATLAS_PATCHES_PATH", str(tmp_path / "patches.jsonl"))
+
+
 @pytest.fixture
 def conn():
     """In-memory SQLite database with schema initialized."""

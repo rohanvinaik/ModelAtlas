@@ -226,7 +226,9 @@ def _cmd_phase_e(args: argparse.Namespace) -> bool:
 
         network_conn = db.get_connection()
         db.init_db(network_conn)
-        bank_list = args.export_e_banks.upper().split(",") if args.export_e_banks else None
+        bank_list = (
+            args.export_e_banks.upper().split(",") if args.export_e_banks else None
+        )
         n = export_phase_e(
             network_conn,
             num_shards=args.export_e,
@@ -243,9 +245,7 @@ def _cmd_phase_e(args: argparse.Namespace) -> bool:
 
         network_conn = db.get_connection()
         db.init_db(network_conn)
-        result = merge_phase_e(
-            network_conn, args.merge_e, dry_run=args.merge_e_dry_run
-        )
+        result = merge_phase_e(network_conn, args.merge_e, dry_run=args.merge_e_dry_run)
         network_conn.close()
         dry = " (DRY RUN)" if args.merge_e_dry_run else ""
         print(f"Phase E merge{dry}: {result}")
@@ -260,16 +260,22 @@ def _cmd_phase_e(args: argparse.Namespace) -> bool:
         network_conn.close()
         print("Phase E Web Enrichment Status")
         print("=" * 50)
-        print(f"  Models enriched: {status['web_enriched_models']}/{status['total_models']} "
-              f"({status['coverage_pct']}%)")
+        print(
+            f"  Models enriched: {status['web_enriched_models']}/{status['total_models']} "
+            f"({status['coverage_pct']}%)"
+        )
         print(f"  Web summaries: {status['web_summaries']}")
         print(f"  Web anchor links: {status['web_anchor_links']}")
-        print(f"  Benchmark scores: {status['benchmark_scores']} "
-              f"({status['benchmark_models']} models)")
+        print(
+            f"  Benchmark scores: {status['benchmark_scores']} "
+            f"({status['benchmark_models']} models)"
+        )
         if status["recent_runs"]:
             print("  Recent runs:")
             for r in status["recent_runs"]:
-                print(f"    {r['run_id']}... status={r['status']} started={r['started']}")
+                print(
+                    f"    {r['run_id']}... status={r['status']} started={r['started']}"
+                )
         return True
 
     return False
@@ -394,18 +400,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # Phase E (web enrichment)
     parser.add_argument(
-        "--export-e", type=int, metavar="NUM_SHARDS", help="Export Phase E web enrichment input"
+        "--export-e",
+        type=int,
+        metavar="NUM_SHARDS",
+        help="Export Phase E web enrichment input",
     )
     parser.add_argument(
-        "--export-e-banks", default=None,
+        "--export-e-banks",
+        default=None,
         help="Comma-separated banks for Phase E export (default: all)",
     )
     parser.add_argument(
-        "--export-e-min-downloads", type=int, default=100,
+        "--export-e-min-downloads",
+        type=int,
+        default=100,
         help="Phase E priority download threshold (default: 100)",
     )
     parser.add_argument(
-        "--export-e-full-corpus", action="store_true",
+        "--export-e-full-corpus",
+        action="store_true",
         help="Include models below download threshold",
     )
     parser.add_argument(

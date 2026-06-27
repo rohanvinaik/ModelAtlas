@@ -426,3 +426,75 @@ All tunable constants live in `config.py`:
 6. **Network is primary, SQL is overflow.** If most data is in the metadata table, something is wrong.
 7. **Multiplicative scoring in navigate.** A zero in any component kills the final score — no averaging away bad matches.
 8. **IDF-weighted anchors in navigate.** Rare anchors count more than ubiquitous ones.
+
+## 10. Write Discipline and Audit Layer
+
+The database is **bi-modal**: a small canonical reference layer (the four tables above, ground truth) and a larger Mode-2 observation layer (`model_metadata`, `model_anchors`, `audit_findings`, `correction_events`, `phase_d_runs`). The discipline boundary runs along this seam.
+
+### 10.1 Canonical-Table Primitives (`src/model_atlas/admin.py`)
+
+Every write to `models`, `model_positions`, `model_links`, or `anchors` MUST go through one of three primitives:
+
+| Primitive | Purpose | Behavior |
+|-----------|---------|----------|
+| `patch_field(table, pk, field, old, new, reason)` | Single-field update | Dry-run default. Verifies `old` matches current value (optimistic concurrency). Refuses if `new == old`. Requires non-empty `reason`. |
+| `insert_canonical(table, row, reason)` | New canonical row | Dry-run default. Refuses if PK already present unless `if_exists="patch"`. Auto-handles ROWID-alias PKs. |
+| `ensure_anchor(label, bank, category, source, reason)` | Idempotent anchor upsert | Wraps `insert_canonical` for the `anchors` table. Used by the reconciler when worker output mentions a new anchor not yet in the vocabulary. |
+
+Every successful apply appends one line to `data/patches.jsonl`:
+
+```json
+{"ts":"2026-05-22T13:41:29.391Z","table":"model_anchors","pk":{"model_id":"...","anchor_id":42},
+ "field":"<insert>","old":null,"new":{...},"reason":"phase_e_merge: run=f1cdde87"}
+```
+
+Rotated past 5 MB to `data/patches.jsonl.YYYY-MM-DD-HHMMSS.gz` by `rotate_audit_log()`. Append-only — never edit in place.
+
+### 10.2 Reconciler (`src/model_atlas/reconciler.py`)
+
+Worker JSONL → primitives. The reconciler is the *only* sanctioned bulk-write path.
+
+```
+reconcile_file(jsonl_path, conn, apply=False)
+  → for each line:
+      hash = sha256(line)[:32]
+      if hash in reconcile_history: skip (idempotent)
+      validate(item)
+      dispatch via patch_field / insert_canonical / ensure_anchor
+      append hash to reconcile_history
+```
+
+Idempotency is line-hash, not row-hash — re-running the same JSONL is a no-op; running a near-duplicate JSONL is not (and that's intentional, since *some* fields legitimately change between dumps).
+
+### 10.3 Coherence Audit (`src/model_atlas/coherence.py`)
+
+Read-only weekly health report. Five checks:
+
+1. **Bank orthogonality** — pairwise correlation between bank assignments. Any |r| ≥ threshold means two banks are leaking information into each other.
+2. **NULL coverage per bank** — fraction of models with at least one anchor in each bank. Below ~95% suggests under-extraction.
+3. **Anchor orphans** — anchors with zero model assignments. Vocabulary debt; either evict or reseed.
+4. **Anchor oversaturation** — anchors above 50% prevalence. Loses discriminative power; consider splitting (e.g. `consumer-GPU-viable` → `4GB-vRAM` + `8GB-vRAM`).
+5. **Uncited canonical writes** — rows in audit-tracked tables with no corresponding `data/patches.jsonl` entry. Always 0 in a healthy system.
+
+```bash
+python -m model_atlas.coherence            # human report
+python -m model_atlas.coherence --json     # machine-readable
+```
+
+### 10.4 Hub-and-Spoke Deployment
+
+Workers run on spoke machines (`macpro`, `homebridge`) and emit JSONL. The hub (this laptop) runs `scripts/sync_and_reconcile.sh` weekly:
+
+1. `rsync` per-host JSONL from `~/model-atlas/data/incoming/<host>/` on each spoke to `data/incoming/<host>/` on the hub.
+2. For each pulled file: `reconcile_file()` (idempotent — safe to re-run).
+3. Legacy C/E-phase result files: `scp` to `~/.cache/model-atlas/phase_c_work/` etc., then merge via `model_atlas.ingest_cli --merge-c1` / `--merge-c2` / `--merge-c3` / `--merge-e`.
+4. `python -m model_atlas.coherence` — health check after writes.
+5. `rotate_audit_log()` — gzip + timestamp the audit log if past 5 MB.
+
+Failure modes are isolated: if a spoke drops, its files just don't arrive; the next sync picks them up. If the reconciler chokes on bad data, the line is logged to `stats.errors` and the rest of the file proceeds.
+
+### 10.5 Sanctioned Exceptions
+
+`.claude/CLAUDE.md` is the registry. Today: **none formally sanctioned**. Pre-existing legacy paths (`ingest_phase_c_merge.py`, `phase_d_*.py`, `scripts/phase_e_postprocess.py`, `ingest.py` Phase A/B, `ingest_seed.py`) write canonical tables directly via `db.insert_model`, `db.set_position`, `db.add_link`, `db.get_or_create_anchor`. They are not new sanctioned exceptions — they are debt to be migrated when next touched.
+
+New code MUST use `patch_field`, `insert_canonical`, or the reconciler. Discipline is the architecture.

@@ -635,13 +635,21 @@ def set_model_vibe(
         # Add extra anchors with vibes provenance
         anchors_added = []
         if extra_anchors:
+            from .admin import ensure_anchor
+
             for label in extra_anchors:
                 # Infer bank from existing anchor vocabulary, default to CAPABILITY
                 existing = conn.execute(
                     "SELECT bank FROM anchors WHERE label = ?", (label,)
                 ).fetchone()
                 bank = existing["bank"] if existing else "CAPABILITY"
-                anchor_id = db.get_or_create_anchor(conn, label, bank, source="vibes")
+                anchor_id = ensure_anchor(
+                    conn,
+                    label,
+                    bank,
+                    source="vibes",
+                    reason=f"set_model_vibe MCP tool call for {model_id}",
+                )
                 db.link_anchor(conn, model_id, anchor_id, confidence=0.5)
                 anchors_added.append(label)
 

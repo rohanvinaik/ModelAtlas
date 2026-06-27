@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.phase_e.local.0</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/.venv/bin/python</string>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/phase_e_worker.py</string>
+        <string>--input</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/shard_0.jsonl</string>
+        <string>--output</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/results_0.jsonl</string>
+        <string>--resume</string>
+        <string>--searxng</string>
+        <string>http://localhost:8888</string>
+        <string>--snippets-only</string>
+        <string>--model</string>
+        <string>qwen3.5:4b</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>Nice</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-phase_e-local-0.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-phase_e-local-0.err</string>
+</dict>
+</plist>

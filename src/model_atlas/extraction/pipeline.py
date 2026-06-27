@@ -2,14 +2,26 @@
 
 Takes raw HF API model data, runs it through all three extraction tiers,
 and writes the results into the semantic network database.
+
+Canonical writes (``models``, ``model_positions``, ``model_links``,
+``anchors``) are dispatched through
+:func:`model_atlas.reconciler.reconcile_items` so every change is
+audit-logged with the extraction context as its reason. Observation
+writes (``model_metadata``, ``model_anchors`` assignments) remain
+direct — those tables are Mode 2 in the bi-modal split.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
+from datetime import datetime, timezone
+from typing import Any
 
 from .. import db
+from ..admin import ensure_anchor
+from ..reconciler import reconcile_items
 from .benchmarks import derive_benchmark_anchors, extract_benchmarks
 from .deterministic import (
     AnchorTag,
@@ -26,20 +38,27 @@ from .vibes import extract_vibe_summary
 logger = logging.getLogger(__name__)
 
 
+def _utc_iso_z() -> str:
+    return (
+        datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    )
+
+
 def extract_and_store(
     conn: sqlite3.Connection, inp: ModelInput, card_text: str = ""
 ) -> None:
     """Run full extraction pipeline and store results in the network.
 
     This is the main entry point for indexing a single model. It:
-    1. Inserts/updates the model entity
+
+    1. Inserts/updates the model entity (canonical, audit-logged)
     2. Runs tier-1 deterministic extraction (API fields -> positions)
     3. Runs tier-2 pattern extraction (tags/names -> anchors/positions)
     4. Runs tier-3 vibe extraction (card text -> vibe_summary)
-    5. Writes all positions, anchors, metadata, and links to the DB
+    5. Writes positions and lineage links via the reconciler (canonical)
+    6. Writes metadata and anchor assignments directly (observation)
     """
-    # Insert model entity
-    db.insert_model(conn, inp.model_id, author=inp.author, source=inp.source)
+    captured_at = _utc_iso_z()
 
     # Tier 1: Deterministic
     det = extract_deterministic(inp)
@@ -70,24 +89,17 @@ def extract_and_store(
         training_method=", ".join(training_methods) if training_methods else "unknown",
     )
 
-    # Write bank positions (merge deterministic + pattern results)
-    _store_positions(conn, inp.model_id, det, pat)
+    # --- Build canonical items for reconciler dispatch ---
+    items = _build_canonical_items(inp, det, pat, captured_at)
+    reconcile_items(items, conn, apply=True, source_label="extract_and_store")
+
+    # --- Mode 2: observation writes (direct, not audit-logged) ---
 
     # Write anchors (deduplicated from both tiers, with provenance)
-    _store_anchors(
-        conn,
-        inp.model_id,
-        det.anchors,
-        source="deterministic",
-        default_confidence=1.0,
-    )
-    _store_anchors(
-        conn,
-        inp.model_id,
-        pat.anchors,
-        source="pattern",
-        default_confidence=0.8,
-    )
+    _link_anchors(conn, inp.model_id, det.anchors, source="deterministic",
+                  default_confidence=1.0)
+    _link_anchors(conn, inp.model_id, pat.anchors, source="pattern",
+                  default_confidence=0.8)
 
     # Write metadata (deterministic + pattern)
     for key, (value, value_type) in det.metadata.items():
@@ -107,13 +119,8 @@ def extract_and_store(
 
         # Derive QUALITY anchors from benchmark thresholds
         bench_anchors = derive_benchmark_anchors(benchmarks)
-        _store_anchors(
-            conn,
-            inp.model_id,
-            bench_anchors,
-            source="benchmark",
-            default_confidence=0.75,
-        )
+        _link_anchors(conn, inp.model_id, bench_anchors, source="benchmark",
+                      default_confidence=0.75)
 
         # Card quality score
         from .patterns import _compute_card_quality
@@ -130,71 +137,116 @@ def extract_and_store(
         hw_req = _infer_hardware_requirement(param_b[0], quant)
         db.set_metadata(conn, inp.model_id, "inference_hardware_req", hw_req, "str")
 
-    # Store lineage links for all detected base models
-    for base_id, relation in pat.base_models:
-        # Ensure target model exists (create stub if not yet indexed)
-        existing = conn.execute(
-            "SELECT 1 FROM models WHERE model_id = ?", (base_id,)
-        ).fetchone()
-        if not existing:
-            db.insert_model(conn, base_id, source="stub")
-        db.add_link(conn, inp.model_id, base_id, relation)
 
-
-def _store_positions(
-    conn: sqlite3.Connection,
-    model_id: str,
+def _build_canonical_items(
+    inp: ModelInput,
     det: DeterministicResult,
     pat: PatternResult,
-) -> None:
-    """Write all 8 bank positions to the database."""
-    db.set_position(
-        conn,
-        model_id,
-        "ARCHITECTURE",
-        det.architecture.sign,
-        det.architecture.depth,
-        det.architecture.nodes,
+    captured_at: str,
+) -> list[dict[str, Any]]:
+    """Build the list of reconciler-shaped items for one extraction."""
+    items: list[dict[str, Any]] = []
+
+    # Primary model entity
+    display_name = inp.model_id.split("/")[-1]
+    items.append(
+        {
+            "op": "upsert",
+            "table": "models",
+            "key": {"model_id": inp.model_id},
+            "row": {
+                "author": inp.author,
+                "source": inp.source,
+                "display_name": display_name,
+            },
+            "host": "extract_and_store",
+            "captured_at": captured_at,
+        }
     )
-    db.set_position(
-        conn, model_id, "EFFICIENCY", det.efficiency.sign, det.efficiency.depth
-    )
-    db.set_position(conn, model_id, "QUALITY", det.quality.sign, det.quality.depth)
-    db.set_position(
-        conn, model_id, "CAPABILITY", pat.capability.sign, pat.capability.depth
-    )
-    db.set_position(
-        conn, model_id, "COMPATIBILITY", pat.compatibility.sign, pat.compatibility.depth
-    )
-    db.set_position(conn, model_id, "LINEAGE", pat.lineage.sign, pat.lineage.depth)
-    db.set_position(conn, model_id, "DOMAIN", pat.domain.sign, pat.domain.depth)
-    db.set_position(conn, model_id, "TRAINING", pat.training.sign, pat.training.depth)
+
+    # 8 bank positions
+    position_specs: list[tuple[str, int, int, list[str] | None]] = [
+        ("ARCHITECTURE", det.architecture.sign, det.architecture.depth, det.architecture.nodes),
+        ("EFFICIENCY", det.efficiency.sign, det.efficiency.depth, None),
+        ("QUALITY", det.quality.sign, det.quality.depth, None),
+        ("CAPABILITY", pat.capability.sign, pat.capability.depth, None),
+        ("COMPATIBILITY", pat.compatibility.sign, pat.compatibility.depth, None),
+        ("LINEAGE", pat.lineage.sign, pat.lineage.depth, None),
+        ("DOMAIN", pat.domain.sign, pat.domain.depth, None),
+        ("TRAINING", pat.training.sign, pat.training.depth, None),
+    ]
+    from ..db import ZERO_STATES
+
+    for bank, sign, depth, nodes in position_specs:
+        row: dict[str, Any] = {
+            "path_sign": sign,
+            "path_depth": depth,
+            "path_nodes": json.dumps(nodes) if nodes else None,
+            "zero_state": ZERO_STATES.get(bank, ""),
+        }
+        items.append(
+            {
+                "op": "upsert",
+                "table": "model_positions",
+                "key": {"model_id": inp.model_id, "bank": bank},
+                "row": row,
+                "host": "extract_and_store",
+                "captured_at": captured_at,
+            }
+        )
+
+    # Lineage links: stub the target model if absent, then add the link
+    for base_id, relation in pat.base_models:
+        items.append(
+            {
+                "op": "upsert",
+                "table": "models",
+                "key": {"model_id": base_id},
+                "row": {"source": "stub", "author": "", "display_name": base_id.split("/")[-1]},
+                "host": "extract_and_store",
+                "captured_at": captured_at,
+            }
+        )
+        items.append(
+            {
+                "op": "upsert",
+                "table": "model_links",
+                "key": {
+                    "source_id": inp.model_id,
+                    "target_id": base_id,
+                    "relation": relation,
+                },
+                "row": {"weight": 1.0},
+                "host": "extract_and_store",
+                "captured_at": captured_at,
+            }
+        )
+
+    return items
 
 
-def _store_anchors(
+def _link_anchors(
     conn: sqlite3.Connection,
     model_id: str,
     anchors: list[AnchorTag],
-    source: str = "deterministic",
-    default_confidence: float = 1.0,
+    source: str,
+    default_confidence: float,
 ) -> None:
-    """Deduplicate and write anchor links with provenance.
-
-    Uses the per-anchor confidence from AnchorTag when it differs from
-    the default (1.0), otherwise falls back to default_confidence.
+    """Ensure anchor vocabulary exists (canonical, audit-logged) and link
+    the model to each (observation, direct write).
     """
     seen: set[str] = set()
     for anchor in anchors:
         if anchor.label in seen:
             continue
         seen.add(anchor.label)
-        anchor_id = db.get_or_create_anchor(
+        anchor_id = ensure_anchor(
             conn,
             anchor.label,
             anchor.bank,
             source=source,
+            reason=f"{source} extraction tier for {model_id}",
         )
-        # Use per-anchor confidence if set, else fall back to default
         conf = (
             anchor.confidence if anchor.confidence is not None else default_confidence
         )

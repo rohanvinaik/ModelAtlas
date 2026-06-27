@@ -93,7 +93,18 @@ _COMPATIBILITY_PATTERNS: list[tuple[str, str]] = [
     (r"\bcoreml\b|\bcore[\s_-]ml\b", "CoreML"),
     (r"\btflite\b|\btensorflow[\s_-]lite\b", "TFLite"),
     (r"\bcpu[\s_-]?(?:inference|optimized|only)\b", "CPU-inference"),
+    # Explicit Apple Silicon signals — direct tag hits even without MLX/CoreML
+    (r"\bapple[\s_-]?silicon\b", "Apple-Silicon-native"),
+    (r"\bmetal[\s_-]?performance[\s_-]?shaders\b", "Apple-Silicon-native"),
+    (r"\bmps[\s_-]?(?:backend|inference)\b", "Apple-Silicon-native"),
 ]
+
+# Anchors that strictly imply Apple-Silicon-native compatibility. When any
+# of these is detected, Apple-Silicon-native is added too. MLX is Apple's
+# framework (Apple-Silicon-only); CoreML targets Apple Neural Engine.
+_APPLE_SILICON_IMPLYING: frozenset[str] = frozenset(
+    {"MLX-compatible", "CoreML"}
+)
 
 _DOMAIN_PATTERNS: list[tuple[str, str, int]] = [
     # (pattern, anchor, domain_depth)
@@ -166,6 +177,10 @@ def _detect_compatibility(searchable: str, library_name: str) -> tuple[list[str]
         found.append("transformers-compatible")
     if "diffusers" in lib_lower:
         found.append("diffusers-compatible")
+
+    # Strict implication: MLX or CoreML → Apple-Silicon-native.
+    if any(a in _APPLE_SILICON_IMPLYING for a in found):
+        found.append("Apple-Silicon-native")
 
     found = list(set(found))  # deduplicate
 
