@@ -25,7 +25,7 @@ Before acting on a file you haven't read, before trying a third approach, before
 
 **When context evolves** — review and apply patches explicitly. When the living_context system generates a context patch (from accepted constraints, confirmed predictions, or recurring behavioral signals), use `context_patch_review` to see the diff. Use `context_patch_apply` to write it. Patches are never auto-applied. The cumulative rebasing ensures multiple patches to the same section compose correctly — each apply re-reads the current on-disk state.
 
-**When you change the system** — update the docs immediately, in the same action. If you add an MCP tool, add it to AGENTS.md and README.md tool tables and increment the count. Source of truth for tool count: `grep -Rho "@mcp.tool()" mcp_server.py mcp_tools | wc -l`. Documentation precision has compounding returns — one stale count becomes a chain of wrong assumptions across every session that reads it.
+**When you change the system** — update the docs immediately, in the same action. If you add an MCP tool, add it to AGENTS.md and README.md tool tables and increment the count. Source of truth for tool count: `grep -Rho "@mcp.tool()" src/model_atlas/server.py | wc -l`. Documentation precision has compounding returns — one stale count becomes a chain of wrong assumptions across every session that reads it.
 
 ## Mission
 
@@ -42,8 +42,49 @@ Before acting on a file you haven't read, before trying a third approach, before
 - DO NOT ignore theory codas on behavioral findings — they exist to connect observations to project values.
 - MUST keep hook and MCP outputs machine-readable and stable for downstream consumers.
 - MUST preserve backward-compatible MCP tool contracts unless versioned intentionally.
-- MUST update AGENTS.md, README.md, and docs/design.md when adding, removing, or changing MCP tools. Verify with `grep -Rho "@mcp.tool()" mcp_server.py mcp_tools | wc -l`.
+- MUST update AGENTS.md, README.md, and docs/DESIGN.md when adding, removing, or changing MCP tools. Verify with `grep -Rho "@mcp.tool()" src/model_atlas/server.py | wc -l`.
 - MUST update docs/design.md YAML examples when adding config options.
+
+## Sanctioned write exceptions
+
+`patch_field()` and `insert_canonical()` in `src/model_atlas/admin.py`
+are the audit-logged write primitives for canonical reference tables
+(`models`, `model_positions`, `model_links`, `anchors`). For
+worker-driven JSONL ingestion, route through
+`model_atlas.reconciler.reconcile_file()` which dispatches via these
+primitives with line-hash idempotency.
+
+Every direct write to a canonical table that bypasses these primitives
+is an exception that MUST be named here with a justification — silent
+exceptions accrete and kill the discipline.
+
+**Current sanctioned exceptions:** none formally registered yet.
+
+Legacy write paths — `ingest_phase_c_merge.py`, `phase_d_heal.py`,
+`phase_d_merge.py`, `scripts/phase_e_postprocess.py`, the Phase A/B
+ingest in `ingest.py` and `ingest_seed.py` — write canonical positions,
+anchors, and models directly via `db.insert_model`, `db.set_position`,
+`db.add_link`, and `db.get_or_create_anchor`. These are *pre-existing*
+paths from before the primitives landed, not sanctioned exceptions —
+migrating each call site is a per-site judgment call that needs to
+decide between (a) emitting JSONL through the reconciler or (b) calling
+`patch_field`/`insert_canonical` directly with a synthesized reason. Do
+not extend or copy their write patterns into new code paths.
+
+New code that mutates canonical tables MUST use `patch_field`,
+`insert_canonical`, or the reconciler. If a specific case genuinely
+cannot (e.g., high-cadence observation worker where the dry-run/review
+cost is prohibitive), add a paragraph here naming the file, the table
+it writes, and why the exception is bounded. See `docs/admin.md`,
+`docs/reconciler.md`, and `PERSISTENT_KNOWLEDGE_GROUNDED_DATABASES.md`
+§11 + §50 for the discipline.
+
+## Coherence audit
+
+`python -m model_atlas.coherence` produces a weekly health report
+(anchor orphans/oversaturation, bank orthogonality, NULL coverage,
+uncited audit-log entries). Read-only — never modifies the DB. See
+`docs/coherence.md`.
 
 <!-- LINTGATE:BEGIN theory_alignment v1 -->
 ## Theory-Aligned Development

@@ -6,18 +6,19 @@
     <string>com.modelatlas.phase_e.local.0</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/.venv/bin/python</string>
-        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/phase_e_worker.py</string>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/phase_e_worker_wrapper.sh</string>
         <string>--input</string>
-        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/shard_0.jsonl</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/shard_tier2_0.jsonl</string>
         <string>--output</string>
-        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/results_0.jsonl</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/results_tier2_0.jsonl</string>
         <string>--resume</string>
         <string>--searxng</string>
         <string>http://localhost:8888</string>
         <string>--snippets-only</string>
+        <string>--url</string>
+        <string>http://localhost:11435</string>
         <string>--model</string>
-        <string>qwen3.5:4b</string>
+        <string>qwen3:4b-instruct-2507-q4_K_M</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work</string>

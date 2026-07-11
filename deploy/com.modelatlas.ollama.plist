@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.ollama</string>
+
+    <!--
+        Dedicated Ollama instance for ModelAtlas Phase E workers.
+        Runs on port 11435 to leave the default 11434 free for other tools.
+        num_parallel=4 lets one loaded model serve all 4 concurrent workers
+        without queueing on the LLM bottleneck.
+        Shares ~/.ollama models storage with the default instance (read-only
+        during inference, safe to co-mount).
+    -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/ollama</string>
+        <string>serve</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>OLLAMA_HOST</key>
+        <string>127.0.0.1:11435</string>
+        <key>OLLAMA_NUM_PARALLEL</key>
+        <string>4</string>
+        <key>OLLAMA_MAX_LOADED_MODELS</key>
+        <string>1</string>
+        <key>OLLAMA_KEEP_ALIVE</key>
+        <string>24h</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/tmp</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-ollama.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-ollama.err</string>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>

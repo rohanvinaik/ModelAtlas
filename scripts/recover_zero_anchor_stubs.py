@@ -206,15 +206,23 @@ def main() -> int:
     log.info("HF fetch: %d ok, %d 404, %d error", fetched_ok, fetched_404, fetched_err)
     log.info("HF extract: %d gained anchors, %d still empty", extracted_ok, extracted_empty)
 
-    # Bump source from 'stub' to 'huggingface' for any models that got real data
-    network.execute(
-        """UPDATE models SET source='huggingface'
-           WHERE source='stub'
-             AND EXISTS (SELECT 1 FROM model_anchors WHERE model_id = models.model_id)"""
-    )
-    promoted = network.execute("SELECT changes()").fetchone()[0]
-    network.commit()
-    log.info("promoted source: 'stub' → 'huggingface' for %d models", promoted)
+    # Bump source from 'stub' to 'huggingface' ONLY for models this run successfully
+    # fetched from HF and produced anchors for. Scoped to `need_fetch` (the input
+    # bucket for HF fetches) to avoid sweeping in pre-existing stub rows that
+    # happen to have anchors from unrelated code paths.
+    promoted = 0
+    if need_fetch:
+        placeholders = ",".join("?" * len(need_fetch))
+        network.execute(
+            f"""UPDATE models SET source='huggingface'
+                WHERE source='stub'
+                  AND model_id IN ({placeholders})
+                  AND EXISTS (SELECT 1 FROM model_anchors WHERE model_id = models.model_id)""",
+            need_fetch,
+        )
+        promoted = network.execute("SELECT changes()").fetchone()[0]
+        network.commit()
+    log.info("promoted source: 'stub' → 'huggingface' for %d models (scoped to this run)", promoted)
 
     return 0
 

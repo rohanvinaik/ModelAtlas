@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.modelatlas.phase_e.merge_periodic</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/merge_phase_e_periodic.sh</string>
+    </array>
+
+    <!-- Every 6 hours. Idempotent; safe mid-run. -->
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <!-- Run at load so first merge happens promptly, not 6h from now. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas</string>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/modelatlas-phase_e-merge_periodic.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/modelatlas-phase_e-merge_periodic.err</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <!-- Merge is I/O-bound and secondary to the workers; run low priority. -->
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

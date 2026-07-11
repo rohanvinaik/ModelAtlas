@@ -3,14 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.modelatlas.phase_e.local.1</string>
+    <string>com.modelatlas.phase_e.local.2</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/phase_e_worker_wrapper.sh</string>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/.venv/bin/python</string>
+        <string>/Users/rohanvinaik/tools/infrastructure/ModelAtlas/scripts/phase_e_worker.py</string>
         <string>--input</string>
-        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/shard_tier2_1.jsonl</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/shard_2.jsonl</string>
         <string>--output</string>
-        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/results_tier2_1.jsonl</string>
+        <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work/results_2.jsonl</string>
         <string>--resume</string>
         <string>--searxng</string>
         <string>http://localhost:8888</string>
@@ -39,8 +40,8 @@
     <key>Nice</key>
     <integer>5</integer>
     <key>StandardOutPath</key>
-    <string>/tmp/modelatlas-phase_e-local-1.log</string>
+    <string>/tmp/modelatlas-phase_e-local-2.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/modelatlas-phase_e-local-1.err</string>
+    <string>/tmp/modelatlas-phase_e-local-2.err</string>
 </dict>
 </plist>

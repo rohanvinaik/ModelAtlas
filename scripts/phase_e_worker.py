@@ -498,6 +498,18 @@ def _load_skip_set(output_path: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
+def _augment_query_for_hf_context(query: str) -> str:
+    """Bias search toward HuggingFace-model context.
+
+    Models with generic-word names (nsfw_image_detection, chat, clip, ...)
+    otherwise match unrelated general web results because the model name is
+    swallowed by the more common concept. Appending "huggingface" anchors
+    the query to model-card / discussion pages without excluding other useful
+    sources (benchmarks, blog posts).
+    """
+    return f"{query} huggingface"
+
+
 def _search_and_collect(
     search_queries: list[str],
     searxng_url: str | None,
@@ -514,7 +526,8 @@ def _search_and_collect(
     for query in search_queries:
         if _shutdown:
             break
-        results = web_search(query, searxng_url, max_results=max_pages, timeout=timeout)
+        augmented = _augment_query_for_hf_context(query)
+        results = web_search(augmented, searxng_url, max_results=max_pages, timeout=timeout)
         if not results:
             search_failures += 1
             if search_failures >= 2:
