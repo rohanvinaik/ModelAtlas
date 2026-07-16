@@ -82,6 +82,25 @@ class StructuredQuery:
     # Seed model for similarity
     similar_to: str | None = None
 
+    # Context carry-over — anchors the caller has already established as
+    # relevant (e.g. from a prior turn or the user's stated situation).
+    # Not a hard filter (that's `require_anchors`); a soft bias on
+    # `anchor_relevance` so results the calling context already leans
+    # toward rank higher without excluding others. Sparse-wiki's `context`
+    # arm of ground(mention, context) — the SAME mention resolves
+    # differently depending on the surrounding facets.
+    context_anchors: list[str] = field(default_factory=list)
+
+    # Vibe targeting (Osgood EPA — Evaluation / Potency / Activity). Each
+    # is a target in [-1, +1] or None for "don't care". A candidate's
+    # stored `vibe_e/p/a` is compared to the target; distance in the
+    # specified axes becomes a soft multiplicative factor. Absent
+    # candidate EPA (no vibe_summary or no lexicon hits) is neutral,
+    # never a penalty — abstention is honest.
+    vibe_e: float | None = None
+    vibe_p: float | None = None
+    vibe_a: float | None = None
+
     # Result control
     limit: int = 20
 
@@ -120,3 +139,17 @@ class NavigationResult:
     anchor_labels: list[str] = field(default_factory=list)
     vibe_summary: str = ""
     author: str = ""
+    tie_cluster_id: int | None = None
+    """When a run of top results falls within `epsilon` (default 0.05) of
+    each other on `score`, they form a tie-cluster: the ordering inside
+    the cluster is not distinguishable from the constraints alone. Same
+    integer means same cluster; `None` means the result is a singleton at
+    its score band. Sparse-wiki's abstain-when-too-close discipline
+    applied at query time: don't fake ordering the constraints haven't
+    earned."""
+    discriminating_axis: str | None = None
+    """For cluster members, the position bank with the highest cross-cluster
+    variance — i.e. the axis a caller could ask about to break the tie.
+    `None` on singletons and on clusters whose members share every bank
+    (nothing there differentiates them). Bank name, e.g. `COMPATIBILITY`
+    when GGUF vs safetensors is what would split the cluster."""

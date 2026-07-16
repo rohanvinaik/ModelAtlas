@@ -28,6 +28,21 @@ ingest = [
 model-atlas = "model_atlas.server:main"
 model-atlas-ingest = "model_atlas.ingest_cli:main"
 
+[tool.pytest.ini_options]
+# Scope discovery to `tests/` so pytest never walks the mutants/ shadow tree
+# mutmut creates. Both trees have a `tests/conftest.py`, and default rootdir
+# discovery would try to import both as `tests.conftest` → ImportPathMismatchError,
+# which cascades into ImportErrors across `tests/generated/` and (via Wesker's
+# session-abort semantics) makes Detective report "no live pytest session".
+testpaths = ["tests"]
+# `testpaths` only applies when pytest is called without explicit path args.
+# Wesker's live-suite seam passes explicit paths (its reachability set, or "."),
+# so testpaths is bypassed there. `norecursedirs` is the ONE knob pytest honors
+# even with explicit paths — it prunes during recursion. Without this, an audit
+# through Detective still walks into `mutants/` and re-hits the duplicate-conftest
+# ImportPathMismatchError even though the CLI path is fine.
+norecursedirs = ["mutants", ".venv", "venv", "build", "dist", ".git"]
+
 [tool.mutmut]
 paths_to_mutate = ["src/"]
 tests_dir = ["tests/"]

@@ -146,6 +146,7 @@ def navigate_models(
     require_anchors: list[str] | None = None,
     prefer_anchors: list[str] | None = None,
     avoid_anchors: list[str] | None = None,
+    context_anchors: list[str] | None = None,
     similar_to: str | None = None,
     limit: int = 20,
 ) -> str:
@@ -192,6 +193,13 @@ def navigate_models(
                   "GGUF-available", "consumer-GPU-viable", "tool-calling"
       prefer_anchors: Boost models with these (soft preference, IDF-weighted).
       avoid_anchors: Penalize models with these (each halves the score).
+      context_anchors: Anchors the CALLING CONTEXT has already established
+        as relevant (e.g. earlier-turn state, the user's stated situation).
+        Soft multiplicative bias in [1.0, 1.5]× based on IDF-weighted
+        overlap — never a filter. Use for "the same query would resolve
+        differently in a different context" cases: passing
+        `["Apple-Silicon-native"]` on a Mac user's session biases toward
+        MLX/GGUF-Metal without excluding CUDA-only models from the ranking.
 
     SEED SIMILARITY:
       similar_to: A model_id to use as similarity seed (IDF-weighted Jaccard
@@ -212,6 +220,7 @@ def navigate_models(
         require_anchors: Anchors the model MUST have (hard filter)
         prefer_anchors: Anchors that boost score (soft, IDF-weighted)
         avoid_anchors: Anchors that penalize score
+        context_anchors: Ambient-context anchors (soft bias, ≤ 1.5× boost)
         similar_to: Model ID for anchor-similarity seed
         limit: Max results to return (default 20)
     """
@@ -238,6 +247,7 @@ def navigate_models(
             require_anchors=require_anchors or [],
             prefer_anchors=prefer_anchors or [],
             avoid_anchors=avoid_anchors or [],
+            context_anchors=context_anchors or [],
             similar_to=similar_to,
             limit=limit,
         )
@@ -250,6 +260,7 @@ def navigate_models(
                     "require_anchors": sq.require_anchors,
                     "prefer_anchors": sq.prefer_anchors,
                     "avoid_anchors": sq.avoid_anchors,
+                    "context_anchors": sq.context_anchors,
                     "similar_to": sq.similar_to,
                 },
                 "network_models": stats["total_models"],

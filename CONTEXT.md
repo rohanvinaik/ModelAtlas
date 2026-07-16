@@ -1,4 +1,4 @@
-# hf-model-search Context
+# ModelAtlas Context
 
 README: MCP server that builds a **navigable semantic network** of ML models. Models are positioned across orthogonal semantic banks (architecture, capability, efficiency, compatibility, lineage, domain, qual
 

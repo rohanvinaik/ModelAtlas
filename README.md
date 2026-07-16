@@ -258,7 +258,7 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 
 | Tool | What it does |
 |------|-------------|
-| `navigate_models` | **Primary.** Bank directions + anchor constraints → scored, ranked results (coherence-weighted) |
+| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + optional EPA target → scored, ranked results (coherence-weighted, PageRank-boosted, tie-clusters named) |
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, metadata, `certification_score` |
 | `hf_compare_models` | Structural diff between models: shared/unique anchors, position deltas, Jaccard similarity |
 | `hf_search_models` | Natural language fallback with fuzzy matching when structured query isn't needed |
