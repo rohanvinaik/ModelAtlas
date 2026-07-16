@@ -1,20 +1,20 @@
-<svg width="161.3" height="20" viewBox="0 0 1613 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MC/DC: Verified (990/990)">
-  <title>MC/DC: Verified (990/990)</title>
+<svg width="175.3" height="20" viewBox="0 0 1753 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MC/DC: Verified (1050/1050)">
+  <title>MC/DC: Verified (1050/1050)</title>
   <linearGradient id="a" x2="0" y2="100%">
     <stop offset="0" stop-opacity=".1" stop-color="#EEE"/>
     <stop offset="1" stop-opacity=".1"/>
   </linearGradient>
-  <mask id="m"><rect width="1613" height="200" rx="30" fill="#FFF"/></mask>
+  <mask id="m"><rect width="1753" height="200" rx="30" fill="#FFF"/></mask>
   <g mask="url(#m)">
     <rect width="482" height="200" fill="#333"/>
-    <rect width="1131" height="200" fill="#0ea5e9" x="482"/>
-    <rect width="1613" height="200" fill="url(#a)"/>
+    <rect width="1271" height="200" fill="#0ea5e9" x="482"/>
+    <rect width="1753" height="200" fill="url(#a)"/>
   </g>
   <g aria-hidden="true" fill="#fff" text-anchor="start" font-family="Verdana,DejaVu Sans,sans-serif" font-size="110">
     <text x="60" y="148" textLength="382" fill="#000" opacity="0.25">MC/DC</text>
     <text x="50" y="138" textLength="382">MC/DC</text>
-    <text x="537" y="148" textLength="1031" fill="#000" opacity="0.25">Verified (990/990)</text>
-    <text x="527" y="138" textLength="1031">Verified (990/990)</text>
+    <text x="537" y="148" textLength="1171" fill="#000" opacity="0.25">Verified (1050/1050)</text>
+    <text x="527" y="138" textLength="1171">Verified (1050/1050)</text>
   </g>
   
 </svg>
