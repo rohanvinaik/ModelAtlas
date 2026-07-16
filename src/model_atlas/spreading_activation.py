@@ -228,10 +228,22 @@ def spread(
         if not cfg.use_anchors:
             continue
         for anchor_id, label, bank, ma_w in _load_anchors(conn, model_id, max_anchors=20):
-            if popularity.get(anchor_id, 0) > cfg.anchor_popularity_cutoff:
+            n_pop = popularity.get(anchor_id, 0)
+            if n_pop > cfg.anchor_popularity_cutoff:
                 continue
+            # Adaptive fan-out — rare anchors get wider reach (more of the true
+            # neighborhood surfaces); popular anchors stay tight (avoid drowning
+            # in generic ones). Linear scale: an anchor with 1 model → full
+            # anchor_limit; an anchor at the popularity cutoff → floor of 3.
+            # An anchor of medium rarity interpolates. Rarity IS the signal
+            # of specificity, so we spend more traversal budget on it.
+            if cfg.anchor_popularity_cutoff > 0:
+                rarity_frac = 1.0 - min(1.0, n_pop / cfg.anchor_popularity_cutoff)
+            else:
+                rarity_frac = 1.0
+            adaptive_limit = max(3, int(cfg.anchor_limit * (0.4 + 0.6 * rarity_frac)))
             for related_id, rel_w in _load_anchor_neighbors(
-                conn, anchor_id, cfg.anchor_limit, exclude=model_id
+                conn, anchor_id, adaptive_limit, exclude=model_id
             ):
                 anchor_act = activation * cfg.anchor_decay * ma_w * rel_w
                 if anchor_act < cfg.threshold:

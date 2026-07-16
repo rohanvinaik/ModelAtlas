@@ -148,6 +148,8 @@ def navigate_models(
     avoid_anchors: list[str] | None = None,
     context_anchors: list[str] | None = None,
     similar_to: str | None = None,
+    mode: str = "auto",
+    bank_weights: dict[str, float] | None = None,
     limit: int = 20,
 ) -> str:
     """Navigate the semantic model network with structured scoring.
@@ -249,6 +251,8 @@ def navigate_models(
             avoid_anchors=avoid_anchors or [],
             context_anchors=context_anchors or [],
             similar_to=similar_to,
+            mode=mode,
+            bank_weights=bank_weights,
             limit=limit,
         )
         results = navigate(conn, sq)
@@ -274,9 +278,23 @@ def navigate_models(
                             "bank_alignment": round(r.bank_alignment, 4),
                             "anchor_relevance": round(r.anchor_relevance, 4),
                             "seed_similarity": round(r.seed_similarity, 4),
+                            "coherence": round(r.coherence, 4),
                         },
                         "positions": r.positions,
                         "anchors": r.anchor_labels[:15],
+                        # Phase 6 tie-cluster surface — omitted when a result is a
+                        # singleton at its score band. Same `tie_cluster_id` = same
+                        # cluster (the constraints don't distinguish them); the
+                        # `discriminating_axis` names the bank a follow-up query
+                        # could use to break the tie.
+                        **(
+                            {
+                                "tie_cluster_id": r.tie_cluster_id,
+                                "discriminating_axis": r.discriminating_axis,
+                            }
+                            if r.tie_cluster_id is not None
+                            else {}
+                        ),
                     }
                     for r in results
                 ],

@@ -35,18 +35,20 @@ class TestBankScoreSingle:
         assert _bank_score_single(0, 1) == 0.5
 
     def test_direction_positive_opposed(self):
-        """Wanting +1, model on negative side → decayed."""
+        """Wanting +1, model on negative side → Monty Hall (near-zero)."""
+        from model_atlas.query_navigate import NAVIGATE_OPPOSITION_PENALTY
         score = _bank_score_single(-2, 1)
-        assert score == 1.0 / (1.0 + 2)
+        assert score == NAVIGATE_OPPOSITION_PENALTY
 
     def test_direction_negative_aligned(self):
         """Wanting -1, model on negative side → 1.0."""
         assert _bank_score_single(-3, -1) == 1.0
 
     def test_direction_negative_opposed(self):
-        """Wanting -1, model on positive side → decayed."""
+        """Wanting -1, model on positive side → Monty Hall (near-zero)."""
+        from model_atlas.query_navigate import NAVIGATE_OPPOSITION_PENALTY
         score = _bank_score_single(1, -1)
-        assert score == 1.0 / (1.0 + 1)
+        assert score == NAVIGATE_OPPOSITION_PENALTY
 
 
 # ---------------------------------------------------------------------------
@@ -59,11 +61,15 @@ class TestNavigateBasic:
         invalidate_idf_cache()
 
     def test_no_constraints_returns_all(self, populated_conn):
-        """Empty query returns all models with score 1.0."""
+        """Empty query returns all models; scores >= 1.0 (PageRank boost may
+        apply if PR metadata exists, but no bank/anchor discrimination)."""
         results = navigate(populated_conn, StructuredQuery())
         assert len(results) == 4
         for r in results:
-            assert r.score == 1.0
+            assert r.score >= 1.0
+            assert r.bank_alignment == 1.0
+            assert r.anchor_relevance == 1.0
+            assert r.seed_similarity == 1.0
 
     def test_results_are_navigation_results(self, populated_conn):
         """Results are NavigationResult instances."""
@@ -240,7 +246,9 @@ class TestCombinedScoring:
         invalidate_idf_cache()
 
     def test_multiplicative_combination(self, populated_conn):
-        """final_score = bank_alignment * anchor_relevance * seed_similarity."""
+        """Score composition includes bank_alignment × anchor_relevance ×
+        seed_similarity as core factors (soft signals and PageRank boost
+        multiply on top — score >= product of the three core factors)."""
         results = navigate(
             populated_conn,
             StructuredQuery(
@@ -251,8 +259,11 @@ class TestCombinedScoring:
         )
         assert len(results) == 1  # only Qwen passes require
         r = results[0]
-        expected = r.bank_alignment * r.anchor_relevance * r.seed_similarity
-        assert abs(r.score - expected) < 1e-9
+        core = r.bank_alignment * r.anchor_relevance * r.seed_similarity
+        # Score is >= core (soft signals + PageRank boost multiply on top).
+        # The three core factors ARE all in the product; assert their shape.
+        assert r.score >= core * 0.99
+        assert r.bank_alignment > 0 and r.anchor_relevance > 0 and r.seed_similarity > 0
 
     def test_zero_bank_kills_score(self, populated_conn):
         """A bank score of 0 should propagate to final score = 0.

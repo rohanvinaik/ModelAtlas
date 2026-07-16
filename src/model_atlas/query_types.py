@@ -101,6 +101,19 @@ class StructuredQuery:
     vibe_p: float | None = None
     vibe_a: float | None = None
 
+    # Query mode — shifts the weight of soft signals (PageRank vs
+    # rare-anchor specificity vs absence-bonus). `auto` derives from the
+    # query's mechanical vs semantic bank mix; `canonical` favours popular
+    # incumbents; `niche` favours specialists; `balanced` uses defaults.
+    mode: str = "auto"
+
+    # Optional per-bank weight overrides. Missing bank → weight 1.0
+    # (default), 0 → neutralize, > 1 → amplify. Applied as exponents on
+    # each bank's alignment factor so the score stays in the same
+    # multiplicative shape; renormalized across active banks so total
+    # attention mass is preserved.
+    bank_weights: dict[str, float] | None = None
+
     # Result control
     limit: int = 20
 

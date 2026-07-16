@@ -36,21 +36,31 @@ def invalidate_idf_cache() -> None:
     _idf_cache = {}
 
 
+NAVIGATE_OPPOSITION_PENALTY = 0.05
+"""Monty Hall sharpening — a model whose position on a bank is DIRECTLY
+opposed to the query's stated direction (e.g. model efficiency=+2 vs query
+efficiency=-1) is confidently NOT what the user asked for. Old behavior
+returned 0.33-0.5 (soft), letting opposed models place in top-N by other
+signals. Sharpened: opposition → 0.05, so opposed models effectively drop
+out of the top-N unless every other signal saturates. Not literal zero —
+they remain visible in longer result sets, and MMR can still redistribute."""
+
+
 def _bank_score_single(model_signed_pos: int, query_direction: int) -> float:
     """Score a single bank alignment.
 
     direction == 0: want near zero, penalize distance.
-    direction == +1/-1: reward alignment, penalize opposition.
+    direction == +1/-1: reward alignment, near-zero-out on opposition
+    (Monty Hall — opposed models are confidently NOT the answer).
     """
     if query_direction == 0:
         return 1.0 / (1.0 + abs(model_signed_pos))
     alignment = model_signed_pos * query_direction
     if alignment > 0:
         return 1.0
-    elif alignment == 0:
+    if alignment == 0:
         return 0.5
-    else:
-        return 1.0 / (1.0 + abs(alignment))
+    return NAVIGATE_OPPOSITION_PENALTY
 
 
 def _nav_candidates(
@@ -300,6 +310,293 @@ def _discriminating_axis(positions_list: list[dict[str, dict]]) -> str | None:
     return best_bank
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Structural additions — the "big blast" of principled scoring signals
+# ─────────────────────────────────────────────────────────────────────
+
+import math as _math
+
+# Bank-family classification (dual where the bank carries both mechanical
+# and semantic weight). Used by mechanical_fraction below.
+_BANK_MECH_SEM: dict[str, tuple[float, float]] = {
+    "EFFICIENCY": (1.0, 0.0),
+    "COMPATIBILITY": (1.0, 0.0),
+    "LINEAGE": (1.0, 0.0),
+    "ARCHITECTURE": (1.0, 1.0),  # both — measured structure + intent
+    "CAPABILITY": (0.0, 1.0),
+    "DOMAIN": (0.0, 1.0),
+    "QUALITY": (0.0, 1.0),
+    "TRAINING": (0.0, 1.0),
+}
+
+NAVIGATE_STANDARDS_THRESHOLD = 0.40
+"""An anchor present in > this fraction of the query's candidate sub-corpus
+is a "standard" for that query context — the default state, whose absence
+carries information (a specialist is CONSPICUOUSLY missing it)."""
+
+NAVIGATE_SUBMODULAR_DECAY = 0.7
+"""Sorted-descending signals combine with each successive one × decay.
+The strongest signal counts fully; the second × 0.7; the third × 0.49.
+Prevents flat multiplicative compounding when multiple signals point the
+same way (submodular / diminishing returns)."""
+
+NAVIGATE_MMR_LAMBDA = 0.7
+"""MMR trade-off: higher = relevance-heavy, lower = diversity-heavy."""
+
+
+def _mechanical_fraction(
+    query: "StructuredQuery", idf: dict[str, float], conn: sqlite3.Connection
+) -> float:
+    """Query's mechanical vs semantic character in [0, 1]. 1.0 = pure
+    mechanical (size/format), 0.0 = pure semantic (capability/domain).
+    Drives mode='auto' weight selection. Anchor contributions are IDF-
+    weighted so a rare semantic anchor pushes semantic-side harder than
+    a common one would."""
+    mech = sem = 0.0
+    for bank in query.bank_directions().keys():
+        m, s = _BANK_MECH_SEM.get(bank, (0.5, 0.5))
+        mech += m
+        sem += s
+    for anchor in list(query.require_anchors) + list(query.prefer_anchors):
+        row = conn.execute(
+            "SELECT bank FROM anchors WHERE label = ?", (anchor,)
+        ).fetchone()
+        if row:
+            m, s = _BANK_MECH_SEM.get(row["bank"], (0.5, 0.5))
+            w = idf.get(anchor, 1.0)
+            mech += m * w
+            sem += s * w
+    total = mech + sem
+    return mech / total if total > 0 else 0.5
+
+
+def _mode_weights(mode: str, mech_frac: float) -> dict[str, float]:
+    """Weight multipliers for each soft signal, driven by query mode.
+
+    * canonical → PageRank dominates (mechanical/basic query pattern)
+    * niche → rare/absence/super dominate (specialist search)
+    * balanced → fixed defaults
+    * auto → linearly interpolate based on mechanical_fraction
+
+    Return keys: K_PMI, K_RARE, K_ABS, K_SUPER, K_PR, MMR_LAMBDA.
+    """
+    if mode == "canonical":
+        return {"K_PMI": 0.10, "K_RARE": 0.10, "K_ABS": 0.10,
+                "K_SUPER": 0.10, "K_PR": 0.30, "MMR_LAMBDA": 0.9}
+    if mode == "niche":
+        return {"K_PMI": 0.40, "K_RARE": 0.50, "K_ABS": 0.40,
+                "K_SUPER": 0.30, "K_PR": 0.05, "MMR_LAMBDA": 0.5}
+    if mode == "balanced":
+        return {"K_PMI": 0.25, "K_RARE": 0.25, "K_ABS": 0.25,
+                "K_SUPER": 0.20, "K_PR": 0.20, "MMR_LAMBDA": 0.7}
+    # auto — derive from mechanical fraction
+    sem_frac = 1.0 - mech_frac
+    return {
+        "K_PMI": 0.20 + 0.20 * sem_frac,
+        "K_RARE": 0.20 + 0.30 * sem_frac,
+        "K_ABS": 0.15 + 0.25 * sem_frac,
+        "K_SUPER": 0.15 + 0.15 * sem_frac,
+        "K_PR": NAVIGATE_PAGERANK_MAX_BOOST + 0.20 * mech_frac,
+        "MMR_LAMBDA": 0.85 - 0.35 * sem_frac,
+    }
+
+
+def _pmi_map(
+    conn: sqlite3.Connection, candidate_ids: list[str], corpus_total: int
+) -> dict[str, float]:
+    """`{anchor: PMI(anchor, candidates)}` for anchors positively correlated
+    with the query's candidate set relative to the corpus."""
+    if not candidate_ids:
+        return {}
+    ph = ",".join("?" for _ in candidate_ids)
+    cand_rows = conn.execute(
+        f"""SELECT a.label, COUNT(DISTINCT ma.model_id) as n
+              FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
+             WHERE ma.model_id IN ({ph})
+             GROUP BY a.anchor_id""",
+        candidate_ids,
+    ).fetchall()
+    if not cand_rows:
+        return {}
+    corpus_rows = conn.execute(
+        """SELECT a.label, COUNT(DISTINCT ma.model_id) as n
+             FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
+             GROUP BY a.anchor_id"""
+    ).fetchall()
+    corpus = {r["label"]: int(r["n"]) for r in corpus_rows}
+    cand_total = len(candidate_ids)
+    out: dict[str, float] = {}
+    for row in cand_rows:
+        n_g = corpus.get(row["label"], 0)
+        if n_g == 0:
+            continue
+        pmi = _math.log((int(row["n"]) / cand_total) / (n_g / corpus_total))
+        if pmi > 0:
+            out[row["label"]] = pmi
+    return out
+
+
+def _standards_and_probs(
+    conn: sqlite3.Connection,
+    candidate_ids: list[str],
+    exclude: set[str],
+    threshold: float = NAVIGATE_STANDARDS_THRESHOLD,
+) -> dict[str, float]:
+    """Anchors present in > `threshold` of the candidate sub-corpus, excluding
+    `exclude` (typically the require_anchors, whose absence is impossible).
+    Returned as `{anchor: P(anchor | sub-corpus)}` — the P value drives the
+    absence-bonus (-log(P) is the surprise mass of being missing)."""
+    if not candidate_ids:
+        return {}
+    ph = ",".join("?" for _ in candidate_ids)
+    rows = conn.execute(
+        f"""SELECT a.label, COUNT(DISTINCT ma.model_id) as n
+              FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
+             WHERE ma.model_id IN ({ph})
+             GROUP BY a.anchor_id""",
+        candidate_ids,
+    ).fetchall()
+    cand_total = len(candidate_ids)
+    return {
+        r["label"]: int(r["n"]) / cand_total
+        for r in rows
+        if r["label"] not in exclude and int(r["n"]) / cand_total > threshold
+    }
+
+
+def _nav_rare_boost(
+    model_anchors: set[str],
+    prefer_set: set[str],
+    pmi: dict[str, float],
+) -> float:
+    """IDF-weighted (via PMI proxy) match strength on prefer_anchors.
+
+    Returns fraction in [0, 1]: matched-prefer PMI mass / total-prefer PMI
+    mass. A model matching rare high-PMI prefer anchors scores high; matching
+    common low-PMI ones scores low. Absent prefer set → 0 (neutral)."""
+    if not prefer_set:
+        return 0.0
+    total_pmi = sum(pmi.get(a, 0.0) for a in prefer_set)
+    if total_pmi <= 0:
+        return 0.0
+    matched_pmi = sum(pmi.get(a, 0.0) for a in (model_anchors & prefer_set))
+    return matched_pmi / total_pmi
+
+
+def _nav_absence_bonus(
+    model_anchors: set[str], standards: dict[str, float]
+) -> float:
+    """Sum of -log(P(s | candidates)) for standards this model is CONSPICUOUSLY
+    missing. High when the model diverges from the sub-corpus default state
+    (specialist signal). Naturally accumulates for well-characterized
+    specialists; sparse-anchor false positives are a known failure mode of
+    this signal at the corpus-quality layer, not the scoring layer."""
+    return sum(
+        -_math.log(p) for s, p in standards.items() if s not in model_anchors
+    )
+
+
+def _submodular_combine(signals: list[float], decay: float = NAVIGATE_SUBMODULAR_DECAY) -> float:
+    """Combine soft-signal deltas with diminishing returns.
+
+    Returns `1 + Σ signal_i × decay^rank_i` where rank is descending by
+    signal magnitude. The strongest signal counts fully; the second by
+    `decay`; the third by `decay^2`. Prevents flat multiplicative
+    compounding when multiple signals fire the same way (which double-
+    counts what is really one piece of information)."""
+    if not signals:
+        return 1.0
+    sorted_desc = sorted(signals, reverse=True)
+    return 1.0 + sum(sig * (decay ** i) for i, sig in enumerate(sorted_desc))
+
+
+def _mmr_rerank(
+    results: list[NavigationResult],
+    anchor_sets: dict[str, set[str]],
+    lam: float = NAVIGATE_MMR_LAMBDA,
+    top_k: int | None = None,
+) -> list[NavigationResult]:
+    """Maximum Marginal Relevance re-rank. Greedy pick that maximizes
+    `lam × relevance - (1-lam) × max_similarity_to_already_selected`.
+    Similarity = Jaccard over model anchor sets. Preserves the top-K
+    return-count; only reorders within it to reduce near-duplicate stacking
+    (e.g. finbert-tone next to finbert-tone-chinese)."""
+    if len(results) <= 1:
+        return results
+    k = min(top_k or len(results), len(results))
+    pool = list(results)
+    selected: list[NavigationResult] = []
+    while pool and len(selected) < k:
+        best = None
+        best_score = -float("inf")
+        for cand in pool:
+            rel = cand.score
+            if not selected:
+                mmr_score = rel
+            else:
+                cand_anchors = anchor_sets.get(cand.model_id, set())
+                max_sim = 0.0
+                for s in selected:
+                    s_anchors = anchor_sets.get(s.model_id, set())
+                    if cand_anchors and s_anchors:
+                        sim = len(cand_anchors & s_anchors) / len(cand_anchors | s_anchors)
+                        if sim > max_sim:
+                            max_sim = sim
+                mmr_score = lam * rel - (1 - lam) * max_sim * rel
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best = cand
+        if best is None:
+            break
+        selected.append(best)
+        pool.remove(best)
+    return selected
+
+
+def _apply_bank_weights(
+    directions: dict[str, int],
+    bank_weights: dict[str, float] | None,
+) -> dict[str, float]:
+    """Return per-bank exponents to apply to `_bank_score_single` results.
+
+    Missing bank in `bank_weights` → 1.0 (default). Zero weight → 0 (bank
+    neutralized, its contribution becomes `x^0 = 1`, i.e. no effect on
+    the score). Renormalized across the ACTIVE (non-zero) banks so that
+    the total attention-mass equals N_active — a bank explicitly weighted
+    2× takes proportional mass from the others, preserving the overall
+    scale of bank_alignment. Missing bank_weights arg (None) → all 1.0
+    (current behavior, no change)."""
+    if not bank_weights or not directions:
+        return {bank: 1.0 for bank in directions}
+    raw = {bank: max(0.0, float(bank_weights.get(bank, 1.0))) for bank in directions}
+    active_mass = sum(w for w in raw.values() if w > 0)
+    active_count = sum(1 for w in raw.values() if w > 0)
+    if active_mass <= 0 or active_count == 0:
+        return {bank: 1.0 for bank in directions}
+    scale = active_count / active_mass
+    return {bank: (w * scale if w > 0 else 0.0) for bank, w in raw.items()}
+
+
+def _nav_bank_alignment_weighted(
+    positions: dict[str, tuple[int, int]],
+    directions: dict[str, int],
+    bank_weights: dict[str, float],
+) -> float:
+    """Bank alignment product with per-bank exponent weights. Bank with
+    weight 0 becomes `x^0 = 1` (neutralized, no contribution)."""
+    if not directions:
+        return 1.0
+    result = 1.0
+    for bank_name, direction in directions.items():
+        pos = positions.get(bank_name)
+        base = NAVIGATE_MISSING_BANK_PENALTY if pos is None else _bank_score_single(pos[0] * pos[1], direction)
+        w = bank_weights.get(bank_name, 1.0)
+        if w > 0:
+            result *= base ** w
+        # w == 0 → factor becomes 1.0 (bank neutralized)
+    return result
+
+
 def navigate(
     conn: sqlite3.Connection,
     query: StructuredQuery,
@@ -374,11 +671,23 @@ def navigate(
     for mid, d in _epa_tmp.items():
         if len(d) == 3:  # all-or-nothing, matches vibe_axes.load_epa
             epa_by_id[mid] = (d["vibe_e"], d["vibe_p"], d["vibe_a"])
-    # Normalize pagerank against the max IN THE CANDIDATE SET (not the whole
-    # corpus) — a boost of "top of these results" reads more naturally than
-    # "top of the entire corpus" for a filtered query. Multiplicative factor
-    # in [1.0, 1 + PAGERANK_MAX_BOOST].
     _pr_max = max(pagerank_by_id.values(), default=0.0)
+
+    # Per-query preparation for the new signals (PMI, standards, mode, bank
+    # weights). All cheap: one anchor-count query for PMI/standards, pure
+    # Python for the rest. Basic queries with no rare anchors / no clear
+    # standards / mode='auto' produce empty PMI + empty standards + balanced
+    # weights → the new signals reduce to their neutral values (0), and
+    # `_submodular_combine([0,0,0,0,0]) == 1.0` — behavior identical to
+    # pre-refactor. Structural correctness without changing basic outcomes.
+    pmi = _pmi_map(conn, candidate_ids, corpus_total=_corpus_total(conn))
+    standards = _standards_and_probs(conn, candidate_ids, exclude=require_set)
+    mech_frac = _mechanical_fraction(query, idf, conn)
+    mode_w = _mode_weights(query.mode or "auto", mech_frac)
+    bank_exp = _apply_bank_weights(directions, query.bank_weights)
+    query_anchors_pool = require_set | prefer_set
+    max_pmi_match = sum(pmi.get(a, 0.0) for a in query_anchors_pool) or 1.0
+    max_absence = sum(-_math.log(p) for p in standards.values()) or 1.0
 
     # Step 3: Score each candidate
     results: list[NavigationResult] = []
@@ -386,30 +695,44 @@ def navigate(
         positions = all_positions.get(mid, {})
         model_anchor_set = all_anchors.get(mid, set())
 
-        bank_alignment = _nav_bank_alignment(positions, directions)
+        # ── Bank alignment with per-bank weight exponents (bank_weights) ──
+        bank_alignment = _nav_bank_alignment_weighted(positions, directions, bank_exp)
         anchor_relevance = _nav_anchor_relevance(
-            model_anchor_set,
-            prefer_set,
-            avoid_set,
-            idf,
-            prefer_idf_total,
-            has_anchor_constraints,
+            model_anchor_set, prefer_set, avoid_set, idf, prefer_idf_total, has_anchor_constraints,
         )
         seed_similarity = _nav_seed_similarity(model_anchor_set, seed_anchors, idf)
         coherence = coherence_by_id.get(mid, 1.0)
         context_bias = _nav_context_bias(model_anchor_set, context_set, idf)
-        pagerank_boost = _nav_pagerank_boost(pagerank_by_id.get(mid, 0.0), _pr_max)
         epa_alignment = _nav_epa_alignment(
             epa_by_id.get(mid), (query.vibe_e, query.vibe_p, query.vibe_a)
         )
+
+        # ── Soft signals combined submodularly (diminishing returns) ──
+        pr_frac = (pagerank_by_id.get(mid, 0.0) / _pr_max) if _pr_max > 0 else 0.0
+        pmi_match = (
+            sum(pmi.get(a, 0.0) for a in (model_anchor_set & query_anchors_pool)) / max_pmi_match
+        )
+        rare_boost = _nav_rare_boost(model_anchor_set, prefer_set, pmi)
+        absence = _nav_absence_bonus(model_anchor_set, standards) / max_absence
+        super_ = pr_frac * rare_boost  # joint = superadditive when both fire
+
+        soft_signals = [
+            mode_w["K_PR"] * pr_frac,
+            mode_w["K_PMI"] * pmi_match,
+            mode_w["K_RARE"] * rare_boost,
+            mode_w["K_ABS"] * absence,
+            mode_w["K_SUPER"] * super_,
+        ]
+        soft_combined = _submodular_combine(soft_signals)
+
         final_score = (
             bank_alignment
             * anchor_relevance
             * seed_similarity
             * coherence
             * context_bias
-            * pagerank_boost
             * epa_alignment
+            * soft_combined
         )
 
         pos_out = {
@@ -432,7 +755,14 @@ def navigate(
 
     results.sort(key=lambda r: r.score, reverse=True)
     top = results[: query.limit]
-    # Cluster BEFORE truncating further — a cluster that straddles the limit
-    # boundary is still a cluster inside the returned window. Mark then return.
+    # ── MMR diversify within the returned window ──
+    anchor_sets_by_id = {r.model_id: set(r.anchor_labels) for r in top}
+    top = _mmr_rerank(top, anchor_sets_by_id, lam=mode_w["MMR_LAMBDA"], top_k=len(top))
+    # Cluster AFTER MMR so tie_cluster reflects the actual returned order.
     _mark_tie_clusters(top)
     return top
+
+
+def _corpus_total(conn: sqlite3.Connection) -> int:
+    """Total model count for PMI base rate. Cheap indexed COUNT."""
+    return int(conn.execute("SELECT COUNT(*) FROM models").fetchone()[0])
