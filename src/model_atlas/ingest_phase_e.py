@@ -94,8 +94,37 @@ def _link_bank_anchors(
     selected: list,
     dry_run: bool,
     stats: dict,
+    bank: str = "",
 ) -> list[str]:
-    """Validate and link anchors for one bank. Returns list of newly linked labels."""
+    """Validate and link anchors for one bank. Returns list of newly linked labels.
+
+    Phase 7 addition: LLM-proposed labels are routed through the certifier
+    before writing. Anchors that violate structural HF-fact rules
+    (pipeline_tag/model_type/library_name/quantization) are dropped and
+    counted as `anchors_skipped_contradiction`.
+    """
+    from .certifier.merge_bridge import filter_certified_labels
+    from .contract import Bank, EvidenceType
+
+    # Pre-filter through the certifier when we know the bank. Web-enrichment
+    # merges call one bank at a time, so this is cheap. When bank is unknown
+    # (legacy call sites), skip the certifier hop.
+    if bank:
+        try:
+            bank_enum = Bank(bank)
+            kept_labels, rejected_labels = filter_certified_labels(
+                conn, model_id, bank_enum,
+                [str(x).strip().lower() for x in selected],
+                evidence_source=EvidenceType.WEB_SOURCE,
+                extractor="phase_e_merge",
+                confidence=WEB_EXTRACTION_CONFIDENCE,
+            )
+            if rejected_labels:
+                stats["anchors_skipped_contradiction"] += len(rejected_labels)
+            selected = kept_labels
+        except ValueError:
+            pass
+
     new_anchors: list[str] = []
     for label in selected:
         label = label.strip().lower()
@@ -159,11 +188,12 @@ def _merge_one_item(
         return stats
 
     all_new_anchors: list[str] = []
-    for bank_result in banks.values():
+    for bank_name, bank_result in banks.items():
         selected = bank_result.get("selected_anchors") or []
         benchmarks = bank_result.get("benchmark_scores") or {}
 
-        new = _link_bank_anchors(conn, model_id, selected, dry_run, stats)
+        # Pass bank so _link_bank_anchors can pre-filter via the certifier
+        new = _link_bank_anchors(conn, model_id, selected, dry_run, stats, bank=bank_name)
         all_new_anchors.extend(new)
         _store_benchmarks(conn, model_id, benchmarks, dry_run, stats)
 

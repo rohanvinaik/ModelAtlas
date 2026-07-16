@@ -19,7 +19,7 @@
         <string>--url</string>
         <string>http://localhost:11435</string>
         <string>--model</string>
-        <string>qwen3:4b-instruct-2507-q4_K_M</string>
+        <string>qwen3.5:4b</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/rohanvinaik/.cache/model-atlas/phase_e_work</string>

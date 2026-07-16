@@ -56,7 +56,9 @@ def extract_and_store(
     3. Runs tier-2 pattern extraction (tags/names -> anchors/positions)
     4. Runs tier-3 vibe extraction (card text -> vibe_summary)
     5. Writes positions and lineage links via the reconciler (canonical)
-    6. Writes metadata and anchor assignments directly (observation)
+    6. **Routes all anchor emissions through the certifier before writing**
+       so structural HF-fact contradictions (Falcon-family on a non-Falcon,
+       Rust-code on a non-generative model, etc.) never enter the DB
     """
     captured_at = _utc_iso_z()
 
@@ -95,11 +97,12 @@ def extract_and_store(
 
     # --- Mode 2: observation writes (direct, not audit-logged) ---
 
-    # Write anchors (deduplicated from both tiers, with provenance)
-    _link_anchors(conn, inp.model_id, det.anchors, source="deterministic",
-                  default_confidence=1.0)
-    _link_anchors(conn, inp.model_id, pat.anchors, source="pattern",
-                  default_confidence=0.8)
+    # Route both anchor tiers through the certifier before writing.
+    # Deterministic anchors carry structural evidence types (CONFIG_JSON /
+    # SAFETENSORS_METADATA) — the certifier never rejects those. Pattern
+    # anchors carry NAME_PATTERN evidence — those can be rejected when
+    # an HF fact says otherwise.
+    _certified_link_anchors(conn, inp, det.anchors, pat.anchors)
 
     # Write metadata (deterministic + pattern)
     for key, (value, value_type) in det.metadata.items():
@@ -251,6 +254,97 @@ def _link_anchors(
             anchor.confidence if anchor.confidence is not None else default_confidence
         )
         db.link_anchor(conn, model_id, anchor_id, confidence=conf)
+
+
+def _certified_link_anchors(
+    conn: sqlite3.Connection,
+    inp: ModelInput,
+    det_anchors: list[AnchorTag],
+    pat_anchors: list[AnchorTag],
+) -> None:
+    """Route deterministic + pattern anchors through the certifier before writing.
+
+    Deterministic anchors carry structural evidence (CONFIG_JSON /
+    SAFETENSORS_METADATA / MODEL_TYPE etc.) — the certifier will never
+    reject those. Pattern anchors carry NAME_PATTERN evidence which the
+    certifier can reject when a Tier-1 HF-fact rule fires (e.g. Falcon-family
+    on a non-Falcon repo).
+
+    AUTO_ADDED emissions from the certifier ARE written — these are anchors
+    that structural HF facts require but neither extractor produced.
+    """
+    from ..certifier import certify, HFFacts
+    from ..certifier.certifier import _label_bank as _cert_label_bank
+    from ..contract import (
+        AnchorEmission,
+        Bank,
+        CertificationOutcome,
+        EvidenceType,
+        Provenance,
+        VOCABULARY,
+    )
+
+    facts = HFFacts(
+        model_id=inp.model_id,
+        pipeline_tag=inp.pipeline_tag or "",
+        library_name=inp.library_name or "",
+        license=inp.license_str or "",
+        tags=tuple(str(t) for t in (inp.tags or ())),
+        safetensors_present=bool(inp.safetensors_info),
+        model_type=str((inp.config or {}).get("model_type", "")),
+        config=dict(inp.config or {}),
+    )
+
+    live_vocab: dict[str, Bank] = {}
+    for label, bank_str in conn.execute("SELECT label, bank FROM anchors"):
+        try:
+            live_vocab[label] = Bank(bank_str)
+        except ValueError:
+            continue
+
+    seen: set[str] = set()
+    proposed: list[AnchorEmission] = []
+    for anchor, ev_type, extractor, default_conf in (
+        [(a, EvidenceType.CONFIG_JSON, "extract_deterministic", 1.0) for a in det_anchors]
+        + [(a, EvidenceType.NAME_PATTERN, "extract_patterns", 0.8) for a in pat_anchors]
+    ):
+        if anchor.label in seen:
+            continue
+        seen.add(anchor.label)
+        static = VOCABULARY.get(anchor.label)
+        bank_v = static[0] if static else live_vocab.get(anchor.label)
+        if bank_v is None:
+            # Anchor label not registered anywhere — ensure_anchor may create it
+            # later, so just fall through with the extractor-declared bank.
+            try:
+                bank_v = Bank(anchor.bank)
+            except ValueError:
+                continue
+        conf = anchor.confidence if anchor.confidence is not None else default_conf
+        try:
+            proposed.append(AnchorEmission(
+                model_id=inp.model_id,
+                label=anchor.label,
+                bank=bank_v,
+                confidence=conf,
+                evidence=Provenance(ev_type, extractor, "extract_and_store"),
+            ))
+        except ValueError:
+            continue
+
+    result = certify(facts, proposed, live_vocab=live_vocab)
+
+    # Write everything except REJECTED
+    for v in result.verdicts:
+        if v.outcome is CertificationOutcome.REJECTED:
+            continue
+        e = v.emission
+        anchor_id = ensure_anchor(
+            conn, e.label, e.bank.value,
+            source=e.evidence.extractor or "extract_and_store",
+            reason=f"{e.evidence.extractor} for {inp.model_id} ({v.outcome.value})",
+        )
+        db.link_anchor(conn, inp.model_id, anchor_id, confidence=e.confidence)
 
 
 def extract_batch(conn: sqlite3.Connection, models: list[dict]) -> int:

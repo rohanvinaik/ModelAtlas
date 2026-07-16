@@ -406,18 +406,26 @@ def _ollama_chat(
     num_predict: int = 512,
     num_ctx: int = 8192,
     timeout: int = 60,
+    format_schema: dict | None = None,
 ) -> str:
     """Call Ollama native /api/chat with think=false and JSON format.
 
     Uses the native API instead of OpenAI-compat because the OpenAI layer
     doesn't pass through think=false, causing qwen3.5 to waste all tokens
     on chain-of-thought reasoning instead of producing output.
+
+    Phase 8 audit-pipeline addition: when `format_schema` is provided, it
+    becomes the `format` value in the request (Ollama's structured-output
+    mode). The LLM is grammar-constrained to that JSON schema, so it
+    literally cannot emit an off-vocab anchor label. Falls back to loose
+    "json" mode when no schema is given (legacy behavior).
     """
+    fmt = format_schema if format_schema is not None else "json"
     payload = json.dumps(
         {
             "model": model_name,
             "messages": [{"role": "user", "content": prompt}],
-            "format": "json",
+            "format": fmt,
             "stream": False,
             "think": False,
             "options": {
@@ -437,6 +445,31 @@ def _ollama_chat(
     return data.get("message", {}).get("content", "")
 
 
+def _bank_output_schema(bank: str, allowed_labels: list[str]) -> dict:
+    """Build a JSON schema restricting the LLM's per-bank selection to a
+    closed vocabulary. Mirrors model_atlas.contract.bank_output_schema but
+    duplicated here because phase_e_worker is a standalone deployable script
+    with zero ModelAtlas imports."""
+    return {
+        "type": "object",
+        "properties": {
+            "bank": {"const": bank},
+            "selected_anchors": {
+                "type": "array",
+                "items": {"enum": sorted(allowed_labels)} if allowed_labels else {"type": "string"},
+                "uniqueItems": True,
+            },
+            "benchmark_scores": {
+                "type": "object",
+                "additionalProperties": {"type": "number"},
+            },
+            "evidence_span": {"type": "string"},
+        },
+        "required": ["bank", "selected_anchors"],
+        "additionalProperties": False,
+    }
+
+
 def extract_bank(
     ollama_url: str,
     model_name: str,
@@ -452,9 +485,22 @@ def extract_bank(
     prompt = _build_extraction_prompt(
         model_id, bank, valid_anchors, existing_anchors, existing_metadata, web_content
     )
+    # Phase 8: grammar-constrain Ollama output to the bank vocabulary.
+    # If Ollama rejects the schema (older versions), fall back to loose json.
+    schema = _bank_output_schema(bank, valid_anchors)
     try:
-        text = _ollama_chat(ollama_url, model_name, prompt, temperature=temperature)
-        # Strip markdown fences if present
+        text = _ollama_chat(
+            ollama_url, model_name, prompt,
+            temperature=temperature, format_schema=schema,
+        )
+    except Exception:
+        try:
+            text = _ollama_chat(ollama_url, model_name, prompt, temperature=temperature)
+        except Exception as e:
+            print(f"  Bank {bank} extraction error (both schema + loose modes): {e}",
+                  file=sys.stderr)
+            return None
+    try:
         text = text.strip()
         if text.startswith("```"):
             text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -463,7 +509,7 @@ def extract_bank(
         existing_set = set(a.lower() for a in existing_anchors)
         return _parse_bank_result(text, valid_set, existing_set)
     except Exception as e:
-        print(f"  Bank {bank} extraction error: {e}", file=sys.stderr)
+        print(f"  Bank {bank} parse error: {e}", file=sys.stderr)
         return None
 
 

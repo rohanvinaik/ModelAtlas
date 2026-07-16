@@ -109,6 +109,13 @@ class NavigationResult:
     bank_alignment: float = 0.0
     anchor_relevance: float = 0.0
     seed_similarity: float = 0.0
+    coherence: float = 1.0
+    """Multiplicative coherence factor. 1.0 = no known internal contradictions;
+    0.5 = half of proposed anchors were rejected/demoted by the certifier.
+    Populated per-model into `model_metadata.certification_score` by
+    scripts/recertify_corpus.py; navigate() reads it as a soft tiebreaker
+    so candidates that all match the constraint set are ranked by how
+    well their internal evidence hangs together."""
     positions: dict[str, dict] = field(default_factory=dict)
     anchor_labels: list[str] = field(default_factory=list)
     vibe_summary: str = ""

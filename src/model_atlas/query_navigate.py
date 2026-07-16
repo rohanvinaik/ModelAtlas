@@ -146,8 +146,12 @@ def navigate(
 ) -> list[NavigationResult]:
     """Structured navigational search — the primary recommendation engine.
 
-    Three signals, multiplicative:
-        final_score = bank_alignment * anchor_relevance * seed_similarity
+    Four signals, multiplicative:
+        final_score = bank_alignment * anchor_relevance * seed_similarity * coherence
+
+    The coherence factor comes from the certifier's per-model
+    certification_score (Phase 6 of the audit pipeline). It defaults to 1.0
+    when unpopulated so pre-recert data continues to work.
 
     Uses batch SQL instead of N+1 per-model lookups.
     """
@@ -178,6 +182,19 @@ def navigate(
     ).fetchall()
     authors = {r["model_id"]: r["author"] or "" for r in author_rows}
 
+    # Batch-fetch certification scores (Phase 6 coherence). Missing = 1.0.
+    coherence_rows = conn.execute(
+        f"""SELECT model_id, value FROM model_metadata
+            WHERE key = 'certification_score' AND model_id IN ({ph})""",
+        candidate_ids,
+    ).fetchall()
+    coherence_by_id: dict[str, float] = {}
+    for row in coherence_rows:
+        try:
+            coherence_by_id[row["model_id"]] = float(row["value"])
+        except (TypeError, ValueError):
+            pass
+
     # Step 3: Score each candidate
     results: list[NavigationResult] = []
     for mid in candidate_ids:
@@ -194,7 +211,8 @@ def navigate(
             has_anchor_constraints,
         )
         seed_similarity = _nav_seed_similarity(model_anchor_set, seed_anchors, idf)
-        final_score = bank_alignment * anchor_relevance * seed_similarity
+        coherence = coherence_by_id.get(mid, 1.0)
+        final_score = bank_alignment * anchor_relevance * seed_similarity * coherence
 
         pos_out = {
             bank_name: {"sign": sign, "depth": depth}
@@ -207,6 +225,7 @@ def navigate(
                 bank_alignment=bank_alignment,
                 anchor_relevance=anchor_relevance,
                 seed_similarity=seed_similarity,
+                coherence=coherence,
                 positions=pos_out,
                 anchor_labels=sorted(model_anchor_set),
                 author=authors.get(mid, ""),
