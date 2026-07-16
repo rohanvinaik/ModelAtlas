@@ -478,17 +478,24 @@ def _license_anchors(license_str: str) -> list[AnchorTag]:
 
 @lru_cache(maxsize=256)
 def _context_length_anchors(context_length: int | None) -> list[str]:
-    """Generate context-length tier anchors."""
+    """Emit the SINGLE tightest context-length tier the model qualifies for.
+
+    Prior version appended every threshold the value crossed (e.g. a 200k-context
+    model got both ``long-context-32k`` and ``long-context-128k``). Downstream
+    that produced ~1,755 multi-tier stacks in the canonical DB because 32k
+    already implies "≥32k" — any larger tier subsumes it. Keep the single
+    tightest bound so the anchor set is minimally-redundant and merges don't
+    accrete tier stacks on re-ingest.
+    """
     if context_length is None:
         return []
-    anchors = []
-    if context_length >= 32_768:
-        anchors.append("long-context-32k")
-    if context_length >= 131_072:
-        anchors.append("long-context-128k")
     if context_length >= 1_000_000:
-        anchors.append("long-context-1m")
-    return anchors
+        return ["long-context-1m"]
+    if context_length >= 131_072:
+        return ["long-context-128k"]
+    if context_length >= 32_768:
+        return ["long-context-32k"]
+    return []
 
 
 def _add_if_truthy(
