@@ -1,6 +1,6 @@
 # ModelAtlas
 
-**An atlas of open-source AI models.** Not a search box — a map, and something that reads it with you.
+**Google for open-source AI models.** Search by what you *mean*, not by keywords.
 
 [![CI](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml/badge.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/ci.yml)
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=rohanvinaik_ModelAtlas&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=rohanvinaik_ModelAtlas)
@@ -14,108 +14,80 @@
 
 `50,906 models · 192 semantic anchors · 555K anchor links · certifier-enforced · <100ms queries · No embeddings · No GPU`
 
-Every search engine answers a question you didn't quite ask, ranks the results in an order it can't defend, and leaves you to figure out which of the ten near-identical things is yours.
+You want a small code model with tool-calling.
 
-An atlas does something else. It shows you the region you're standing in, tells you honestly where its own borders are, and points at the road that leads somewhere different.
+**HuggingFace** gives you the biggest, most popular code models:
 
-You ask for a code model you can run locally:
+```
+Qwen2.5-Coder-32B-Instruct          32B   1,996 likes
+Qwen3-Coder-480B-A35B-Instruct     480B   1,315 likes
+```
+
+480B parameters. Not small. HF sorts by popularity. It can't express "small" as a *direction*.
+
+**ModelAtlas** gives you what you actually asked for:
 
 ```python
-navigate_models(require_anchors=["code-generation", "GGUF-available"],
-                prefer_anchors=["tool-calling", "high-downloads"], quality=+1)
+navigate_models(efficiency=-1, capability=+1, quality=+1,
+                require_anchors=["code-generation"],
+                prefer_anchors=["tool-calling", "high-downloads"])
 ```
 
 ```
-1.938  ─      huihui-ai/Huihui-gpt-oss-20b-BF16-abliterated
-1.830  tie#0  TheBloke/Mistral-7B-Instruct-v0.2-GGUF          axis=EFFICIENCY
-1.827  tie#0  bartowski/gemma-2-2b-it-GGUF                    axis=EFFICIENCY
-1.824  tie#0  ubergarm/Kimi-K2.6-GGUF                         axis=EFFICIENCY
-1.813  tie#0  unsloth/Kimi-K2.6-GGUF                          axis=EFFICIENCY
-1.808  tie#0  Mia-AiLab/Qwable-3.6-27b                        axis=EFFICIENCY
-1.805  tie#0  DavidAU/Qwen3.6-40B-...-NEO-CODE-MAX-GGUF       axis=EFFICIENCY
-1.802  tie#0  MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF     axis=EFFICIENCY
+jgebbeken/gemma-4-coder-gguf              3B  | code, GGUF, function-calling      1.83
+Qwen/Qwen2.5-1.5B-Instruct              1.5B  | code, high-downloads, Qwen-family 1.81
+deadbydawn101/gemma-4-E4B-...-MLX         3B  | code, MLX-compatible              1.81
 ```
 
-One clear winner — and then a band of seven that ModelAtlas **refuses to rank**, because nothing in your constraints separates them. It won't invent an order it can't earn. Instead it tells you the road out:
+Every result is small, code-focused, and popular. One tool call. ~500 tokens. <100ms.
 
-> *"These range from -2 to +3 on EFFICIENCY, which is rather a wide field. Would you prefer smaller, or larger?"*
->
-> `{"answer": "smaller", "apply": {"efficiency": -1}}`
-
-You answer one word. The `apply` dict merges into the call you already made — you don't rebuild the query — and the band resolves. The tool stopped answering and started interviewing.
-
-That's the whole idea. **ModelAtlas knows what it doesn't know, and asks.**
+**Since v0.4.1**, `navigate_models` also accepts `mode` (`auto`/`canonical`/`niche`/`balanced`) and `bank_weights` (per-bank exponent overrides). The same hero query under `mode="canonical"` surfaces the well-known incumbents first; under `mode="niche"` it prioritises specialist fits. Scores are information-theoretic (PMI-match, IDF-rare boost, absence-bonus, Monty Hall opposition sharpening, MMR diversification, all combined submodularly) — see [v0.4.1 release notes](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1) for the full scoring layer.
 
 ---
 
-## The same question, asked of both
+## Three levels of comparison
 
-One intent: *a code model I can run locally, in GGUF.* Both sides are real calls — HuggingFace's live API, ModelAtlas's `navigate_models`. Reproduce them yourself; the exact queries are inline.
+All queries run against both systems. HuggingFace uses its API with `pipeline_tag` filters + sort-by-likes. ModelAtlas uses `navigate_models` with `quality=+1`. All results are real.
 
-### Popularity is not intent
+### Level 1: ModelAtlas matches HuggingFace
 
-```
-GET /api/models?filter=gguf&pipeline_tag=text-generation&sort=likes
-```
-```
-3375  google/gemma-7b          ← not a code model
-2713  yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF
-1250  google/gemma-7b-it       ← not a code model
-1208  google/gemma-2b          ← not a code model
- 933  google/gemma-2b-it       ← not a code model
-```
+Common queries where HF works well. The baseline test — *can ModelAtlas reproduce the known-good answers?*
 
-You filtered for code. Four of the top five are general-purpose Gemma. The filter was honoured and the *question* was ignored, because `sort=likes` has no idea what you wanted — it only knows what's popular.
+| Query | HuggingFace | ModelAtlas |
+|-------|-------------|-----------|
+| Sentiment analysis | cardiffnlp/twitter-roberta-sentiment ✓ | **Same model** + ProsusAI/finbert (financial sentiment) |
+| Named entity recognition | dslim/bert-base-NER ✓ | **Same model** + microsoft/deberta-v3-base |
+| Image captioning | Salesforce/blip-captioning-large ✓ | OpenGVLab/InternVL2-2B, Qwen2-VL-2B ✓ |
 
-### Ten doors, one room
+**Both systems return the right models.** This is the most important result. Anyone can build a niche search tool. Building one that also matches the incumbent beat-for-beat on common queries is what makes it a replacement, not a toy.
 
-Try keywords instead:
+### Level 2: ModelAtlas exceeds HuggingFace
 
-```
-GET /api/models?search=code+gguf&sort=likes
-```
-```
-2713  yuxinlu1/gemma-4-12B-coder-...-GGUF
- 804  unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF
- 767  unsloth/Qwen3-Coder-Next-GGUF
- 595  DavidAU/Qwen3.6-40B-...-NEO-CODE-Di-IMatrix-MAX-GGUF
- 398  DavidAU/Qwen3.6-27B-...-NEO-CODE-Di-IMatrix-MAX-GGUF
- 396  DavidAU/GLM-4.7-Flash-...-NEO-CODE-Imatrix-MAX-GGUF
- 329  Jackrong/Qwopus3.6-27B-Coder-MTP-GGUF
- 325  Qwen/Qwen2.5-Coder-7B-Instruct-GGUF
- 309  Jackrong/Qwopus3.5-9B-Coder-GGUF
- 266  Qwen/Qwen3-Coder-Next-GGUF
-```
+Queries with direction ("small"), intent ("fast"), or domain specificity ("medical classifier") — concepts that don't map to a single HF tag.
 
-Ten results, **five publishers**: DavidAU ×3, unsloth ×2, Jackrong ×2, Qwen ×2. You didn't get ten options. You got one person's uncensored merge recipe three times, and a popularity contest among Qwen repackagings.
+| Query | HuggingFace | ModelAtlas |
+|-------|-------------|-----------|
+| Small code model | codeparrot-small (33 likes, from 2021) | Qwen2.5-Coder-0.5B-Instruct (official, high-downloads) |
+| Fast embedding model | *No results* — "fast" isn't a tag | Qwen3-Embedding-0.6B, jina-v5-text-small (sub-1B, edge-deployable) |
+| Medical classifier | medical_o1_verifier (a *verifier*, not a classifier) | StanfordAIMI/stanford-deidentifier-base, obi/deid_bert_i2b2 |
 
-The same intent, as coordinates:
+HuggingFace starts returning noise. "Small" matches models with "small" in the name. "Fast" returns nothing. "Medical classifier" returns a reasoning verifier. ModelAtlas returns what you *meant*, not what you *typed*.
 
-```python
-navigate_models(require_anchors=["code-generation", "GGUF-available"], quality=+1)
-```
-```
-1.567  huihui-ai/Huihui-gpt-oss-20b-BF16-abliterated
-1.512  sweepai/sweep-next-edit-1.5B                  ← edit-prediction specialist
-1.551  defog/sqlcoder-7b-2                           ← SQL specialist
-1.531  bartowski/Codestral-22B-v0.1-GGUF
-1.547  yuxinlu1/gemma-4-12B-coder-...-GGUF
-1.533  stabilityai/stable-code-3b
-1.512  TheBloke/phi-2-GGUF
-1.510  prism-ml/Bonsai-4B-gguf
-1.511  mradermacher/gemma-4-19b-a4b-it-REAP-i1-GGUF
-1.532  FINAL-Bench/Darwin-28B-Coder-GGUF
-```
+### Level 3: ModelAtlas finds the unfindable
 
-**Ten publishers out of ten.** 1.5B to 28B. Every one is actually a code model. Two are specialists no keyword reaches — a model that writes SQL, and a model that predicts your next edit. MMR diversification is doing this: the ranker actively suppresses results that are near-duplicates of ones it already picked, because ten addresses on one street is not a choice.
+Multi-constraint queries with direction + domain + negation. HuggingFace cannot express these at all.
 
-### What it won't do
+| Query | HuggingFace | ModelAtlas |
+|-------|-------------|-----------|
+| Multilingual chat, NOT code/math/embedding | *Impossible to express* | PaddleOCR-VL-1.5 (sub-1B), Nanbeige4.1-3B-GGUF |
+| Tiny on-device TTS | *No results* | **MioTTS-0.1B** (100M params), CosyVoice3-0.5B |
+| Biology classifier, encoder-only | *No results* | BiomedBERT, gliner-biomed, **PoetschLab/GROVER** (genomics) |
+| Small finance classifier | *No results* — "finance" isn't a pipeline tag | **FutureMa/Eva-4B** (finance+classification, trending), DMindAI/DMind-3-mini |
+| Distilled reasoning, sub-3B, NOT a fine-tune | *No results* | Qwen3.5-0.8B-Opus-Reasoning-Distilled (score: 1.0) |
 
-ModelAtlas is not magic, and the map has edges it will show you.
+A 100-million-parameter TTS model. A genomics classifier with 6 anchors. A 0.8B model distilled from Claude Opus. These models exist on HuggingFace but they are **invisible** to keyword search. ModelAtlas finds them because `biology-domain + classification + encoder-only` is a precise intersection in a coordinate system, not a string match.
 
-Ask HuggingFace for `text to speech` and four of the top eight results are speech-**to-text** — the inverse task — because the models actually named after the task are the amateur ones, and the good TTS models (Kokoro, XTTS, Bark) don't contain the string. ModelAtlas does **not** fix this. Its `speech-domain` anchor has no direction either, so it will hand you `nvidia/parakeet-tdt` (an ASR model) next to real TTS. The vocabulary lacks the distinction, so the atlas is blank there — and says so, rather than dressing up a guess.
-
-**The pattern:** HuggingFace answers *what you typed*. ModelAtlas answers *what you constrained*, tells you what you left unconstrained, and admits where its own map runs out.
+**The pattern:** Simple queries → both work. Directional queries → MA wins. Multi-constraint queries → HF returns nothing; MA finds exactly what you need. The harder the question, the wider the gap.
 
 ---
 
@@ -140,52 +112,7 @@ This is an MCP tool. An LLM calls it during conversation. One tool call returns:
 }
 ```
 
-From this, the LLM *immediately knows*: small (3B, negative on EFFICIENCY), code-focused, GGUF-packaged for local inference, Gemma-derived. The anchors are a vibe. The positions are a profile. The `score_breakdown` explains *why this model and not another* — every factor is inspectable, and `soft_combined` shows exactly how much the information-theoretic signals lifted it above a bare constraint match.
-
-## The refinement loop
-
-Every response also carries a `refine` block. This is the part that makes it an atlas rather than a search box: the pipeline is deterministic, so it knows precisely which dimensions its own answer is silent on — and it would rather ask than bluff.
-
-```json
-"refine": {
-  "question_id": "unconstrained_axis",
-  "question": "These range from -2 to +3 on EFFICIENCY, which is rather a wide
-                field. Would you prefer smaller, or larger?",
-  "options": [
-    {"answer": "smaller", "apply": {"efficiency": -1}},
-    {"answer": "larger",  "apply": {"efficiency": 1}}
-  ],
-  "merge_rule": "Merge `apply` into the arguments you already sent; do not
-                 rebuild the query. Scalar keys replace; list keys append.",
-  "ranking_degraded": false,
-  "unspecified_axes": [
-    {"bank": "EFFICIENCY", "range": "-2..+3", "spread": 2.56, "distinct": 3},
-    {"bank": "DOMAIN",     "range": "+0..+3", "spread": 1.44, "distinct": 2},
-    {"bank": "CAPABILITY", "range": "+0..+2", "spread": 0.64, "distinct": 2}
-  ],
-  "splitting_anchors": [
-    {"anchor": "gguf-quantized", "present_in": 4, "out_of": 8}
-  ]
-}
-```
-
-The loop, for a calling LLM:
-
-1. Call `navigate_models` with whatever the user gave you — however vague.
-2. Read `refine.question`. It names the single highest-value thing still unspecified.
-3. Ask the user, or answer it yourself if the conversation already settles it.
-4. **Merge the chosen option's `apply` into the same arguments you just sent.** Don't rebuild the query. Scalars replace; lists append.
-5. Re-call. Repeat until `refine.question` is empty.
-
-Three properties make this trustworthy rather than chatty:
-
-**It never asks a useless question.** `unspecified_axes` ranks all eight banks by the variance actually observed in your result window, and drops any bank where every result agrees — asking about those would be noise. The top entry is, by construction, the most informative thing you could say next.
-
-**It never offers an answer that leads nowhere.** Options are derived from the observed range, not a fixed ±1. A window sitting at `+0..+3` on DOMAIN offers *"general knowledge"* (`{"domain": 0}`) versus *"domain-specialized"* (`{"domain": 1}`) — never `-1`, because no result lives there and answering it would return an empty set.
-
-**It tells you when its ranking is meaningless.** `ranking_degraded: true` means you passed no `prefer_anchors`. Three of the five soft signals score identically for every candidate that clears a `require` filter, so the window is correctly *filtered* but not meaningfully *ordered*. Treat it as a set, not a ranking — and the block says so in as many words rather than letting you quietly trust an arbitrary #1.
-
-Questions are declarative skeletons with typed gaps, the same discipline the certifier's `reason_template` uses — `"These range from <range_low> to <range_high> on <bank>..."`, filled deterministically. Switch on the stable `question_id`; the prose may be reworded, the id won't be.
+From this, the LLM *immediately knows*: small, code-focused, GGUF-packaged for local inference, Gemma-derived. The anchors are a vibe. The positions are a profile. The score explains *why this model and not another.*
 
 Without ModelAtlas, the LLM guesses from stale training data. With it, the LLM has live, structured awareness of 50,906 models for ~500 tokens — less than the cost of a follow-up question.
 
@@ -194,6 +121,25 @@ Without ModelAtlas, the LLM guesses from stale training data. With it, the LLM h
 | LLM guessing from training data | 0ms | 0 | Stale, incomplete, no niche coverage |
 | HuggingFace API + parse | 2-5s | ~2,000 | Tag filter + popularity sort |
 | **ModelAtlas** | **<100ms** | **~500** | **Scored, ranked, auditable, certifier-verified** |
+
+### Refining a query
+
+Structure has a second payoff: because the coordinate system is explicit, the engine can tell you which coordinates you *didn't* specify. Every response carries a `refine` block naming the highest-value unspecified dimension and the delta that answers it:
+
+```json
+"refine": {
+  "question": "These range from -2 to +3 on EFFICIENCY, which is rather a wide
+                field. Would you prefer smaller, or larger?",
+  "options": [{"answer": "smaller", "apply": {"efficiency": -1}},
+              {"answer": "larger",  "apply": {"efficiency": 1}}],
+  "ranking_degraded": false,
+  "unspecified_axes": [{"bank": "EFFICIENCY", "range": "-2..+3", "spread": 2.56}]
+}
+```
+
+The caller merges `apply` into the arguments it already sent — scalars replace, lists append — and re-calls. No query rebuild. `unspecified_axes` ranks all eight banks by the variance actually present in the result window and drops any bank where every result agrees, so it never asks a question that wouldn't narrow anything. Options come from the observed range, never a fixed ±1: a window at `+0..+3` offers `{"domain": 0}` vs `{"domain": 1}`, because offering `-1` would return an empty set.
+
+`ranking_degraded: true` means no `prefer_anchors` were passed — three of the five soft signals then score identically for every candidate that clears the `require` filter, so the window is correctly filtered but not meaningfully ordered. Same discipline as `tie_cluster_id` on a result: when the constraints don't separate two models, say so rather than fake a rank. A keyword engine can't offer any of this, because it has no coordinates to be missing.
 
 ---
 
@@ -214,18 +160,7 @@ TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -s
 
 On top of coordinates, models share **anchors** — 192 semantic labels like `tool-calling`, `GGUF-available`, `Llama-family`. Similarity is emergent from shared labels, weighted by rarity (IDF). Every score traces back to specific anchors. Nothing is an opaque embedding.
 
-**Scoring** is multiplicative across seven factors:
-
-```
-score = bank_alignment × anchor_relevance × seed_similarity
-        × coherence × context_bias × epa_alignment × soft_combined
-```
-
-Multiplicative means a model that nails efficiency but misses capability gets zero, not fifty percent. Wrong-direction models decay hyperbolically. Avoided anchors stack exponentially (each halves the score). Required anchors are hard filters. `coherence` comes from the certifier's per-model verification (below).
-
-The seventh factor, `soft_combined`, is where the information-theoretic layer lives. Five signals — PageRank authority, PMI match, IDF rarity, an absence bonus, and a superadditive PageRank×rarity term — are folded together **submodularly**, so each additional signal adds less than the last and no single one can run away with the ranking. Because these signals reward rather than filter, scores are not bounded at 1.0. Monty Hall sharpening drives directly-opposed models to 0.05, and MMR diversification runs over the returned window so the top results aren't near-duplicates.
-
-Every factor is returned in `score_breakdown`, so any ranking can be taken apart after the fact. [Full scoring math →](docs/DESIGN.md)
+**Scoring:** `bank_alignment × anchor_relevance × seed_similarity × coherence × context_bias × epa_alignment × soft_combined`. Multiplicative — a model that nails efficiency but misses capability gets zero, not fifty percent. Wrong-direction models decay hyperbolically. Avoided anchors stack exponentially (each halves the score). Required anchors are hard filters. The `coherence` factor comes from the certifier's per-model verification (below). `soft_combined` folds the information-theoretic signals (PageRank, PMI-match, IDF-rarity, absence-bonus) together submodularly; because they reward rather than filter, scores are not bounded at 1.0. The result is a scoring surface that strongly favors precise matches and rapidly eliminates mismatches, without binary cutoffs. [Full scoring math →](docs/DESIGN.md)
 
 ## The audit pipeline: certifier-enforced anchor emissions
 
@@ -262,22 +197,15 @@ Rule(
 )
 ```
 
-43 rules across 8 categories cover the common structural implications:
-
-| Category | Rules | Category | Rules |
-|---|---|---|---|
-| `family_evidence` | 11 | `library_name` | 4 |
-| `pipeline_tag` | 10 | `quantization` | 3 |
-| `model_type` | 9 | `safetensors` | 1 |
-| `tag` | 4 | `code_language` | 1 |
+43 rules across 8 categories cover the common structural implications: `pipeline_tag` (10), `model_type` (9), `library_name` (4), `quantization` (3), `safetensors` (1), tag conventions (4), family-lineage evidence (11), and code-language (1).
 
 Rule tiers correspond to evidence trust:
 
-- **Tier 1 (STRUCTURAL)** — the trigger is an HF-published field. Contradictions from a Tier-3 emission (LLM inference, web scrape) get REJECTED. Non-negotiable. **39 of the 43 rules.**
-- **Tier 2 (SEMI-STRUCTURAL)** — tag conventions, family word in the repo name. Contradictions get DEMOTED (confidence lowered). **The remaining 4.**
-- **Tier 3 (INFERRED)** — advisory; contradictions emit a WARNING and the emission survives. The machinery supports this tier, but no rule is currently authored at it — a rule is only worth writing when the trigger is a fact, and Tier 3 by definition isn't.
+- **Tier 1 (STRUCTURAL)** — the trigger is an HF-published field. Contradictions from a Tier-3 emission (LLM inference, web scrape) get REJECTED. Non-negotiable.
+- **Tier 2 (SEMI-STRUCTURAL)** — tag conventions, family word in the repo name. Contradictions get DEMOTED (confidence lowered).
+- **Tier 3 (INFERRED)** — advisory. Contradictions emit a WARNING; the emission survives.
 
-**Result**: all 50,906 models carry a `certification_score` metadata field. 99.95% score ≥ 0.99 (no contradictions surfaced). The remainder are surfaced in `navigate_models` results as a soft ranking tiebreaker — coherent evidence ranks above internally-contradictory evidence when all other constraints match.
+**Result**: every model in the corpus carries a `certification_score` metadata field. 99.95% of models score ≥ 0.99 (no contradictions surfaced). The remainder are surfaced in `navigate_models` results as a soft ranking tiebreaker — coherent evidence ranks above internally-contradictory evidence when all other constraints match.
 
 **LLM gating** (`src/model_atlas/gating.py`): before invoking the Phase C/E LLM on a model, check whether the deterministic tiers have already covered ≥ 6 of 8 banks with above-floor confidence. If so, skip the LLM. On the tier-2 candidate set, ~20% of LLM calls are skipped this way.
 
@@ -358,7 +286,7 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 
 | Tool | What it does |
 |------|-------------|
-| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named) **plus a `refine` block** naming the highest-value unspecified dimension and the ready-to-merge patch that answers it. See [the refinement loop](#the-refinement-loop). |
+| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named), plus a [`refine`](#refining-a-query) block naming the highest-value unspecified dimension. See [v0.4.1 scoring layer](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1). |
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, metadata, `certification_score` |
 | `hf_compare_models` | Structural diff between models: shared/unique anchors, position deltas, Jaccard similarity |
 | `hf_search_models` | Natural language fallback with fuzzy matching when structured query isn't needed |
