@@ -1,5 +1,5 @@
-<svg width="175.3" height="20" viewBox="0 0 1753 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MC/DC: Verified (1310/1310)">
-  <title>MC/DC: Verified (1310/1310)</title>
+<svg width="175.3" height="20" viewBox="0 0 1753 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MC/DC: Verified (1350/1350)">
+  <title>MC/DC: Verified (1350/1350)</title>
   <linearGradient id="a" x2="0" y2="100%">
     <stop offset="0" stop-opacity=".1" stop-color="#EEE"/>
     <stop offset="1" stop-opacity=".1"/>
@@ -13,8 +13,8 @@
   <g aria-hidden="true" fill="#fff" text-anchor="start" font-family="Verdana,DejaVu Sans,sans-serif" font-size="110">
     <text x="60" y="148" textLength="382" fill="#000" opacity="0.25">MC/DC</text>
     <text x="50" y="138" textLength="382">MC/DC</text>
-    <text x="537" y="148" textLength="1171" fill="#000" opacity="0.25">Verified (1310/1310)</text>
-    <text x="527" y="138" textLength="1171">Verified (1310/1310)</text>
+    <text x="537" y="148" textLength="1171" fill="#000" opacity="0.25">Verified (1350/1350)</text>
+    <text x="527" y="138" textLength="1171">Verified (1350/1350)</text>
   </g>
   
 </svg>
