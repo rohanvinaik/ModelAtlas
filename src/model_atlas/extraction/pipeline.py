@@ -274,7 +274,6 @@ def _certified_link_anchors(
     that structural HF facts require but neither extractor produced.
     """
     from ..certifier import certify, HFFacts
-    from ..certifier.certifier import _label_bank as _cert_label_bank
     from ..contract import (
         AnchorEmission,
         Bank,

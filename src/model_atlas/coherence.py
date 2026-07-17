@@ -282,7 +282,7 @@ def run_audit(
 def format_report_human(report: CoherenceReport) -> str:
     """Render the report as a readable Markdown summary."""
     lines: list[str] = []
-    lines.append(f"# Coherence audit")
+    lines.append("# Coherence audit")
     lines.append("")
     lines.append(
         f"- Models: {report.model_total}  |  Anchors: {report.anchor_total}"

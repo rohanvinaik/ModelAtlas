@@ -519,7 +519,7 @@ def _print_stats(filename: str, l1: L1Stats, l2: L2Stats) -> None:
     print(f"  {filename}")
     print(f"{'='*60}")
     print(f"  Models: {l1.models_processed} processed, {l1.models_modified} modified")
-    print(f"\n  Layer 1 (deterministic):")
+    print("\n  Layer 1 (deterministic):")
     if l1.synonyms_merged:
         print(f"    Synonyms merged: {dict(l1.synonyms_merged)}")
     if l1.name_contradictions_removed:
@@ -534,7 +534,7 @@ def _print_stats(filename: str, l1: L1Stats, l2: L2Stats) -> None:
         print(f"    Size class deduped: {l1.size_class_deduped}")
 
     if l2.models_reviewed:
-        print(f"\n  Layer 2 (LLM validation):")
+        print("\n  Layer 2 (LLM validation):")
         print(f"    Models reviewed: {l2.models_reviewed}")
         print(f"    Anchors reviewed: {l2.anchors_reviewed}")
         print(f"    Kept: {l2.anchors_kept}, Removed: {l2.anchors_removed}")
