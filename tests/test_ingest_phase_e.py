@@ -183,6 +183,57 @@ class TestMergeOneItem:
         assert stats["anchors_skipped_invalid"] == 1
         assert stats["anchors_linked"] == 0
 
+    def test_bank_mismatch_is_counted_not_swallowed(self, network_conn):
+        """An anchor slotted into the wrong bank is vetoed AND counted.
+
+        It resolves in `anchors`, so passing it through to _validate_anchor
+        would link it and undo the veto.
+        """
+        _add_model(network_conn, "x/model")
+        _add_anchor_to_db(network_conn, "transformer", bank="ARCHITECTURE")
+        item = {
+            "model_id": "x/model",
+            "banks": {
+                "CAPABILITY": {
+                    "selected_anchors": ["transformer"],
+                    "evidence": {},
+                    "benchmark_scores": {},
+                }
+            },
+            "source_urls": [],
+            "web_summary": "",
+        }
+        stats = _merge_one_item(network_conn, item)
+        assert stats["anchors_linked"] == 0
+        assert stats["anchors_skipped_contradiction"] == 1
+
+    def test_every_proposed_anchor_lands_in_some_counter(self, network_conn):
+        """No label may be dropped without incrementing a counter."""
+        _add_model(network_conn, "x/model")
+        _add_anchor_to_db(network_conn, "chat", bank="CAPABILITY")
+        _add_anchor_to_db(network_conn, "transformer", bank="ARCHITECTURE")
+        proposed = ["chat", "transformer", "totally-fake-anchor"]
+        item = {
+            "model_id": "x/model",
+            "banks": {
+                "CAPABILITY": {
+                    "selected_anchors": proposed,
+                    "evidence": {},
+                    "benchmark_scores": {},
+                }
+            },
+            "source_urls": [],
+            "web_summary": "",
+        }
+        stats = _merge_one_item(network_conn, item)
+        accounted = (
+            stats["anchors_linked"]
+            + stats["anchors_skipped_existing"]
+            + stats["anchors_skipped_invalid"]
+            + stats["anchors_skipped_contradiction"]
+        )
+        assert accounted == len(proposed)
+
     def test_skips_existing_higher_confidence(self, network_conn):
         _add_model(network_conn, "x/model")
         aid = _add_anchor_to_db(network_conn, "chat")

@@ -149,8 +149,9 @@ class TestConfigExtraction:
         result = extract_det(inp)
         assert result.metadata["context_length"] == ("131072", "int")
         anchors = [a[0] for a in result.anchors]
-        assert "long-context-32k" in anchors
+        # Only the tightest tier is emitted — 128k already implies >=32k.
         assert "long-context-128k" in anchors
+        assert "long-context-32k" not in anchors
 
     def test_context_length_1m(self):
         inp = ModelInput(
