@@ -31,7 +31,28 @@
 
 ### Tool CLI
 - The user-facing CLI is `model_atlas.ingest_cli`, not `model_atlas.ingest`. The latter has no CLI dispatch.
-- MCP tool surface: see `mcp_server.py` and `mcp_tools/`. When adding/removing tools, update `AGENTS.md`, `README.md`, and `docs/DESIGN.md` in the same change. Verify count with `grep -Rho "@mcp.tool()" mcp_server.py mcp_tools | wc -l`.
+- MCP tool surface: `src/model_atlas/server.py` (10 tools). When adding/removing tools, update `AGENTS.md`, `README.md`, and `docs/DESIGN.md` in the same change. Verify count with `grep -Rho "@mcp.tool()" src/model_atlas/server.py | wc -l`.
+
+### The refinement loop (`navigate_models` → `refine`)
+- `navigate_models` returns a `refine` block beside `results`. Built by
+  `build_refinement_guidance()` in `src/model_atlas/query_navigate.py`; serialized by
+  `_refine_payload()` in `server.py`. Pure function of the returned window + the query —
+  same inputs always give the same guidance.
+- **The contract**: `refine.question` names the highest-value unspecified dimension.
+  Each option carries an `apply` dict the caller MERGES into the arguments it already
+  sent — scalars replace, lists append. Callers must not rebuild the query.
+- `question_id` is the stable machine contract; `question` prose is free to change.
+  Skeletons live in `QUESTION_TEMPLATES` — declarative, `<slot>`-gapped, same idiom as
+  the certifier's `Rule.reason_template`. `render_question()` raises `KeyError` on an
+  unfilled slot, so a literal `<bank>` can never reach a payload.
+- **Two invariants, both test-pinned** (`tests/test_navigate_refine.py`):
+  1. An option must never point outside the window's observed range — answering it
+     would return an empty set. Options come from `_axis_options(bank, lo, hi)`.
+  2. A bank whose window is uniform is dropped, not asked about.
+- `ranking_degraded: true` ⇔ the query supplied no `prefer_anchors`. Three of five soft
+  signals (PMI-match, rare-boost, superadditive) are then constant across every
+  candidate that cleared the `require` filter, so the window is FILTERED but not
+  ORDERED. This is a real property of the scoring layer, not a warning to paper over.
 
 ### Legacy write paths
 `ingest_phase_c_merge.py`, `phase_d_heal.py`, `phase_d_merge.py`, `scripts/phase_e_postprocess.py`, `ingest.py` Phase A/B, `ingest_seed.py` — these write canonical tables directly via `db.insert_model`, `db.set_position`, `db.add_link`. Pre-existing, *not* sanctioned. Do not copy their patterns into new code. Migrating each to the reconciler is a per-site judgment call (see `.claude/CLAUDE.md` → Sanctioned write exceptions).

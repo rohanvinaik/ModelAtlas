@@ -169,13 +169,20 @@ Tier 3 only runs on models above a quality threshold (default: 50+ likes). Ancho
 
 The calling LLM decomposes any natural language query into structured parameters. ModelAtlas does deterministic math.
 
-**Three signals, multiplicative:**
+**Seven factors, multiplicative:**
 
 ```
-final_score = bank_alignment * anchor_relevance * seed_similarity
+final_score = bank_alignment * anchor_relevance * seed_similarity * coherence
+              * context_bias * epa_alignment * soft_combined
 ```
 
-Each component is in [0, 1]. The product means any zero kills the score — a model that perfectly matches efficiency but completely fails capability gets 0, not 0.5.
+The first six are in [0, 1] and *filter*: the product means any zero kills the score — a model that perfectly matches efficiency but completely fails capability gets 0, not 0.5.
+
+`soft_combined` is different in kind: it *rewards*. Five signals (PageRank authority, PMI match on prefer anchors, IDF rarity, absence bonus, superadditive PageRank×rarity) are folded together **submodularly** — sorted descending, each successive signal weighted by `decay^rank` (decay = 0.7) — so each additional signal adds less than the last and no one signal runs away with the ranking. Because these terms reward rather than filter, **`final_score` is not bounded at 1.0**.
+
+**PMI is scored over `prefer_anchors` only, never `require_anchors`.** Required anchors are a hard filter, so every surviving candidate carries all of them; their PMI mass is identical across the candidate set. Including it would rank nothing, but *would* win the rank-0 full-weight slot in the submodular combine (it is a large constant), demoting the signals that actually discriminate to `decay^1` and `decay^2`. Measured on a 1,922-candidate window: excluding it widens score stdev **1.43×** (0.0500 → 0.0715).
+
+A corollary worth stating plainly: **a query with no `prefer_anchors` is filtered but not meaningfully ordered.** Three of the five soft signals (PMI-match, rare-boost, superadditive) go constant, and the ranking collapses toward PageRank + absence. `navigate_models` reports this as `refine.ranking_degraded: true` rather than letting the caller trust an arbitrary #1 — see §4.5.
 
 #### Bank Alignment
 
@@ -263,6 +270,44 @@ Used by `hf_search_models` for "models like X" queries. Not used by `navigate_mo
 - **`compare(model_ids)`** — Set operations on anchor sets (intersection, symmetric difference, Jaccard) plus per-bank position deltas.
 - **`similar_to(model_id)`** — Vanilla Jaccard similarity against all models (used by the old NL engine).
 - **`lineage(model_id)`** — Traverse LINEAGE bank: predecessors, base, derivatives, family members, ordered by signed position.
+
+### 4.5 The Refinement Loop — `refine`
+
+A deterministic engine knows exactly which dimensions its own answer is silent on. Rather than emit a ranking whose tail it cannot justify, `navigate_models` returns a `refine` block naming the single most useful thing the caller left unspecified, plus the query delta that answers it.
+
+Built by `build_refinement_guidance(results, query, idf)` in `query_navigate.py` — a pure function of the returned window and the query. Serialized for MCP by `_refine_payload()` in `server.py`.
+
+**The caller's loop:**
+
+1. Call with whatever the user gave, however vague.
+2. Read `refine.question`.
+3. Ask the user, or answer from conversation context.
+4. Merge the chosen option's `apply` into the arguments *already sent*. Scalars replace; lists append. **Do not rebuild the query.**
+5. Re-call until `refine.question` is empty.
+
+**How the question is chosen.** Priority is deliberate:
+
+1. `ranking_degraded` — reported first, because no axis answer fixes it.
+2. The widest unconstrained axis — `_axis_hints()` computes, for every bank with no direction in the query, the population variance of `sign * (1 + depth)` across the window. Ranked descending; **banks with zero variance are dropped**, since every result already agrees and asking would be noise.
+3. The sharpest splitting anchor — `_anchor_hints()` scores each anchor present on *some but not all* results by `present * (n - present) * idf`. The balance term peaks at a 50/50 split and is zero for a universal anchor; IDF makes a rare discriminator outrank a common one.
+
+**Options are range-derived, never fixed ±1.** `_axis_options(bank, lo, hi)` reads the window's observed bounds. A window at `+0..+3` on DOMAIN offers `{"domain": 0}` ("general knowledge", the zero state) versus `{"domain": 1}` — *not* `-1`, because no result lives there and answering it would return an empty set. Offering a direction the window doesn't occupy is worse than silence: the caller answers, re-queries, and gets nothing.
+
+**Questions are declarative skeletons**, the same discipline as the certifier's `Rule.reason_template`:
+
+```python
+QUESTION_TEMPLATES = {
+    "unconstrained_axis": (
+        "These range from <range_low> to <range_high> on <bank> — you did not "
+        "constrain it. Do you want <answer_low> or <answer_high>?"
+    ),
+    ...
+}
+```
+
+`render_question(id, slots)` fills the gaps and raises `KeyError` naming any slot the caller didn't supply — a literal `<bank>` must never reach an MCP payload. `question_id` is the stable machine contract; the prose may be reworded freely. Callers switch on the id, never parse the sentence.
+
+Both invariants — options stay inside the observed range, uniform banks are dropped — are pinned in `tests/test_navigate_refine.py`.
 
 ## 5. Source Adapters
 
