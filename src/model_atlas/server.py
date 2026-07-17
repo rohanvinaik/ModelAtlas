@@ -23,6 +23,11 @@ from ._formatting import (
 from .config import DEFAULT_CANDIDATE_LIMIT, DEFAULT_INDEX_SIZE, DEFAULT_RESULT_LIMIT
 from .extraction.pipeline import extract_batch
 from .query import StructuredQuery, compare, navigate, search
+from .query_navigate import (
+    RefinementGuidance,
+    _get_idf,
+    build_refinement_guidance,
+)
 from .search import fuzzy, structured
 
 logging.basicConfig(level=logging.INFO)
@@ -231,8 +236,39 @@ def navigate_models(
       similar_to: A model_id to use as similarity seed (IDF-weighted Jaccard
                   on anchor sets). Example: "meta-llama/Llama-3.1-8B-Instruct"
 
-    Scoring: bank_alignment * anchor_relevance * seed_similarity
-    Each ∈ [0,1]. Product means any zero kills the score.
+    SCORING:
+      score = bank_alignment * anchor_relevance * seed_similarity * coherence
+              * context_bias * epa_alignment * soft_combined
+      Multiplicative, so any zero factor kills the result. The first six are
+      ≤ 1.0 and filter; `soft_combined` REWARDS (PageRank, PMI-match, rare
+      boost, absence bonus, folded submodularly), so scores are NOT bounded
+      at 1.0. Every factor is returned in `score_breakdown`.
+
+    THE REFINEMENT LOOP — read this before reporting results to a user:
+
+      Every response carries a `refine` block. The engine is deterministic:
+      it knows which dimensions its own answer is silent on, and it will not
+      pretend to an ordering it cannot justify. Use it.
+
+        1. Call navigate_models with whatever the user gave you.
+        2. Read `refine.question` — one plain question naming the single
+           most useful thing still unspecified.
+        3. Ask the user that question (or answer it yourself if the earlier
+           conversation already settles it).
+        4. Merge the chosen option's `apply` dict into the SAME arguments you
+           just sent — do NOT rebuild the query from scratch. Scalar keys
+           (`efficiency`) replace; list keys (`require_anchors`) append.
+        5. Re-call. Repeat until `refine.question` is empty.
+
+      `refine.ranking_degraded: true` means you passed no `prefer_anchors`.
+      The results are correctly FILTERED but not meaningfully ORDERED —
+      three of five soft signals score identically for every candidate that
+      clears the `require` filter. Treat the window as a SET, not a ranking,
+      and do not tell the user result #1 beats result #2. Add prefer_anchors.
+
+      `tie_cluster_id` on a result means the same thing locally: those
+      results are indistinguishable given the constraints, and
+      `discriminating_axis` names the bank that would separate them.
 
     Args:
         architecture: Bank direction for ARCHITECTURE (-1, 0, or +1)
@@ -328,11 +364,58 @@ def navigate_models(
                     }
                     for r in results
                 ],
+                # The engine is deterministic, so it knows which dimensions its
+                # own answer is silent on. Rather than present a tail whose
+                # order it cannot justify, it names the refinement that would
+                # actually narrow the set. Answer `question` by merging one
+                # option's `apply` into the args you already sent, then re-call.
+                "refine": _refine_payload(
+                    build_refinement_guidance(results, sq, _get_idf(conn))
+                ),
             },
             indent=2,
         )
     finally:
         conn.close()
+
+
+def _refine_payload(g: RefinementGuidance) -> dict:
+    """Serialize RefinementGuidance for the MCP surface.
+
+    Axes and anchors are truncated to the few that carry real information —
+    the whole point is to ask ONE good question, not hand back an eight-bank
+    inventory the caller has to triage.
+    """
+    return {
+        "question_id": g.question_id,
+        "question": g.question,
+        "options": [{"answer": o.answer, "apply": o.apply} for o in g.options],
+        "merge_rule": g.merge_rule,
+        "ranking_degraded": g.ranking_degraded,
+        "unspecified_axes": [
+            {
+                "bank": a.bank,
+                "range": f"{a.range_low:+d}..{a.range_high:+d}",
+                "spread": round(a.spread, 3),
+                "distinct": a.distinct,
+                "options": [
+                    {"answer": o.answer, "apply": o.apply} for o in a.options
+                ],
+            }
+            for a in g.unspecified_axes[:3]
+        ],
+        "splitting_anchors": [
+            {
+                "anchor": h.anchor,
+                "present_in": h.present_in,
+                "out_of": h.out_of,
+                "options": [
+                    {"answer": o.answer, "apply": o.apply} for o in h.options
+                ],
+            }
+            for h in g.splitting_anchors[:3]
+        ],
+    }
 
 
 @mcp.tool()

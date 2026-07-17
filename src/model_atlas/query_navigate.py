@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math as _math
+import re as _re
 import sqlite3
 
 from . import db
@@ -10,10 +12,14 @@ from .config import (
     NAVIGATE_MISSING_BANK_PENALTY,
 )
 from .query_types import (  # noqa: F401 — re-exported for backward compat
+    AnchorHint,
+    AxisHint,
     BankConstraint,
     ComparisonResult,
     NavigationResult,
     ParsedQuery,
+    RefinementGuidance,
+    RefinementOption,
     SearchResult,
     StructuredQuery,
 )
@@ -277,6 +283,268 @@ def _mark_tie_clusters(
         i = j
 
 
+_ALL_BANKS: tuple[str, ...] = (
+    "ARCHITECTURE", "CAPABILITY", "EFFICIENCY", "COMPATIBILITY",
+    "LINEAGE", "DOMAIN", "QUALITY", "TRAINING",
+)
+
+# Plain-language names for the -1 / +1 direction on each bank. These MUST track
+# the zero-state semantics documented in the README's dimension table: each
+# bank's zero is the default most queries assume, and the two answers are the
+# directions away from it.
+# The zero state of each bank, in the caller's language — "the thing most
+# queries assume by default". Used when the observed window sits wholly on one
+# side of zero, where the useful split is "the default" vs "away from it".
+_AXIS_ZERO_ANSWERS: dict[str, str] = {
+    "ARCHITECTURE": "the usual transformer decoder",
+    "CAPABILITY": "a general language model",
+    "EFFICIENCY": "the ~7B sweet spot",
+    "COMPATIBILITY": "plain PyTorch",
+    "LINEAGE": "a base model",
+    "DOMAIN": "general knowledge",
+    "QUALITY": "established mainstream",
+    "TRAINING": "standard supervised fine-tuning",
+}
+
+_AXIS_ANSWERS: dict[str, tuple[str, str]] = {
+    "ARCHITECTURE": ("conventional (transformer decoder)", "novel (Mamba, MoE)"),
+    "CAPABILITY": ("general-purpose", "capability-rich (code, tools, reasoning)"),
+    "EFFICIENCY": ("smaller", "larger"),
+    "COMPATIBILITY": ("standard PyTorch", "specific runtime (GGUF, MLX)"),
+    "LINEAGE": ("base/foundational", "derived (fine-tune, quant)"),
+    "DOMAIN": ("general knowledge", "domain-specialized"),
+    "QUALITY": ("established/legacy", "trending"),
+    "TRAINING": ("simpler (SFT)", "complex (RLHF, DPO)"),
+}
+
+# A bank whose window variance is below this is treated as uniform — naming a
+# direction on it would not narrow the result set, so it is not worth asking.
+_AXIS_SPREAD_FLOOR = 1e-9
+
+
+def _signed(pos: dict | None) -> float:
+    """Signed position as a scalar: sign * (1 + depth). Absent bank → 0.0."""
+    if not pos:
+        return 0.0
+    return float(pos.get("sign", 0)) * (1.0 + float(pos.get("depth", 0)))
+
+
+def _axis_options(bank: str, lo: int, hi: int) -> list[RefinementOption]:
+    """Two answers that actually split the OBSERVED range on this bank.
+
+    Offering a direction no result occupies is worse than saying nothing: the
+    caller answers, re-queries, and gets an empty set. So the options are
+    derived from the window's own bounds, not from a fixed -1/+1 pair. A
+    window sitting entirely at or above zero is split by "at the zero state"
+    vs "positive", never by -1.
+    """
+    low_name, high_name = _AXIS_ANSWERS[bank]
+    field = bank.lower()
+    if lo < 0 and hi > 0:
+        return [
+            RefinementOption(low_name, {field: -1}),
+            RefinementOption(high_name, {field: +1}),
+        ]
+    if lo >= 0:
+        return [
+            RefinementOption(_AXIS_ZERO_ANSWERS[bank], {field: 0}),
+            RefinementOption(high_name, {field: +1}),
+        ]
+    return [
+        RefinementOption(low_name, {field: -1}),
+        RefinementOption(_AXIS_ZERO_ANSWERS[bank], {field: 0}),
+    ]
+
+
+def _axis_hints(
+    results: list[NavigationResult], specified: set[str]
+) -> list[AxisHint]:
+    """Rank unconstrained banks by how much they vary across the window.
+
+    High variance ⇒ the window straddles that axis ⇒ the caller naming a
+    direction would genuinely split these results. Zero variance ⇒ every
+    result agrees ⇒ asking would be noise, so the bank is dropped.
+    """
+    hints: list[AxisHint] = []
+    for bank in _ALL_BANKS:
+        if bank in specified:
+            continue
+        vals = [_signed(r.positions.get(bank)) for r in results]
+        if not vals:
+            continue
+        m = sum(vals) / len(vals)
+        var = sum((v - m) ** 2 for v in vals) / len(vals)
+        if var <= _AXIS_SPREAD_FLOOR:
+            continue
+        lo, hi = int(min(vals)), int(max(vals))
+        hints.append(AxisHint(
+            bank=bank,
+            spread=var,
+            range_low=lo,
+            range_high=hi,
+            distinct=len({int(v) for v in vals}),
+            options=_axis_options(bank, lo, hi),
+        ))
+    # spread desc, then bank name for deterministic ties
+    hints.sort(key=lambda h: (-h.spread, h.bank))
+    return hints
+
+
+def _anchor_hints(
+    results: list[NavigationResult],
+    idf: dict[str, float],
+    already: set[str],
+    limit: int = 5,
+) -> list[AnchorHint]:
+    """Anchors that split the window, ranked by information carried.
+
+    Balance term `present*(n-present)` peaks at a 50/50 split and is zero when
+    an anchor covers the whole window (or none of it) — those carry no choice.
+    IDF weights the split so a rare discriminator outranks a common one.
+    """
+    n = len(results)
+    if n < 2:
+        return []
+    counts: dict[str, int] = {}
+    for r in results:
+        for a in r.anchor_labels:
+            if a not in already:
+                counts[a] = counts.get(a, 0) + 1
+    scored: list[tuple[float, AnchorHint]] = []
+    for a, c in counts.items():
+        if c == n:  # universal — no choice to offer
+            continue
+        balance = c * (n - c)
+        if balance == 0:
+            continue
+        w = idf.get(a, 0.0)
+        scored.append((
+            balance * (w if w > 0 else 1.0),
+            AnchorHint(
+                anchor=a, present_in=c, out_of=n, idf=round(w, 4),
+                options=[
+                    RefinementOption("yes", {"require_anchors": [a]}),
+                    RefinementOption("no", {"avoid_anchors": [a]}),
+                ],
+            ),
+        ))
+    scored.sort(key=lambda t: (-t[0], t[1].anchor))
+    return [h for _, h in scored[:limit]]
+
+
+# Question skeletons. Declarative data, not code — same discipline as the
+# certifier's `Rule.reason_template`. Every gap is a typed slot filled from
+# the window; nothing is phrased ad-hoc, so the question set is enumerable and
+# a caller can switch on `question_id` instead of parsing prose.
+QUESTION_TEMPLATES: dict[str, str] = {
+    "ranking_degraded": (
+        "All <count> of these match what you asked for, though there's little "
+        "to separate them without a sense of what you'd prefer. Name a few "
+        "prefer_anchors and I'll put them in a proper order."
+    ),
+    "unconstrained_axis": (
+        "These range from <range_low> to <range_high> on <bank>, which is "
+        "rather a wide field. Would you prefer <answer_low>, or <answer_high>?"
+    ),
+    "splitting_anchor": (
+        "<present_in> of the <out_of> carry <anchor>, the rest don't. "
+        "Shall I insist on it?"
+    ),
+}
+
+_SLOT_RE = _re.compile(r"<([a-z_]+)>")
+
+
+def render_question(template_id: str, slots: dict[str, object]) -> str:
+    """Fill a question skeleton's <gaps> from `slots`. Deterministic.
+
+    Raises KeyError naming the slot if the template asks for one the caller
+    did not supply — a template gap must never silently render as literal
+    `<bank>` text in an MCP payload.
+    """
+    template = QUESTION_TEMPLATES[template_id]
+
+    def sub(m: "_re.Match[str]") -> str:
+        key = m.group(1)
+        if key not in slots:
+            raise KeyError(f"template '{template_id}' needs slot '{key}'")
+        return str(slots[key])
+
+    return _SLOT_RE.sub(sub, template)
+
+
+def _phrase_question(
+    axes: list[AxisHint], anchors: list[AnchorHint], degraded: bool, count: int
+) -> tuple[str, str, list[RefinementOption]]:
+    """The highest-value refinement as (question_id, question, options).
+
+    Ordering is deliberate: a degraded ranking is reported first because no
+    axis answer fixes it; then the widest unconstrained axis; then the
+    sharpest splitting anchor. Returns ('', '', []) when nothing would help.
+    """
+    if degraded:
+        return (
+            "ranking_degraded",
+            render_question("ranking_degraded", {"count": count}),
+            [],
+        )
+    if axes:
+        a = axes[0]
+        return (
+            "unconstrained_axis",
+            render_question("unconstrained_axis", {
+                "range_low": f"{a.range_low:+d}",
+                "range_high": f"{a.range_high:+d}",
+                "bank": a.bank,
+                "answer_low": a.options[0].answer,
+                "answer_high": a.options[1].answer,
+            }),
+            a.options,
+        )
+    if anchors:
+        h = anchors[0]
+        return (
+            "splitting_anchor",
+            render_question("splitting_anchor", {
+                "present_in": h.present_in,
+                "out_of": h.out_of,
+                "anchor": h.anchor,
+            }),
+            h.options,
+        )
+    return "", "", []
+
+
+def build_refinement_guidance(
+    results: list[NavigationResult],
+    query: StructuredQuery,
+    idf: dict[str, float],
+) -> RefinementGuidance:
+    """Report what the query left unsaid — see `RefinementGuidance`.
+
+    Pure function of the returned window plus the query. Deterministic: the
+    same window and query always produce the same guidance.
+    """
+    if not results:
+        return RefinementGuidance()
+    specified = set(query.bank_directions().keys())
+    already = set(query.require_anchors) | set(query.prefer_anchors) | set(query.avoid_anchors)
+    axes = _axis_hints(results, specified)
+    anchors = _anchor_hints(results, idf, already)
+    degraded = not query.prefer_anchors
+    question_id, question, options = _phrase_question(
+        axes, anchors, degraded, len(results)
+    )
+    return RefinementGuidance(
+        unspecified_axes=axes,
+        splitting_anchors=anchors,
+        ranking_degraded=degraded,
+        question_id=question_id,
+        question=question,
+        options=options,
+    )
+
+
 def _discriminating_axis(positions_list: list[dict[str, dict]]) -> str | None:
     """Bank with highest variance in `sign * (1 + depth)` across members.
 
@@ -313,8 +581,6 @@ def _discriminating_axis(positions_list: list[dict[str, dict]]) -> str | None:
 # ─────────────────────────────────────────────────────────────────────
 # Structural additions — the "big blast" of principled scoring signals
 # ─────────────────────────────────────────────────────────────────────
-
-import math as _math
 
 # Bank-family classification (dual where the bank carries both mechanical
 # and semantic weight). Used by mechanical_fraction below.
@@ -603,12 +869,18 @@ def navigate(
 ) -> list[NavigationResult]:
     """Structured navigational search — the primary recommendation engine.
 
-    Four signals, multiplicative:
-        final_score = bank_alignment * anchor_relevance * seed_similarity * coherence
+    Seven factors, multiplicative:
+        final_score = bank_alignment * anchor_relevance * seed_similarity
+                      * coherence * context_bias * epa_alignment * soft_combined
 
-    The coherence factor comes from the certifier's per-model
-    certification_score (Phase 6 of the audit pipeline). It defaults to 1.0
-    when unpopulated so pre-recert data continues to work.
+    `coherence` comes from the certifier's per-model certification_score
+    (Phase 6 of the audit pipeline). It defaults to 1.0 when unpopulated so
+    pre-recert data continues to work.
+
+    `soft_combined` folds the v0.4.1 information-theoretic signals (PageRank,
+    PMI match, IDF rarity, absence bonus, superadditive PR x rarity) together
+    submodularly, so each signal adds less than the last. These signals reward
+    rather than filter, so final_score is NOT bounded at 1.0.
 
     Uses batch SQL instead of N+1 per-model lookups.
     """
@@ -685,7 +957,13 @@ def navigate(
     mech_frac = _mechanical_fraction(query, idf, conn)
     mode_w = _mode_weights(query.mode or "auto", mech_frac)
     bank_exp = _apply_bank_weights(directions, query.bank_weights)
-    query_anchors_pool = require_set | prefer_set
+    # PMI is scored over PREFER anchors only. Required anchors are a hard
+    # filter, so every candidate carries all of them — their PMI mass is
+    # identical for the whole candidate set. Including it would not rank
+    # anything, but it WOULD win the rank-0 slot in the submodular combine
+    # (it is a large constant), demoting the signals that do discriminate to
+    # decay^1 and decay^2. Measured: excluding it widens score stdev 1.43x.
+    query_anchors_pool = prefer_set
     max_pmi_match = sum(pmi.get(a, 0.0) for a in query_anchors_pool) or 1.0
     max_absence = sum(-_math.log(p) for p in standards.values()) or 1.0
 

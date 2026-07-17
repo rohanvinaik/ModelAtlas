@@ -180,3 +180,96 @@ class NavigationResult:
     `None` on singletons and on clusters whose members share every bank
     (nothing there differentiates them). Bank name, e.g. `COMPATIBILITY`
     when GGUF vs safetensors is what would split the cluster."""
+
+
+@dataclass
+class RefinementOption:
+    """One answer to a refinement question, with the query delta it implies.
+
+    The caller does NOT rebuild the query. It picks an option and merges
+    `apply` into the arguments it already sent — see `RefinementGuidance.
+    merge_rule` for the two-line merge semantics.
+    """
+
+    answer: str
+    """Plain-language answer, e.g. "smaller" or "yes"."""
+    apply: dict = field(default_factory=dict)
+    """Query delta. Scalar keys (`efficiency`) replace; list keys
+    (`require_anchors`) append to what the caller already sent."""
+
+
+@dataclass
+class AxisHint:
+    """One unconstrained bank, and how much constraining it would help."""
+
+    bank: str
+    spread: float
+    """Population variance of `sign * (1 + depth)` across the returned window.
+    0.0 = every result sits at the same position on this bank, so naming a
+    direction would not narrow anything."""
+    range_low: int
+    range_high: int
+    """Min/max signed position observed in the window, e.g. -2..+3."""
+    distinct: int
+    """How many distinct signed positions appear. 1 = no choice to make."""
+    options: list[RefinementOption] = field(default_factory=list)
+    """Ready-to-merge answers, e.g. "smaller" → `{"efficiency": -1}`."""
+
+
+@dataclass
+class AnchorHint:
+    """One anchor that splits the returned window rather than covering it."""
+
+    anchor: str
+    present_in: int
+    out_of: int
+    idf: float
+    """Rarity weight. A rare anchor splitting the window is a sharper question
+    than a common one, because committing to it excludes more of the corpus."""
+    options: list[RefinementOption] = field(default_factory=list)
+    """Ready-to-merge answers: "yes" → require it, "no" → avoid it."""
+
+
+@dataclass
+class RefinementGuidance:
+    """What the caller did NOT specify, and what specifying it would buy.
+
+    The engine is deterministic, so it knows exactly which dimensions its own
+    answer is silent on. Rather than present a ranking whose tail is arbitrary,
+    `navigate()` reports the axes and anchors that would actually narrow the
+    result set — turning one query into an interview. Every field is derived
+    from the returned window; nothing here is inferred or guessed.
+    """
+
+    unspecified_axes: list[AxisHint] = field(default_factory=list)
+    """Banks with no direction in the query, ranked by `spread` descending —
+    the first entry is the single most informative thing the caller could add.
+    Banks where the window is uniform are omitted: asking about them is noise."""
+    splitting_anchors: list[AnchorHint] = field(default_factory=list)
+    """Anchors present on some but not all results, ranked by how evenly they
+    split the window (weighted by IDF). A 50/50 split carries the most
+    information; a 7-of-8 split barely narrows anything."""
+    ranking_degraded: bool = False
+    """True when the query supplied no `prefer_anchors`. Three of the five
+    soft signals (PMI-match, rare-boost, superadditive) score identically for
+    every candidate that clears the `require` filter, so the ranking collapses
+    toward PageRank + absence. The results are still correctly FILTERED; they
+    are just not meaningfully ORDERED. Callers should treat the window as a
+    set, not a ranking, until they add prefer_anchors."""
+    question_id: str = ""
+    """Which skeleton in `QUESTION_TEMPLATES` produced `question` — e.g.
+    `unconstrained_axis`. Switch on this rather than parsing the prose; the
+    wording may be reworded, the id is the stable contract."""
+    question: str = ""
+    """One plain-language question naming the highest-value refinement,
+    rendered from the `question_id` skeleton with slots filled from the
+    window. Empty when nothing would narrow the results further."""
+    options: list[RefinementOption] = field(default_factory=list)
+    """Answers to `question`, each carrying the query delta it implies. Pick
+    one, merge its `apply`, re-call. This is the whole refinement loop."""
+    merge_rule: str = (
+        "Merge `apply` into the arguments you already sent; do not rebuild the "
+        "query. Scalar keys replace; list keys append."
+    )
+    """Stated in-band so a caller reading only the tool output knows how to
+    apply an option without consulting the docs."""
