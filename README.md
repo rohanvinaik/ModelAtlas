@@ -19,8 +19,8 @@ You want a small code model with tool-calling.
 **HuggingFace** gives you the biggest, most popular code models:
 
 ```
-Qwen2.5-Coder-32B-Instruct          32B   1,996 likes
-Qwen3-Coder-480B-A35B-Instruct     480B   1,315 likes
+Qwen2.5-Coder-32B-Instruct          32B   2,081 likes
+Qwen3-Coder-480B-A35B-Instruct     480B   1,353 likes
 ```
 
 480B parameters. Not small. HF sorts by popularity. It can't express "small" as a *direction*.
@@ -34,9 +34,9 @@ navigate_models(efficiency=-1, capability=+1, quality=+1,
 ```
 
 ```
-jgebbeken/gemma-4-coder-gguf              3B  | code, GGUF, function-calling      1.83
-Qwen/Qwen2.5-1.5B-Instruct              1.5B  | code, high-downloads, Qwen-family 1.81
-deadbydawn101/gemma-4-E4B-...-MLX         3B  | code, MLX-compatible              1.81
+jgebbeken/gemma-4-coder-gguf              3B  | 3B-class, C++-code, GGUF-available    1.829
+Qwen/Qwen2.5-1.5B-Instruct              1.5B  | 3B-class, Qwen-family, base-model     1.813
+deadbydawn101/gemma-4-E4B-Agentic-...     3B  | 3B-class, Apple-Silicon, Gemma-family 1.808
 ```
 
 Every result is small, code-focused, and popular. One tool call. ~500 tokens. <100ms.
@@ -45,49 +45,135 @@ Every result is small, code-focused, and popular. One tool call. ~500 tokens. <1
 
 ---
 
-## Three levels of comparison
+## Four queries, both systems
 
-All queries run against both systems. HuggingFace uses its API with `pipeline_tag` filters + sort-by-likes. ModelAtlas uses `navigate_models` with `quality=+1`. All results are real.
+HuggingFace is free and works fine. So the only honest case for this is output you can compare. Every block below is a real call to HF's live API and a real `navigate_models` call, run on the same intent. Nothing is illustrative.
 
-### Level 1: ModelAtlas matches HuggingFace
+### The floor: ask for a task, get models that do the task
 
-Common queries where HF works well. The baseline test — *can ModelAtlas reproduce the known-good answers?*
+*"A model that captions images."*
 
-| Query | HuggingFace | ModelAtlas |
-|-------|-------------|-----------|
-| Sentiment analysis | cardiffnlp/twitter-roberta-sentiment ✓ | **Same model** + ProsusAI/finbert (financial sentiment) |
-| Named entity recognition | dslim/bert-base-NER ✓ | **Same model** + microsoft/deberta-v3-base |
-| Image captioning | Salesforce/blip-captioning-large ✓ | OpenGVLab/InternVL2-2B, Qwen2-VL-2B ✓ |
+```
+HF  pipeline_tag=image-to-text&sort=likes    MA  require=[image-understanding]
+────────────────────────────────────────     ────────────────────────────────────────
+1477  Salesforce/blip-image-captioning-large  2.037  Qwen/Qwen3.6-27B
+ 931  nlpconnect/vit-gpt2-image-captioning    1.957  openai/clip-vit-base-patch32
+ 865  Salesforce/blip-image-captioning-base   1.975  Qwen/Qwen2.5-VL-7B-Instruct
+ 500  microsoft/trocr-base-handwritten        1.972  google/vit-base-patch16-224-in21k
+ 477  numind/NuMarkdown-8B-Thinking           1.986  Qwen/Qwen3.6-35B-A3B
+```
 
-**Both systems return the right models.** This is the most important result. Anyone can build a niche search tool. Building one that also matches the incumbent beat-for-beat on common queries is what makes it a replacement, not a toy.
+Both sides return real image models. That is the floor, and it is the least interesting thing here — but without it nothing else counts.
 
-### Level 2: ModelAtlas exceeds HuggingFace
+Now read *which* models. HF's top three are BLIP and ViT-GPT2: 2021–2022 vintage. They lead because likes accumulate and never decay — the ranking measures **how long a model has been popular**, not whether it is the one you should use. ModelAtlas returns current VLMs. Qwen2.5-VL captions better than BLIP and has for a while. Nobody on HF is going to un-like BLIP.
 
-Queries with direction ("small"), intent ("fast"), or domain specificity ("medical classifier") — concepts that don't map to a single HF tag.
+### Direction: "small" is a coordinate, not a substring
 
-| Query | HuggingFace | ModelAtlas |
-|-------|-------------|-----------|
-| Small code model | codeparrot-small (33 likes, from 2021) | Qwen2.5-Coder-0.5B-Instruct (official, high-downloads) |
-| Fast embedding model | *No results* — "fast" isn't a tag | Qwen3-Embedding-0.6B, jina-v5-text-small (sub-1B, edge-deployable) |
-| Medical classifier | medical_o1_verifier (a *verifier*, not a classifier) | StanfordAIMI/stanford-deidentifier-base, obi/deid_bert_i2b2 |
+*"A small code model."*
 
-HuggingFace starts returning noise. "Small" matches models with "small" in the name. "Fast" returns nothing. "Medical classifier" returns a reasoning verifier. ModelAtlas returns what you *meant*, not what you *typed*.
+```
+HF  search="small code model"&sort=likes
+────────────────────────────────────────────────────────────────
+   0  G-WOO/model_150mil-CodeBERTa-small-v1
+   0  penguinman73/codeparrot-model-small
+   0  Shawn156/models-small-codeparrot
+   0  codecfakev2/model_LA_WCE_4_14_1e-06_wavtokenizer_small_320_24k
+   0  BernardJoshua/codet5-small-text-to-sql-prompt-final_model
+```
 
-### Level 3: ModelAtlas finds the unfindable
+Zero likes. Every one. Strangers' abandoned checkpoints, and a wavtokenizer — an *audio* model — because "small" appeared in the filename.
 
-Multi-constraint queries with direction + domain + negation. HuggingFace cannot express these at all.
+```
+MA  efficiency=-1, require=[code-generation], prefer=[tool-calling, high-downloads]
+────────────────────────────────────────────────────────────────
+1.853  google/gemma-2-2b-it
+1.823  DavidAU/gemma-4-E4B-it-The-DECKARD-Expresso-Universe
+1.830  Abiray/gemma-4-E4B-it-heretic-GGUF
+1.839  bartowski/gemma-2-2b-it-GGUF
+1.825  google/gemma-2-2b-jpn-it
+```
 
-| Query | HuggingFace | ModelAtlas |
-|-------|-------------|-----------|
-| Multilingual chat, NOT code/math/embedding | *Impossible to express* | PaddleOCR-VL-1.5 (sub-1B), Nanbeige4.1-3B-GGUF |
-| Tiny on-device TTS | *No results* | **MioTTS-0.1B** (100M params), CosyVoice3-0.5B |
-| Biology classifier, encoder-only | *No results* | BiomedBERT, gliner-biomed, **PoetschLab/GROVER** (genomics) |
-| Small finance classifier | *No results* — "finance" isn't a pipeline tag | **FutureMa/Eva-4B** (finance+classification, trending), DMindAI/DMind-3-mini |
-| Distilled reasoning, sub-3B, NOT a fine-tune | *No results* | Qwen3.5-0.8B-Opus-Reasoning-Distilled (score: 1.0) |
+`efficiency=-1` is a direction in a coordinate system. It has no idea what the word "small" looks like.
 
-A 100-million-parameter TTS model. A genomics classifier with 6 anchors. A 0.8B model distilled from Claude Opus. These models exist on HuggingFace but they are **invisible** to keyword search. ModelAtlas finds them because `biology-domain + classification + encoder-only` is a precise intersection in a coordinate system, not a string match.
+### Intent: you asked for code
 
-**The pattern:** Simple queries → both work. Directional queries → MA wins. Multi-constraint queries → HF returns nothing; MA finds exactly what you need. The harder the question, the wider the gap.
+*"A code model I can run locally, in GGUF."* Skip keywords — use HF's own structured filters, the strongest form of the query it supports:
+
+```
+HF  filter=gguf&pipeline_tag=text-generation&sort=likes
+────────────────────────────────────────────────────────────────
+3375  google/gemma-7b        ← not a code model
+2713  yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF
+1250  google/gemma-7b-it     ← not a code model
+1208  google/gemma-2b        ← not a code model
+ 933  google/gemma-2b-it     ← not a code model
+```
+
+The filter was honoured. The question was ignored. Four of the top five are general-purpose Gemma, because `sort=likes` cannot know that you meant *code* — it only knows what is popular among things that survived the filter.
+
+### Choice: ten results, ten models
+
+Same intent, by keyword:
+
+```
+HF  search="code gguf"&sort=likes
+────────────────────────────────────────────────────────────────
+2713  yuxinlu1/gemma-4-12B-coder-...-GGUF
+ 804  unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF
+ 767  unsloth/Qwen3-Coder-Next-GGUF
+ 595  DavidAU/Qwen3.6-40B-...-NEO-CODE-Di-IMatrix-MAX-GGUF
+ 398  DavidAU/Qwen3.6-27B-...-NEO-CODE-Di-IMatrix-MAX-GGUF
+ 396  DavidAU/GLM-4.7-Flash-...-NEO-CODE-Imatrix-MAX-GGUF
+ 329  Jackrong/Qwopus3.6-27B-Coder-MTP-GGUF
+ 325  Qwen/Qwen2.5-Coder-7B-Instruct-GGUF
+ 309  Jackrong/Qwopus3.5-9B-Coder-GGUF
+ 266  Qwen/Qwen3-Coder-Next-GGUF
+```
+
+Ten results, **five publishers**. DavidAU ×3, unsloth ×2, Jackrong ×2, Qwen ×2. One person's merge recipe, three times.
+
+```
+MA  require=[code-generation, GGUF-available], quality=+1
+────────────────────────────────────────────────────────────────
+1.339  huihui-ai/Huihui-gpt-oss-20b-BF16-abliterated
+1.261  sweepai/sweep-next-edit-1.5B              ← predicts your next edit
+1.317  defog/sqlcoder-7b-2                       ← writes SQL
+1.287  bartowski/Codestral-22B-v0.1-GGUF
+1.310  yuxinlu1/gemma-4-12B-coder-...-GGUF
+1.290  stabilityai/stable-code-3b
+1.261  TheBloke/phi-2-GGUF
+1.258  prism-ml/Bonsai-4B-gguf
+1.259  mradermacher/gemma-4-19b-a4b-it-REAP-i1-GGUF
+1.289  FINAL-Bench/Darwin-28B-Coder-GGUF
+```
+
+Ten results, **ten publishers**. 1.5B to 28B. Two are specialists no keyword reaches: one writes SQL, one predicts your next edit.
+
+The scores are not in descending order, and that is the diversification working, not a bug. Score decides who makes the window; MMR decides the order within it, picking greedily on `relevance × (λ − (1−λ)·similarity-to-everything-already-picked)`. So `sweep-next-edit-1.5B` at 1.261 is promoted above `sqlcoder-7b-2` at 1.317 for being *unlike* the pick above it. The list spends its ten slots on ten models instead of ten copies.
+
+### Honesty: it says when it can't rank
+
+```
+MA  require=[code-generation, GGUF-available], prefer=[tool-calling, high-downloads]
+────────────────────────────────────────────────────────────────
+1.938  ─      huihui-ai/Huihui-gpt-oss-20b-BF16-abliterated
+1.824  tie#0  ubergarm/Kimi-K2.6-GGUF                       axis=EFFICIENCY
+1.830  tie#0  TheBloke/Mistral-7B-Instruct-v0.2-GGUF        axis=EFFICIENCY
+1.827  tie#0  bartowski/gemma-2-2b-it-GGUF                  axis=EFFICIENCY
+1.805  tie#0  DavidAU/Qwen3.6-40B-...-NEO-CODE-MAX-GGUF     axis=EFFICIENCY
+1.802  tie#0  MaziyarPanahi/Mistral-7B-Instruct-v0.3-GGUF   axis=EFFICIENCY
+1.813  tie#0  unsloth/Kimi-K2.6-GGUF                        axis=EFFICIENCY
+1.808  tie#0  Mia-AiLab/Qwable-3.6-27b                      axis=EFFICIENCY
+```
+
+One clear winner, then seven the engine **declines to order** — your constraints don't separate them, so it won't pretend. Every ranked list you have ever used presented its arbitrary tail as a ranking. This one names the tie and names the way out:
+
+> *"These range from -2 to +3 on EFFICIENCY, which is rather a wide field. Would you prefer smaller, or larger?"*
+> `{"answer": "smaller", "apply": {"efficiency": -1}}`
+
+Answer one word, merge the patch, the band resolves. [How the refinement loop works →](#refining-a-query)
+
+**The pattern:** both systems clear the floor. Past it, every dimension that matters — recency, direction, intent, choice, and knowing what it doesn't know — needs coordinates, and a keyword index doesn't have any.
 
 ---
 
