@@ -724,6 +724,7 @@ def navigate(
             mode_w["K_SUPER"] * super_,
         ]
         soft_combined = _submodular_combine(soft_signals)
+        pagerank_boost_alone = 1.0 + mode_w["K_PR"] * pr_frac  # what PR alone contributed, for surfacing
 
         final_score = (
             bank_alignment
@@ -747,6 +748,8 @@ def navigate(
                 anchor_relevance=anchor_relevance,
                 seed_similarity=seed_similarity,
                 coherence=coherence,
+                pagerank_boost=pagerank_boost_alone,
+                soft_combined=soft_combined,
                 positions=pos_out,
                 anchor_labels=sorted(model_anchor_set),
                 author=authors.get(mid, ""),

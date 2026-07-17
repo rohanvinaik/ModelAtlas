@@ -34,12 +34,14 @@ navigate_models(efficiency=-1, capability=+1, quality=+1,
 ```
 
 ```
-Qwen3-Coder-Next-AWQ-4bit        3B  | code, tool-calling, trending     0.79
-LocoOperator-4B                   4B  | code, tool-calling, GGUF         0.63
-Qwen2.5-Coder-0.5B-Instruct    0.5B  | code, high-downloads             0.37
+jgebbeken/gemma-4-coder-gguf              3B  | code, GGUF, function-calling      1.83
+Qwen/Qwen2.5-1.5B-Instruct              1.5B  | code, high-downloads, Qwen-family 1.81
+deadbydawn101/gemma-4-E4B-...-MLX         3B  | code, MLX-compatible              1.81
 ```
 
-Every result is small, code-focused, tool-calling, and popular. One tool call. ~500 tokens. <100ms.
+Every result is small, code-focused, and popular. One tool call. ~500 tokens. <100ms.
+
+**Since v0.4.1**, `navigate_models` also accepts `mode` (`auto`/`canonical`/`niche`/`balanced`) and `bank_weights` (per-bank exponent overrides). The same hero query under `mode="canonical"` surfaces the well-known incumbents first; under `mode="niche"` it prioritises specialist fits. Scores are information-theoretic (PMI-match, IDF-rare boost, absence-bonus, Monty Hall opposition sharpening, MMR diversification, all combined submodularly) — see [v0.4.1 release notes](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1) for the full scoring layer.
 
 ---
 
@@ -258,7 +260,7 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 
 | Tool | What it does |
 |------|-------------|
-| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + optional EPA target → scored, ranked results (coherence-weighted, PageRank-boosted, tie-clusters named) |
+| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named). See [v0.4.1 scoring layer](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1). |
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, metadata, `certification_score` |
 | `hf_compare_models` | Structural diff between models: shared/unique anchors, position deltas, Jaccard similarity |
 | `hf_search_models` | Natural language fallback with fuzzy matching when structured query isn't needed |

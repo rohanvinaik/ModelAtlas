@@ -152,6 +152,20 @@ class NavigationResult:
     anchor_labels: list[str] = field(default_factory=list)
     vibe_summary: str = ""
     author: str = ""
+    pagerank_boost: float = 1.0
+    """Multiplicative boost applied from this model's PageRank score
+    (normalized against the candidate set's max). 1.0 = no PR data or
+    lowest-in-set; up to 1.4× when this model is the top-PR candidate
+    AND the mode weights favour PR. Surfaced so callers can see how
+    much popularity is doing vs constraint-fit."""
+    soft_combined: float = 1.0
+    """Multiplicative product of the submodular-combined soft signals
+    (PMI-match, rare-anchor boost, absence-bonus, superadditive PR×rare).
+    1.0 = no soft signal fired (basic query with no rare/absent anchors);
+    up to ~1.5× when specialist signals concentrate. Callers seeing this
+    close to 1.0 on an esoteric query know the scoring layer wasn't given
+    enough anchor context to differentiate; close to 1.5 means the
+    specialist signals cleanly identified this result as the specific fit."""
     tie_cluster_id: int | None = None
     """When a run of top results falls within `epsilon` (default 0.05) of
     each other on `score`, they form a tie-cluster: the ordering inside

@@ -203,6 +203,30 @@ def navigate_models(
         `["Apple-Silicon-native"]` on a Mac user's session biases toward
         MLX/GGUF-Metal without excluding CUDA-only models from the ranking.
 
+    QUERY MODE:
+      mode: How aggressively to weight the soft signals.
+        - "auto" (default) — derives from the query's mechanical (size,
+          format, structure) vs semantic (capability, domain, quality)
+          character. Mechanical-heavy queries let PageRank dominate;
+          semantic-heavy queries let rare-anchor / absence-bonus signals
+          dominate. Sensible default for most callers.
+        - "canonical" — amps PageRank. Established mainstream models rise.
+          Use for "give me the well-known thing that matches."
+        - "niche" — amps rare-match, absence-bonus, superadditive signals.
+          Specialists rise over popular near-misses. Use for
+          "find the specific specialist, not the popular generalist."
+        - "balanced" — fixed default weights (no auto-adaptation).
+
+    BANK WEIGHTS:
+      bank_weights: Optional per-bank exponent overrides,
+        e.g. {"QUALITY": 0.0, "CAPABILITY": 2.0} to neutralize quality-
+        tiering and double-weight capability alignment. Missing bank →
+        weight 1.0 (default). Zero → the bank contributes nothing to
+        alignment (neutralized). > 1 → the bank counts extra.
+        Renormalized across active banks so total attention-mass is
+        preserved. Feature, not a knob-to-hide: sometimes the caller
+        knows better than the defaults.
+
     SEED SIMILARITY:
       similar_to: A model_id to use as similarity seed (IDF-weighted Jaccard
                   on anchor sets). Example: "meta-llama/Llama-3.1-8B-Instruct"
@@ -223,6 +247,8 @@ def navigate_models(
         prefer_anchors: Anchors that boost score (soft, IDF-weighted)
         avoid_anchors: Anchors that penalize score
         context_anchors: Ambient-context anchors (soft bias, ≤ 1.5× boost)
+        mode: Query mode — "auto" | "canonical" | "niche" | "balanced"
+        bank_weights: Optional {bank: exponent} per-bank weight overrides
         similar_to: Model ID for anchor-similarity seed
         limit: Max results to return (default 20)
     """
@@ -266,6 +292,8 @@ def navigate_models(
                     "avoid_anchors": sq.avoid_anchors,
                     "context_anchors": sq.context_anchors,
                     "similar_to": sq.similar_to,
+                    "mode": sq.mode,
+                    "bank_weights": sq.bank_weights,
                 },
                 "network_models": stats["total_models"],
                 "result_count": len(results),
@@ -279,6 +307,8 @@ def navigate_models(
                             "anchor_relevance": round(r.anchor_relevance, 4),
                             "seed_similarity": round(r.seed_similarity, 4),
                             "coherence": round(r.coherence, 4),
+                            "pagerank_boost": round(r.pagerank_boost, 4),
+                            "soft_combined": round(r.soft_combined, 4),
                         },
                         "positions": r.positions,
                         "anchors": r.anchor_labels[:15],
