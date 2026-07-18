@@ -138,16 +138,70 @@ def _extract_ddg_url(raw: str) -> str | None:
     return raw if raw.startswith("http") else None
 
 
+# Hosts that can carry real signal about an ML model. Everything else is noise.
+#
+# 2026-07-17: every search engine below `searxng` is a SCRAPER and degrades
+# silently — duckduckgo/startpage CAPTCHA, brave rate-limits — after which
+# SearXNG falls back to whichever engine still answers. Bing in particular NEVER
+# returns zero results: for a query with no real answer it returns generic SEO /
+# support pages, which this worker then hands to the LLM as "web evidence about
+# this model". Measured that day, unfiltered:
+#   '"Ace-Step1.5" ... huggingface'  -> acehardware.com, ace.edu, ace.aa.com
+#   '1bitLLM bitnet_b1_58-3B ...'    -> 5/5 support.google.com
+#   (a bitnet query)                 -> people.com/where-is-jennifer-pan-today
+# The extractor dutifully produced anchors from those at confidence 0.4 while
+# reporting "0 errors" — see model_anchors rows for physics-domain on
+# sd-pokemon-diffusers, formal-verification on Logics-Parsing.
+#
+# Engine config fixes the junk source of the day; this list fails CLOSED against
+# the whole class, so the next scraper to get CAPTCHA'd cannot poison the corpus.
+# An EMPTY result set is a correct answer — better to learn nothing about a model
+# than to learn something false about it.
+ALLOWED_HOSTS: tuple[str, ...] = (
+    "huggingface.co",   # model pages, discussions, papers/, spaces
+    "github.com",
+    "github.io",        # project pages
+    "arxiv.org",
+    "reddit.com",       # r/LocalLLaMA community impressions
+    "aimodels.fyi",
+)
+
+
+def _host_allowed(url: str) -> bool:
+    """True when `url`'s host is on ALLOWED_HOSTS (or a subdomain of one)."""
+    try:
+        host = urllib.parse.urlparse(url).netloc.lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    host = host.split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return any(host == d or host.endswith("." + d) for d in ALLOWED_HOSTS)
+
+
+def _filter_results(results: list[dict]) -> list[dict]:
+    """Drop results whose host is not on ALLOWED_HOSTS."""
+    return [r for r in results if r.get("url") and _host_allowed(r["url"])]
+
+
 def web_search(
     query: str, searxng_url: str | None, max_results: int = 5, timeout: int = 15
 ) -> list[dict]:
-    """Search with fallback cascade: SearXNG → DDG."""
+    """Search with fallback cascade: SearXNG → DDG, host-filtered.
+
+    Both paths are filtered, so a degraded engine (or the DDG fallback, which
+    scrapes the very engine most likely to be CAPTCHA'd) cannot introduce
+    off-list evidence. Returning [] is a valid outcome — the caller's
+    search_failures backoff already handles it.
+    """
     if searxng_url:
-        results = searxng_search(query, searxng_url, max_results, timeout)
+        results = _filter_results(searxng_search(query, searxng_url, max_results, timeout))
         if results:
             return results
-        # SearXNG failed, fall through to DDG
-    return ddg_search(query, max_results, timeout)
+        # SearXNG returned nothing usable, fall through to DDG
+    return _filter_results(ddg_search(query, max_results, timeout))
 
 
 # ---------------------------------------------------------------------------

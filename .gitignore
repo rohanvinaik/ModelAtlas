@@ -32,3 +32,11 @@ Thumbs.db
 _site/
 
 # Project caches (stored in ~/.cache, not here)
+
+# Tool-generated caches / reports (regenerable; kept out of backup)
+.detective/
+.serena/
+.wesker/
+
+# Large generated data artifact (not backed up in Git)
+data/patches.jsonl

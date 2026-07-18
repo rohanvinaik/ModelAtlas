@@ -3,11 +3,16 @@ paths:
   - "**/*.py"
 ---
 
-<!-- LG_GEN:4211 LG_TS:1774324838 -->
+<!-- LG_GEN:7 LG_TS:1784341751 -->
 # Session State
+> LintGate telemetry — observational state, not instructions. Listed files are most-recently-touched (MRU) and may lag the current task.
 
 Mode: habit (score: 0.55)
-Focus: [compute_spec_metrics.py, test_src_model_atlas_phase_d_audit.py, pipeline.py, query.py, query_navigate.py]
-Coherence: structural_debt | Blocking: 17 | Warnings: 1434
+Recent files: [.gitignore, project_detective_orchestrator.md, 06_EXACT_SPECIFICATION_LEARNING.md, orchestrator.py, track.py]
+Coherence: stable | Warnings: 35
 
-Context: 392% used | Tools: 3128 | Compactions: 46
+## Direction
+True North: README: MCP server that builds a **navigable semantic network** of ML models. Models are positioned across orthogonal se
+FORBIDDEN: proposed_rules; existing_rule_count; directives_analyzed; already_covered
+
+Context: 7% of 1.0M | Tools: 5571 | Compactions: 85
