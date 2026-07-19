@@ -12,35 +12,42 @@
 [![MC/DC](https://raw.githubusercontent.com/rohanvinaik/ModelAtlas/badges/.github/badges/mcdc.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/spec-badges.yml)
 [![Mutation Sampling](https://raw.githubusercontent.com/rohanvinaik/ModelAtlas/badges/.github/badges/mutation-sampling.svg)](https://github.com/rohanvinaik/ModelAtlas/actions/workflows/spec-badges.yml)
 
-`50,907 models · 192 semantic anchors · 555K anchor links · certifier-enforced · <100ms queries · No embeddings · No GPU`
+`50,906 models · 192 semantic anchors · 555K anchor links · certifier-enforced · <100ms queries · No embeddings · No GPU`
 
-Fifty thousand models worth looking at live on HuggingFace, and the only ways in are by name, by tag, and by popularity. That holds up right until what you want is a *direction* instead of a word — *small*, *distilled from a frontier model's reasoning*, *local in GGUF*, *multilingual but not code*. A keyword index has nowhere to put a direction, so it hands you a stranger's abandoned checkpoint with the right word in its filename.
+You want a small code model with tool-calling.
 
-ModelAtlas gives every model coordinates instead — and because the coordinates are explicit, it knows what you *didn't* say. Ask for a tiny model that reasons, and when the top candidates tie, it won't fake a rank. It asks:
+**HuggingFace** gives you the biggest, most popular code models:
 
 ```
-navigate_models(capability=+1, efficiency=-1,
-                require_anchors=["distilled", "edge-deployable"],
-                prefer_anchors=["reasoning"])
-
-  strong candidates, tied — it won't fake a rank, so it asks:
-  › TRAINING is a wide field. Simpler (SFT), or complex (RLHF, DPO)?
-    you: simpler
-  › QUALITY is a wide field. Established, or trending?
-    you: trending
-
-  →  Jackrong/Qwen3.5-0.8B-Claude-4.6-Opus-Reasoning-Distilled-GGUF   1.726
-       0.8B · distilled from Claude 4.6 Opus · GGUF · edge-deployable
-     every other candidate falls to ~0.87 — they aren't trending
+Qwen2.5-Coder-32B-Instruct          32B   2,081 likes
+Qwen3-Coder-480B-A35B-Instruct     480B   1,353 likes
 ```
 
-Two words — *simpler*, *trending* — and it hands you an 0.8-billion-parameter model that distilled a frontier model's reasoning down to something that runs on your laptop, quantized and ready. You could not have found it by name; its name is a hash of jargon. **No model ran to produce that answer.** ModelAtlas is a deterministic script with no machine learning anywhere near the answer path — a map, not a model — that nonetheless *converses*: it hands you the tied candidates and the one question that separates them, and narrows as you answer. A chatbot from before chatbots could exist, and the conversation *is* the search.
+480B parameters. Not small. HF sorts by popularity. It can't express "small" as a *direction*.
+
+**ModelAtlas** gives you what you actually asked for:
+
+```python
+navigate_models(efficiency=-1, capability=+1, quality=+1,
+                require_anchors=["code-generation"],
+                prefer_anchors=["tool-calling", "high-downloads"])
+```
+
+```
+jgebbeken/gemma-4-coder-gguf              3B  | 3B-class, C++-code, GGUF-available    1.829
+Qwen/Qwen2.5-1.5B-Instruct              1.5B  | 3B-class, Qwen-family, base-model     1.813
+deadbydawn101/gemma-4-E4B-Agentic-...     3B  | 3B-class, Apple-Silicon, Gemma-family 1.808
+```
+
+Every result is small, code-focused, and popular. One tool call. ~500 tokens. <100ms.
+
+**Since v0.4.1**, `navigate_models` also accepts `mode` (`auto`/`canonical`/`niche`/`balanced`) and `bank_weights` (per-bank exponent overrides). The same hero query under `mode="canonical"` surfaces the well-known incumbents first; under `mode="niche"` it prioritises specialist fits. Scores are information-theoretic (PMI-match, IDF-rare boost, absence-bonus, Monty Hall opposition sharpening, MMR diversification, all combined submodularly) — see [v0.4.1 release notes](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1) for the full scoring layer.
 
 ---
 
 ## Four queries, both systems
 
-That was one query. The honest case for a tool that sits next to a free one is output you can compare, so here are four, and every block below is a real call to HF's live API beside a real `navigate_models` call on the same intent. Nothing is illustrative.
+HuggingFace is free and works fine. So the only honest case for this is output you can compare. Every block below is a real call to HF's live API and a real `navigate_models` call, run on the same intent. Nothing is illustrative.
 
 ### The floor: ask for a task, get models that do the task
 
@@ -56,9 +63,9 @@ HF  pipeline_tag=image-to-text&sort=likes    MA  require=[image-understanding]
  477  numind/NuMarkdown-8B-Thinking           1.986  Qwen/Qwen3.6-35B-A3B
 ```
 
-Both sides return real image models. That is the floor, the least interesting thing here — but without it nothing else counts.
+Both sides return real image models. That is the floor, and it is the least interesting thing here — but without it nothing else counts.
 
-Now read *which* models. HF's top three are BLIP and ViT-GPT2, 2021–2022 vintage. They lead because likes accumulate and never decay: the ranking measures **how long a model has been popular**, not whether it is the one to use. ModelAtlas returns current VLMs. Qwen2.5-VL captions better than BLIP and has for a while — but nobody on HF is going to un-like BLIP.
+Now read *which* models. HF's top three are BLIP and ViT-GPT2: 2021–2022 vintage. They lead because likes accumulate and never decay — the ranking measures **how long a model has been popular**, not whether it is the one you should use. ModelAtlas returns current VLMs. Qwen2.5-VL captions better than BLIP and has for a while. Nobody on HF is going to un-like BLIP.
 
 ### Direction: "small" is a coordinate, not a substring
 
@@ -74,7 +81,7 @@ HF  search="small code model"&sort=likes
    0  BernardJoshua/codet5-small-text-to-sql-prompt-final_model
 ```
 
-Zero likes, every one. Strangers' abandoned checkpoints — and a wavtokenizer, an *audio* model, because "small" appeared in the filename.
+Zero likes. Every one. Strangers' abandoned checkpoints, and a wavtokenizer — an *audio* model — because "small" appeared in the filename.
 
 ```
 MA  efficiency=-1, require=[code-generation], prefer=[tool-calling, high-downloads]
@@ -86,7 +93,7 @@ MA  efficiency=-1, require=[code-generation], prefer=[tool-calling, high-downloa
 1.825  google/gemma-2-2b-jpn-it
 ```
 
-`efficiency=-1` is a direction in a coordinate system. It has no idea what the word "small" looks like, and it does not need one.
+`efficiency=-1` is a direction in a coordinate system. It has no idea what the word "small" looks like.
 
 ### Intent: you asked for code
 
@@ -102,7 +109,7 @@ HF  filter=gguf&pipeline_tag=text-generation&sort=likes
  933  google/gemma-2b-it     ← not a code model
 ```
 
-The filter was honoured; the question was ignored. Four of the top five are general-purpose Gemma, because `sort=likes` cannot know you meant *code* — only what is popular among things that survived the filter.
+The filter was honoured. The question was ignored. Four of the top five are general-purpose Gemma, because `sort=likes` cannot know that you meant *code* — it only knows what is popular among things that survived the filter.
 
 ### Choice: ten results, ten models
 
@@ -123,7 +130,7 @@ HF  search="code gguf"&sort=likes
  266  Qwen/Qwen3-Coder-Next-GGUF
 ```
 
-Ten results, **five publishers**. DavidAU ×3, unsloth ×2, Jackrong ×2, Qwen ×2 — one person's merge recipe, three times.
+Ten results, **five publishers**. DavidAU ×3, unsloth ×2, Jackrong ×2, Qwen ×2. One person's merge recipe, three times.
 
 ```
 MA  require=[code-generation, GGUF-available], quality=+1
@@ -140,9 +147,9 @@ MA  require=[code-generation, GGUF-available], quality=+1
 1.289  FINAL-Bench/Darwin-28B-Coder-GGUF
 ```
 
-Ten results, **ten publishers**, 1.5B to 28B. Two are specialists no keyword reaches: one writes SQL, one predicts your next edit.
+Ten results, **ten publishers**. 1.5B to 28B. Two are specialists no keyword reaches: one writes SQL, one predicts your next edit.
 
-The scores are not in descending order, and that is the diversification working, not a bug. Score decides who makes the window; MMR decides the order within it, picking greedily on `relevance × (λ − (1−λ)·similarity-to-everything-already-picked)`. So `sweep-next-edit-1.5B` at 1.261 is promoted above `sqlcoder-7b-2` at 1.317 for being *unlike* the pick above it. The list spends its ten slots on ten models instead of ten copies of one.
+The scores are not in descending order, and that is the diversification working, not a bug. Score decides who makes the window; MMR decides the order within it, picking greedily on `relevance × (λ − (1−λ)·similarity-to-everything-already-picked)`. So `sweep-next-edit-1.5B` at 1.261 is promoted above `sqlcoder-7b-2` at 1.317 for being *unlike* the pick above it. The list spends its ten slots on ten models instead of ten copies.
 
 ### Honesty: it says when it can't rank
 
@@ -159,20 +166,20 @@ MA  require=[code-generation, GGUF-available], prefer=[tool-calling, high-downlo
 1.808  tie#0  Mia-AiLab/Qwable-3.6-27b                      axis=EFFICIENCY
 ```
 
-One clear winner, then seven the engine **declines to order** — your constraints don't separate them, so it won't pretend they do. Every ranked list you have ever used presented its arbitrary tail as a ranking. This one names the tie and names the way out — the same move as the hero, in the general case:
+One clear winner, then seven the engine **declines to order** — your constraints don't separate them, so it won't pretend. Every ranked list you have ever used presented its arbitrary tail as a ranking. This one names the tie and names the way out:
 
 > *"These range from -2 to +3 on EFFICIENCY, which is rather a wide field. Would you prefer smaller, or larger?"*
 > `{"answer": "smaller", "apply": {"efficiency": -1}}`
 
 Answer one word, merge the patch, the band resolves. [How the refinement loop works →](#refining-a-query)
 
-Both systems clear the floor. Past it, every dimension that matters — recency, direction, intent, choice, and knowing what it doesn't know — needs coordinates, and a keyword index has none.
+**The pattern:** both systems clear the floor. Past it, every dimension that matters — recency, direction, intent, choice, and knowing what it doesn't know — needs coordinates, and a keyword index doesn't have any.
 
 ---
 
 ## What the LLM gets
 
-This is an MCP tool; an LLM calls it mid-conversation. One call returns, per model:
+This is an MCP tool. An LLM calls it during conversation. One tool call returns:
 
 ```json
 {
@@ -191,17 +198,19 @@ This is an MCP tool; an LLM calls it mid-conversation. One call returns, per mod
 }
 ```
 
-From this the LLM knows, immediately: small, code-focused, GGUF-packaged for local inference, Gemma-derived. The anchors are a vibe; the positions are a profile; the score says *why this model and not another.* Without ModelAtlas the LLM guesses from stale training data. With it, the LLM has live, structured awareness of 50,907 models for ~500 tokens — less than the cost of a follow-up question.
+From this, the LLM *immediately knows*: small, code-focused, GGUF-packaged for local inference, Gemma-derived. The anchors are a vibe. The positions are a profile. The score explains *why this model and not another.*
 
-| Approach | Latency | Tokens | What you get |
-|----------|---------|--------|--------------|
+Without ModelAtlas, the LLM guesses from stale training data. With it, the LLM has live, structured awareness of 50,906 models for ~500 tokens — less than the cost of a follow-up question.
+
+| Approach | Latency | Tokens | Quality |
+|----------|---------|--------|---------|
 | LLM guessing from training data | 0ms | 0 | Stale, incomplete, no niche coverage |
-| HuggingFace API + parse | 2–5s | ~2,000 | Tag filter, popularity sort |
-| **ModelAtlas** | **<100ms** | **~500** | Scored, ranked, tie-aware, certifier-checked |
+| HuggingFace API + parse | 2-5s | ~2,000 | Tag filter + popularity sort |
+| **ModelAtlas** | **<100ms** | **~500** | **Scored, ranked, auditable, certifier-verified** |
 
 ### Refining a query
 
-The hero's back-and-forth is not a special mode; it is what every response carries. Because the coordinate system is explicit, the engine can see which coordinates you *left unspecified*, and it returns a `refine` block naming the highest-value one and the delta that answers it:
+Structure has a second payoff: because the coordinate system is explicit, the engine can tell you which coordinates you *didn't* specify. Every response carries a `refine` block naming the highest-value unspecified dimension and the delta that answers it:
 
 ```json
 "refine": {
@@ -214,7 +223,9 @@ The hero's back-and-forth is not a special mode; it is what every response carri
 }
 ```
 
-The caller merges `apply` into the arguments it already sent — scalars replace, lists append — and re-calls. No query rebuild. `unspecified_axes` ranks all eight banks by the variance actually present in the result window and drops any bank where every result already agrees, so it never asks a question that wouldn't narrow anything. The options come from the observed range, never a fixed ±1: a window sitting at `+0..+3` offers `{"domain": 0}` vs `{"domain": 1}`, because offering `-1` would return an empty set. And `ranking_degraded: true` is its way of saying no `prefer_anchors` were passed, so the window is correctly filtered but not meaningfully ordered — the same honesty as `tie_cluster_id` on a result. A keyword engine can offer none of this, because it has no coordinates to be missing.
+The caller merges `apply` into the arguments it already sent — scalars replace, lists append — and re-calls. No query rebuild. `unspecified_axes` ranks all eight banks by the variance actually present in the result window and drops any bank where every result agrees, so it never asks a question that wouldn't narrow anything. Options come from the observed range, never a fixed ±1: a window at `+0..+3` offers `{"domain": 0}` vs `{"domain": 1}`, because offering `-1` would return an empty set.
+
+`ranking_degraded: true` means no `prefer_anchors` were passed — three of the five soft signals then score identically for every candidate that clears the `require` filter, so the window is correctly filtered but not meaningfully ordered. Same discipline as `tie_cluster_id` on a result: when the constraints don't separate two models, say so rather than fake a rank. A keyword engine can't offer any of this, because it has no coordinates to be missing.
 
 ---
 
@@ -233,13 +244,15 @@ QUALITY         zero = established mainstream      →  +trending  / -legacy
 TRAINING        zero = standard supervised (SFT)  →  +complex (RLHF, DPO) / -simpler
 ```
 
-On top of coordinates, models share **anchors** — 192 semantic labels like `tool-calling`, `GGUF-available`, `Llama-family`. Similarity is emergent from shared labels, weighted by rarity (IDF); every score traces back to specific anchors, and nothing is an opaque embedding.
+On top of coordinates, models share **anchors** — 192 semantic labels like `tool-calling`, `GGUF-available`, `Llama-family`. Similarity is emergent from shared labels, weighted by rarity (IDF). Every score traces back to specific anchors. Nothing is an opaque embedding.
 
-**Scoring** is multiplicative: `bank_alignment × anchor_relevance × seed_similarity × coherence × context_bias × epa_alignment × soft_combined`. A model that nails efficiency but misses capability gets zero, not fifty percent. Wrong-direction models decay hyperbolically; avoided anchors stack exponentially (each halves the score); required anchors are hard filters. The `coherence` factor is the certifier's per-model verification (below). `soft_combined` folds the information-theoretic signals — PageRank, PMI-match, IDF-rarity, absence-bonus — together submodularly; because they reward rather than filter, scores are not bounded at 1.0. The surface strongly favors precise matches and rapidly eliminates mismatches, with no binary cutoffs. `mode` (`auto`/`canonical`/`niche`/`balanced`) reweights the same query — `canonical` surfaces the known incumbents first, `niche` the specialist fits — and `bank_weights` overrides per-bank exponents directly. [Full scoring math →](docs/DESIGN.md) · [v0.4.1 scoring layer →](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1)
+**Scoring:** `bank_alignment × anchor_relevance × seed_similarity × coherence × context_bias × epa_alignment × soft_combined`. Multiplicative — a model that nails efficiency but misses capability gets zero, not fifty percent. Wrong-direction models decay hyperbolically. Avoided anchors stack exponentially (each halves the score). Required anchors are hard filters. The `coherence` factor comes from the certifier's per-model verification (below). `soft_combined` folds the information-theoretic signals (PageRank, PMI-match, IDF-rarity, absence-bonus) together submodularly; because they reward rather than filter, scores are not bounded at 1.0. The result is a scoring surface that strongly favors precise matches and rapidly eliminates mismatches, without binary cutoffs. [Full scoring math →](docs/DESIGN.md)
 
-## The map stays honest: the certifier
+## The audit pipeline: certifier-enforced anchor emissions
 
-Coordinates are only worth trusting if the labels under them are true, so every anchor on every model has to be *earned*. A rule fires on a specific structural HuggingFace fact — `pipeline_tag`, `model_type`, `library_name`, `quantization_level`, the safetensors index, `config.json` — and either requires an anchor or forbids one. Nothing is "the LLM inferred it from the name"; nothing is "the web scrape saw the word nearby." A certifier (`src/model_atlas/certifier/`) enforces this at every write path — Phase A/B ingest, Phase E merge, and the retroactive recert tool.
+The core discipline: **every anchor assigned to a model must be traceable to a structural HuggingFace fact.** Not "the LLM inferred it from the name." Not "the web scrape saw the word in a nearby paragraph." A rule fires on a specific HF field (pipeline_tag, model_type, library_name, quantization_level, safetensors index, config.json), and either requires an anchor or forbids one.
+
+The certifier lives at `src/model_atlas/certifier/` and enforces at every write path — extract-and-store (Phase A/B ingest), Phase E web-enrichment merge, and the retroactive recert tool.
 
 ```
     HF raw_json                    Deterministic anchors (config.json → decoder-only, GQA)
@@ -257,7 +270,7 @@ Coordinates are only worth trusting if the labels under them are true, so every 
                                                     extractor missed it)
 ```
 
-Rules are declarative data, not code — 43 of them across 8 categories (`pipeline_tag`, `model_type`, `library_name`, `quantization`, `safetensors`, tag conventions, family-lineage, code-language):
+Rules are declarative data, not code:
 
 ```python
 Rule(
@@ -270,32 +283,63 @@ Rule(
 )
 ```
 
-Tiers correspond to how far the evidence can be trusted. **Tier 1 (STRUCTURAL)** is an HF-published field: a contradicting inference from a lower tier is REJECTED, non-negotiable. **Tier 2 (SEMI-STRUCTURAL)** is a tag convention or a family word in the repo name: contradictions are DEMOTED. **Tier 3 (INFERRED)** is advisory: contradictions emit a warning and survive. Two guards keep the LLM honest before it ever runs — gating skips the Phase C/E model on any model the deterministic tiers already cover (≥6 of 8 banks above floor, ~20% of calls), and its JSON output is grammar-restricted to the bank's anchor vocabulary, so it *cannot* emit an off-vocab or wrong-bank label. The result: every model carries a `certification_score`, 99.95% of them ≥ 0.99 with no contradictions, and the rest surface as a soft tiebreaker so coherent evidence outranks internally-contradictory evidence when all else matches. Rule catalogue and tier semantics in [`docs/pipeline.md`](docs/pipeline.md).
+43 rules across 8 categories cover the common structural implications: `pipeline_tag` (10), `model_type` (9), `library_name` (4), `quantization` (3), `safetensors` (1), tag conventions (4), family-lineage evidence (11), and code-language (1).
+
+Rule tiers correspond to evidence trust:
+
+- **Tier 1 (STRUCTURAL)** — the trigger is an HF-published field. Contradictions from a Tier-3 emission (LLM inference, web scrape) get REJECTED. Non-negotiable.
+- **Tier 2 (SEMI-STRUCTURAL)** — tag conventions, family word in the repo name. Contradictions get DEMOTED (confidence lowered).
+- **Tier 3 (INFERRED)** — advisory. Contradictions emit a WARNING; the emission survives.
+
+**Result**: every model in the corpus carries a `certification_score` metadata field. 99.95% of models score ≥ 0.99 (no contradictions surfaced). The remainder are surfaced in `navigate_models` results as a soft ranking tiebreaker — coherent evidence ranks above internally-contradictory evidence when all other constraints match.
+
+**LLM gating** (`src/model_atlas/gating.py`): before invoking the Phase C/E LLM on a model, check whether the deterministic tiers have already covered ≥ 6 of 8 banks with above-floor confidence. If so, skip the LLM. On the tier-2 candidate set, ~20% of LLM calls are skipped this way.
+
+**Grammar-constrained JSON output** (Phase E worker): the Ollama call is schema-restricted to the bank's anchor vocabulary. The LLM literally cannot emit an off-vocab or wrong-bank label — the enum is enforced by Ollama's structured-output mode. Falls back to loose JSON if the runtime doesn't support the schema.
 
 ## Extraction — five phases, all certifier-enforced
 
-Every phase writes at a confidence tier, and a lower tier cannot overwrite a higher one. Every anchor emission — deterministic, LLM, or web — routes through the certifier before it touches the database.
-
-- **Phases A–B — deterministic** (1.0 / 0.85). Fetch from HuggingFace; classify from config files, tags, and safetensors metadata. A pattern-inferred anchor that contradicts a Tier-1 fact (Falcon-family on a non-Falcon repo) is REJECTED at write time.
-- **Phase C — constrained LLM** (0.5). A local model reads each card and selects from the 192-anchor dictionary; it cannot invent labels, because the output schema *is* the vocabulary. Invoked only where deterministic coverage is incomplete.
-- **Phase D — audit and heal** (0.6). Deterministic comparison of C anchors against Tier 1/2 ground truth. Since the certifier now enforces the invariants Phase D once only audited, it is used mostly for coverage gaps.
-- **Phase E — web enrichment** (0.4). Searches the open web for signal HF doesn't publish — benchmark mentions, comparison articles, community impressions — under the same constrained, grammar-restricted selection, then routes through the certifier before merging.
+**Phases A–B: Deterministic extraction** (confidence 1.0 / 0.85). Fetch from HuggingFace, classify from config files, tags, and safetensors metadata. Deterministic anchors are routed through the certifier before writing — any pattern-inferred anchor that contradicts a Tier-1 fact (Falcon-family on a non-Falcon repo, Rust-code on a non-generative pipeline) gets REJECTED at write time.
 
 ```bash
-python -m model_atlas.ingest_cli --phase ab --min-likes 5        # A/B deterministic
-python -m model_atlas.ingest_cli --export-c2 4                   # C: export shards → workers → merge
-python -m model_atlas.ingest_cli --merge-c2 results_*.jsonl
+python -m model_atlas.ingest_cli --phase ab --min-likes 5
+```
 
-# Phase E: one-time self-hosted search (aggregates Google/Bing/DDG, no rate limits)
+**Phase C: Constrained LLM classification** (confidence 0.5). A local model reads each model card and selects from the 192-anchor dictionary. It cannot invent labels — the output schema is the vocabulary. Only invoked for models where deterministic coverage is incomplete.
+
+```bash
+python -m model_atlas.ingest_cli --export-c2 4       # export shards
+# scp shard files to worker machines; workers are zero-dependency Python scripts
+python -m model_atlas.ingest_cli --merge-c2 results_*.jsonl
+```
+
+**Phase D: Audit and heal** (confidence 0.6). Deterministic comparison of C2 anchors against Tier 1/2 ground truth. Mismatches get re-extracted. Since the certifier now enforces the same invariants Phase D historically only *audited*, Phase D is used mostly for coverage gaps rather than corrections.
+
+**Phase E: Web enrichment** (confidence 0.4). Phases A–D work from HuggingFace metadata; Phase E searches the open web for signal HF doesn't publish — benchmark mentions, comparison articles, community impressions. Same constrained selection from the anchor vocabulary, grammar-restricted per bank, then routed through the certifier before merging.
+
+```bash
+# One-time: self-hosted search (aggregates Google/Bing/DDG, no rate limits)
 docker run -d --name searxng -p 8888:8080 \
   -v /path/to/settings.yml:/etc/searxng/settings.yml searxng/searxng
+
+# Export → run → merge (same pattern as C/D; merge routes through certifier via Phase 7)
 python -m model_atlas.ingest_cli --export-e 4 --export-e-banks CAPABILITY,QUALITY
 python scripts/phase_e_worker.py --input shard_0.jsonl --output results_0.jsonl \
     --model qwen3.5:4b --searxng http://localhost:8888 --snippets-only --resume
+python -m model_atlas.ingest_cli --merge-e results_*.jsonl --merge-e-dry-run
 python -m model_atlas.ingest_cli --merge-e results_*.jsonl
 ```
 
-Two maintenance tools keep the corpus fresh: `scripts/recertify_corpus.py` walks every model and applies drops for structural contradictions and adds for newly-implied anchors (idempotent, dry-run by default) — this is how new rules onboard without a re-extraction; `scripts/repull_and_reextract.py` re-fetches HF metadata for flagged-noisy models and re-extracts through the certified pipeline. All workers are standalone scripts — `scp` to any machine, `--resume` from any crash, shard across as many machines as you have. [`docs/pipeline.md`](docs/pipeline.md) has the full reference.
+**Retroactive recertification** (`scripts/recertify_corpus.py`). Walks every model in the DB, runs the certifier, applies drops for structural contradictions and adds for missing implied anchors. Idempotent; dry-run by default. Used to onboard new rules to the existing corpus without a re-extraction.
+
+```bash
+python scripts/recertify_corpus.py                   # dry-run — report only
+python scripts/recertify_corpus.py --apply           # write the diff, audit-logged
+```
+
+**Targeted re-pull** (`scripts/repull_and_reextract.py`). For models the certifier flags as noisy, fetch fresh HF metadata, wipe existing anchors, and re-extract via the certified pipeline. Ensures the source of truth stays fresh.
+
+All workers are standalone scripts — `scp` to any machine, `--resume` from any crash, shard across as many machines as you have. [`docs/pipeline.md`](docs/pipeline.md) has the full reference.
 
 ## Quick start
 
@@ -303,7 +347,7 @@ Two maintenance tools keep the corpus fresh: `scripts/recertify_corpus.py` walks
 # 1. Clone and install
 git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas && uv sync
 
-# 2. Download the pre-built network (50K+ models, all extraction tiers + certifier applied)
+# 2. Download pre-built network (50K+ models, all extraction tiers + certifier applied)
 mkdir -p ~/.cache/model-atlas
 curl -L -o ~/.cache/model-atlas/network.db \
   https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
@@ -328,39 +372,47 @@ Works with any MCP-compatible client. Your LLM can now see model space.
 
 | Tool | What it does |
 |------|-------------|
-| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named), plus a [`refine`](#refining-a-query) block naming the highest-value unspecified dimension. |
+| `navigate_models` | **Primary.** Bank directions + anchor constraints + context anchors + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named), plus a [`refine`](#refining-a-query) block naming the highest-value unspecified dimension. See [v0.4.1 scoring layer](https://github.com/rohanvinaik/ModelAtlas/releases/tag/v0.4.1). |
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, metadata, `certification_score` |
 | `hf_compare_models` | Structural diff between models: shared/unique anchors, position deltas, Jaccard similarity |
-| `hf_search_models` | Natural-language fallback with fuzzy matching when a structured query isn't needed |
+| `hf_search_models` | Natural language fallback with fuzzy matching when structured query isn't needed |
 | `hf_build_index` | Ingest new models from HuggingFace or Ollama into the network (certifier-enforced) |
 | `search_models` | Multi-source search (HuggingFace, Ollama, or all) |
 | `hf_index_status` | Network statistics: model count, anchor distribution, coverage |
-| `set_model_vibe` | Set or update the vibe summary and optional extra anchors for a model |
+| `set_model_vibe` | Set/update the vibe summary and optional extra anchors for a model |
 | `list_model_sources` | List registered source adapters (HuggingFace, Ollama) and their availability |
 | `phase_e_status` | Phase E web-enrichment progress: enriched count, benchmark scores, recent runs |
 
 ## What this is not
 
 - **Not a vector store.** No embeddings. Similarity comes from shared structure.
-- **Not a HuggingFace wrapper.** HF is a data source; the value is the extracted structure HF doesn't expose, plus the certifier that keeps it honest.
-- **Not a ranking system.** No "best model" score. Navigation, not leaderboard — which is why a tie is answered with a question, not a coin-flip.
+- **Not a HuggingFace wrapper.** HF is a data source. The value is the extracted structure HF doesn't expose plus the certifier that keeps that structure honest.
+- **Not a ranking system.** No "best model" score. Navigation, not leaderboard.
 
 ## Operational discipline
 
-Every write to a canonical table (`models`, `model_positions`, `model_links`, `anchors`) goes through one of two audit-logged primitives in `src/model_atlas/admin.py` — `patch_field` (single-field update, dry-run by default, requires a sourced rationale) and `insert_canonical` (new row, same discipline). Worker-driven JSONL ingestion routes through `model_atlas.reconciler.reconcile_file()`, which dispatches via the same primitives with SHA-256 line-hash idempotency and passes every emission through the certifier first. Every successful write appends one line to `data/patches.jsonl`.
+Every write to a canonical table (`models`, `model_positions`, `model_links`, `anchors`) goes through one of two audit-logged primitives in `src/model_atlas/admin.py`:
+
+- `patch_field(table, pk, field, old, new, reason)` — single-field update, dry-run by default, requires sourced rationale.
+- `insert_canonical(table, row, reason)` — new row insert, same discipline.
+
+Worker-driven JSONL ingestion routes through `model_atlas.reconciler.reconcile_file()` which dispatches via the same primitives with SHA-256 line-hash idempotency. Every anchor emission — from deterministic extraction, from Phase E merge, from targeted re-pull — passes through the certifier before hitting these primitives. Every successful write appends one line to `data/patches.jsonl`.
 
 ```bash
-python -m model_atlas.coherence      # read-only health audit: orthogonality, NULL coverage, orphans
-./scripts/sync_and_reconcile.sh      # weekly hub-and-spoke sync: spokes → reconciler → audit → rotate
+# Health audit (read-only): bank orthogonality, NULL coverage, anchor orphans/oversaturation
+python -m model_atlas.coherence
+
+# Weekly hub-and-spoke sync: rsync from spokes → reconciler → audit → rotate log
+./scripts/sync_and_reconcile.sh
 ```
 
 See [`docs/admin.md`](docs/admin.md), [`docs/reconciler.md`](docs/reconciler.md), and [`docs/coherence.md`](docs/coherence.md) for the discipline.
 
 ## Status
 
-**50,907 models. 192 anchors. 555K model-anchor links. 406K bank positions across 8 banks (144K off the zero state). 99.6% bank coverage. 4,021 models web-enriched. 43 declarative rules enforced at every write. 100% of models certifier-scored, 99.95% at perfect coherence. 933 tests passing.**
+**50,906 models. 192 anchors. 555K model-anchor links. 406K bank positions across 8 banks (144K off the zero state). 99.6% bank coverage. 4,021 models web-enriched. 43 declarative rules enforced at every write. 100% of models certifier-scored (99.95% at perfect coherence). 933 tests passing.**
 
-Models with fewer than 5 likes are not indexed yet — the 50K are the active, community-validated portion of HuggingFace. A periodic snapshot: it tells you *what to look at*, not *what is trending this minute*.
+Models with < 5 likes are not yet indexed — the 50K represent the active, community-validated portion of HuggingFace. Periodic snapshot — tells you *what to look at*, not *what's trending right now*.
 
 | | |
 |---|---|
