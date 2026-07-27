@@ -119,9 +119,8 @@ untouched.
 
 ## Fixes, in order of value
 
-1. **Renormalize PageRank.** Log or rank-percentile instead of `/max`.
-   Contained, no contract change, and the biggest single recovery of dynamic
-   range. Everything else is downstream of this.
+1. ~~**Renormalize PageRank.**~~ **DONE** — see [Fix 1, measured](#fix-1-measured).
+   Rank-percentile over the candidate set, replacing `/max`.
 2. **Give `bank_alignment` a gradient for directional queries** so depth
    matters and "large" prefers 70B to 13B. Restores the documented intent.
 3. **Decide what `coherence` is for.** Either the certifier discriminates or
@@ -140,3 +139,54 @@ The eval suite has 7 cases / 67 checks, which is too thin to catch a
 regression in a change to the scoring contract v0.4.1 was built on. Widen it
 before touching any of the above, including cases that currently pass, so a
 fix cannot quietly break what already works.
+
+## Fix 1, measured
+
+`pr_frac = pagerank / max(pagerank)` → rank percentile over the candidate set
+(`_pagerank_fractions`). Ties collapse to one percentile, so the large mass at
+the baseline PageRank all lands at `0.0` rather than being spread across the
+bottom half — those models carry no centrality signal and inventing an
+ordering among them is what the old transform effectively did.
+
+**Eval: 92.5% → 95.5%**, `code_review_bot_consumer_gpu` 67% → 80%, no case
+regressed. The 1-download `Shekswess/trlm-stage-2-sft-final-2` left the window
+entirely; the top three became GLM-4.6 (82K downloads), InternVL3-8B (104K)
+and DeepSeek-V3 (1.4M). Score spread on that query widened from ~1.5% to 4.3%.
+
+Verified with Detective (`uv sync --extra analysis`), which reported the new
+function at **25 behaviours / 0 pinned** and, more usefully, that the
+surrounding suite was *crash-dominated* — mutants died by raising, so the
+tests proved the code RAN without pinning WHAT it returned. Two of the
+survivors it named were real gaps: the zero-exclusion test asserted only the
+zero model, so mutating `v > 0` to `v >= 0` still passed, and nothing covered
+exactly two distinct values. Now **19/25 pinned**, 16 by value assertion. The
+remaining 6 are boundary/swap variants with diminishing returns.
+
+### What fix 1 did NOT fix
+
+Ordering is better but still compressed — a 44-download model outranks a
+318K-download one. Two reasons, both live:
+
+- `K_PR` is ~0.2 and `_submodular_combine` decays at 0.7, so the term is
+  damped downstream of the normalisation.
+- **PageRank is not popularity.** Measured over the 24,434 models carrying
+  both, log-log Pearson *r* = **0.259**. PageRank rewards *ancestry* — the
+  top of it is FLUX.1-dev, SDXL, Qwen2.5-7B, Llama-3.1-8B, the bases people
+  fine-tune from. Usage is a different axis:
+
+  | model | downloads | PageRank rank |
+  |---|---|---|
+  | `sentence-transformers/all-MiniLM-L6-v2` | 249,011,265 | 333 / 24,434 |
+  | `google-bert/bert-base-uncased` | 62,910,316 | 163 |
+  | `google/electra-base-discriminator` | 51,033,559 | 1,186 |
+  | `Falconsai/nsfw_image_detection` | 41,095,752 | 3,692 |
+
+  So the product has **no usage signal at all**. For "which model should I use
+  in my project", ancestry is a proxy at best — the obvious embedding answer
+  has 249M downloads and PageRank barely notices it. `high-downloads` exists
+  as a QUALITY anchor, but anchors are filters, and filters do not order.
+
+  Whether to add a popularity term is a design decision, not a bug fix: it
+  would reward the mainstream and work against the atlas's stated purpose of
+  surfacing the specialist over the popular generalist. It belongs in the
+  same conversation as fix 3.

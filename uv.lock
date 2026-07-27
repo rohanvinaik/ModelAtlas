@@ -694,6 +694,20 @@ wheels = [
 ]
 
 [[package]]
+name = "detective-spec"
+version = "0.8.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "wesker" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/29/d7c67da47c86285cfb2ad818fc008707c79ed8052687e741ed2748208301/detective_spec-0.8.1.tar.gz", hash = "sha256:ab0e4aba2c554c6444d53e7d126e952fd9821c9f320d66327928f2e633bda9d1", size = 327458, upload-time = "2026-07-17T15:10:44.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/be/48d44815842b7603736610a7e2fef184653761249031321f6b350d54e447/detective_spec-0.8.1-py3-none-any.whl", hash = "sha256:a7660b78148df0818d12b86bca60cf3d2857aa5e22594f30f9ca8f9720d82d22", size = 197598, upload-time = "2026-07-17T15:10:45.836Z" },
+]
+
+[[package]]
 name = "dill"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1389,6 +1403,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+analysis = [
+    { name = "detective-spec", marker = "python_full_version >= '3.11'" },
+]
 dev = [
     { name = "mypy" },
     { name = "pytest" },
@@ -1408,6 +1425,7 @@ ingest = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", marker = "extra == 'ingest'", specifier = ">=2.0.0" },
+    { name = "detective-spec", marker = "python_full_version >= '3.11' and extra == 'analysis'", specifier = ">=0.8.1" },
     { name = "huggingface-hub", specifier = ">=0.20.0" },
     { name = "markdown", specifier = ">=3.10.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
@@ -1423,7 +1441,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "types-requests", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev", "ingest"]
+provides-extras = ["dev", "analysis", "ingest"]
 
 [[package]]
 name = "mpmath"
@@ -3661,6 +3679,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/32/ce/eeb58ae4ac36fe09e3842eb02e0eb676bf2c53ae062b98f1b2531673efdd/uvicorn-0.41.0.tar.gz", hash = "sha256:09d11cf7008da33113824ee5a1c6422d89fbc2ff476540d69a34c87fab8b571a", size = 82633, upload-time = "2026-02-16T23:07:24.1Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/e4/d04a086285c20886c0daad0e026f250869201013d18f81d9ff5eada73a88/uvicorn-0.41.0-py3-none-any.whl", hash = "sha256:29e35b1d2c36a04b9e180d4007ede3bcb32a85fbdfd6c6aeb3f26839de088187", size = 68783, upload-time = "2026-02-16T23:07:22.357Z" },
+]
+
+[[package]]
+name = "wesker"
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/83/386933035e594045d48250cf7b5fd741cf8a3cd6da46c78ddbb50fa3a7e1/wesker-0.9.1.tar.gz", hash = "sha256:c20c11a713da3fe32294c20f9fcff821faaa38ef5a076273c28fac45710cb6a2", size = 296690, upload-time = "2026-07-17T15:10:21.817Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/d2/a732132a8b8539ac20af02844ba21c43668e2720609d30dde1515fbad18b/wesker-0.9.1-py3-none-any.whl", hash = "sha256:774497c925d74bf800f4c1e585237e2e3de8784cc1a560becd5051a6e5dabeb3", size = 139724, upload-time = "2026-07-17T15:10:22.883Z" },
 ]
 
 [[package]]

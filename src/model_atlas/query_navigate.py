@@ -182,17 +182,46 @@ mismatch. 0.2 = up to 1.2×, matching the coherence/context bias scale so no
 single soft signal steamrolls the others."""
 
 
-def _nav_pagerank_boost(model_pr: float, pr_max: float) -> float:
-    """Multiplicative boost from PageRank, normalized against `pr_max`.
+def _pagerank_fractions(
+    pagerank_by_id: dict[str, float], candidate_ids: list[str]
+) -> dict[str, float]:
+    """Map each candidate's PageRank onto a rank percentile in [0, 1].
 
-    Returns 1.0 when `pr_max` is zero (no candidate has PageRank) or when
-    the candidate has no stored score — absent is neutral. Otherwise
-    `1 + MAX_BOOST * (pr / pr_max)`, so the top-PR candidate in the set
-    gets exactly `1 + MAX_BOOST` and everything below scales linearly.
+    Replaces `pr / max(pr)`, which is the wrong transform for this data.
+    PageRank over a lineage graph is power-law: on the v0.4.0 corpus the
+    median equals the minimum (most models are dangling nodes at the
+    baseline), while the maximum is ~647x the median. Dividing by the maximum
+    therefore pinned 96.9% of models below 0.01 — under 0.2% of final score —
+    so the one term in the whole product that could ORDER candidates was
+    flattened into silence. See `docs/scoring-dynamic-range.md`.
+
+    Percentile is scale-free, so it survives that shape: the spread is uniform
+    by construction no matter how skewed the underlying values are.
+
+    Percentile is computed over the CANDIDATE SET, not the corpus, so it reads
+    as "among the models that actually qualify, how central is this one" —
+    which is the question the ranking is asking. It is `fraction of candidates
+    scoring strictly LOWER`, so the large mass sitting at the baseline value
+    all lands at 0.0 rather than being spread across the bottom half. Those
+    models genuinely carry no centrality signal, and inventing an ordering
+    among them is what the old transform effectively did.
+
+    A candidate with no stored PageRank scores 0.0 — absent is not central.
+    Deterministic: a pure function of the value multiset.
     """
-    if pr_max <= 0 or model_pr <= 0:
-        return 1.0
-    return 1.0 + NAVIGATE_PAGERANK_MAX_BOOST * (model_pr / pr_max)
+    scored = [pagerank_by_id.get(mid, 0.0) for mid in candidate_ids]
+    distinct = sorted({v for v in scored if v > 0})
+    if len(distinct) < 2:
+        # Nothing to separate — one value (or none) means no ordering signal.
+        return dict.fromkeys(candidate_ids, 0.0)
+    # For each distinct value, how many distinct values sit strictly below it,
+    # normalised to [0, 1]. Ties collapse to one percentile, as they should.
+    span = len(distinct) - 1
+    pct_of_value = {v: i / span for i, v in enumerate(distinct)}
+    return {
+        mid: pct_of_value.get(pagerank_by_id.get(mid, 0.0), 0.0)
+        for mid in candidate_ids
+    }
 
 
 NAVIGATE_EPA_HALF_LIFE = 0.6
@@ -1028,7 +1057,7 @@ def navigate(
     for mid, d in _epa_tmp.items():
         if len(d) == 3:  # all-or-nothing, matches vibe_axes.load_epa
             epa_by_id[mid] = (d["vibe_e"], d["vibe_p"], d["vibe_a"])
-    _pr_max = max(pagerank_by_id.values(), default=0.0)
+    pr_frac_by_id = _pagerank_fractions(pagerank_by_id, candidate_ids)
 
     # Per-query preparation for the new signals (PMI, standards, mode, bank
     # weights). All cheap: one anchor-count query for PMI/standards, pure
@@ -1071,7 +1100,7 @@ def navigate(
         )
 
         # ── Soft signals combined submodularly (diminishing returns) ──
-        pr_frac = (pagerank_by_id.get(mid, 0.0) / _pr_max) if _pr_max > 0 else 0.0
+        pr_frac = pr_frac_by_id.get(mid, 0.0)
         pmi_match = (
             sum(pmi.get(a, 0.0) for a in (model_anchor_set & query_anchors_pool)) / max_pmi_match
         )

@@ -22,6 +22,17 @@ dev = [
     "types-PyYAML",
     "types-requests",
 ]
+# Behavioural analysis. Not in `dev` because a full mutation pass is minutes,
+# not seconds — this is for deliberate use on a function you are about to
+# change, not part of the normal edit loop:
+#   uv sync --extra analysis
+#   uv run detective regime                       # resolve the testing regime
+#   uv run detective diagnose path/to.py::func    # what is unpinned
+# Marker-gated: detective-spec needs >=3.11, the package supports >=3.10. A
+# dev-only analysis tool must not narrow what ModelAtlas itself runs on.
+analysis = [
+    "detective-spec>=0.8.1; python_version >= '3.11'",
+]
 ingest = [
     "outlines>=0.1.0",
     "transformers>=4.40.0",
