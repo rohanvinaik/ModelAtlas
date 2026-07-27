@@ -201,12 +201,13 @@ Because the coordinate system is explicit, the engine can tell you which coordin
                 field. Would you prefer general knowledge, or domain-specialized?",
   "options": [{"answer": "general knowledge", "apply": {"domain": 0}},
               {"answer": "domain-specialized", "apply": {"domain": 1}}],
+  "scope_unfiltered": false,
   "ranking_degraded": false,
   "unspecified_axes": [{"bank": "DOMAIN", "range": "+0..+3", "spread": 1.2}]
 }
 ```
 
-The caller merges `apply` into the arguments it already sent — scalars replace, lists append — and re-calls. No query rebuild. `unspecified_axes` ranks all eight banks by the variance actually present in the result window and drops any bank where every result agrees, so it never asks a question that would not narrow anything. Options come from the observed range, never a fixed ±1: a window at `+0..+3` offers `{"domain": 0}` vs `{"domain": 1}`, because offering `-1` would return an empty set. `ranking_degraded: true` means no `prefer_anchors` were passed, so three of the five soft signals score identically for every candidate — the window is filtered correctly but not meaningfully ordered, and it says so. A keyword engine can offer none of this, because it has no coordinates to be missing.
+The caller merges `apply` into the arguments it already sent — scalars replace, lists append — and re-calls. No query rebuild. `unspecified_axes` ranks all eight banks by the variance actually present in the result window and drops any bank where every result agrees, so it never asks a question that would not narrow anything. Options come from the observed range, never a fixed ±1: a window at `+0..+3` offers `{"domain": 0}` vs `{"domain": 1}`, because offering `-1` would return an empty set. `ranking_degraded: true` means no `prefer_anchors` were passed, so three of the five soft signals score identically for every candidate — the window is filtered correctly but not meaningfully ordered, and it says so. `scope_unfiltered: true` is the same honesty one stage earlier: `require_anchors` is the only parameter that narrows the candidate set, so without it all 50,906 models are scored and `limit` just lops off the tail — the top slice of an unfiltered corpus, not the best of a considered field. One required anchor typically cuts the field by three orders of magnitude (`require=["Java-code"]` → 27 candidates), so it is asked first: no ordering signal repairs a field that was never narrowed. A keyword engine can offer none of this, because it has no coordinates to be missing.
 
 ---
 
@@ -280,9 +281,11 @@ All workers are standalone, zero-dependency scripts: `scp` to any machine, `--re
 git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas && uv sync
 
 # 2. Download the pre-built network (~51K models, all extraction tiers + certifier applied)
+#    Pinned to a release that carries the asset. `--fail` so an HTTP error is an
+#    error, not an error page silently saved as your database.
 mkdir -p ~/.cache/model-atlas
-curl -L -o ~/.cache/model-atlas/network.db \
-  https://github.com/rohanvinaik/ModelAtlas/releases/latest/download/network.db
+curl -L --fail -o ~/.cache/model-atlas/network.db \
+  https://github.com/rohanvinaik/ModelAtlas/releases/download/v0.4.2/network.db
 ```
 
 ```json
@@ -306,6 +309,8 @@ Add that to any MCP-compatible client (Claude Code, Cursor, VS Code). Your LLM c
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, `certification_score` |
 | `hf_compare_models` | Structural diff between two models: shared/unique anchors, position deltas, Jaccard |
 | `hf_search_models` | Natural-language fallback with fuzzy matching when a structured query is not needed |
+| `search_models` | Source-routed search — query one adapter (HuggingFace, Ollama) or fan out across all |
+| `list_model_sources` | Which model sources are registered and reachable |
 | `hf_build_index` | Ingest new models from HuggingFace or Ollama (certifier-enforced) |
 | `hf_index_status` | Network statistics: model count, anchor distribution, coverage |
 | `set_model_vibe` | Set or update a model's vibe summary and extra anchors |

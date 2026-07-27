@@ -287,9 +287,10 @@ Built by `build_refinement_guidance(results, query, idf)` in `query_navigate.py`
 
 **How the question is chosen.** Priority is deliberate:
 
-1. `ranking_degraded` — reported first, because no axis answer fixes it.
-2. The widest unconstrained axis — `_axis_hints()` computes, for every bank with no direction in the query, the population variance of `sign * (1 + depth)` across the window. Ranked descending; **banks with zero variance are dropped**, since every result already agrees and asking would be noise.
-3. The sharpest splitting anchor — `_anchor_hints()` scores each anchor present on *some but not all* results by `present * (n - present) * idf`. The balance term peaks at a 50/50 split and is zero for a universal anchor; IDF makes a rare discriminator outrank a common one.
+1. `scope_unfiltered` — reported first, because filtering precedes ordering. `require_anchors` is the only parameter `_nav_candidates()` filters on; bank directions, prefer/avoid and `similar_to` score a set they never shrink. With none supplied the candidate set is the whole corpus (50,906 on the v0.4.0 asset; `require=["Java-code"]` cuts it to 27) and `limit` merely truncates the tail, so the window is the top slice of an unfiltered corpus rather than the best of a considered field. No prefer_anchor repairs that, so it is asked before `ranking_degraded`. Its options are the window's own splitting anchors promoted from a soft `require?` to the answer to "what must it have", which keeps them inside the observed window.
+2. `ranking_degraded` — reported next, because no axis answer fixes it.
+3. The widest unconstrained axis — `_axis_hints()` computes, for every bank with no direction in the query, the population variance of `sign * (1 + depth)` across the window. Ranked descending; **banks with zero variance are dropped**, since every result already agrees and asking would be noise.
+4. The sharpest splitting anchor — `_anchor_hints()` scores each anchor present on *some but not all* results by `present * (n - present) * idf`. The balance term peaks at a 50/50 split and is zero for a universal anchor; IDF makes a rare discriminator outrank a common one.
 
 **Options are range-derived, never fixed ±1.** `_axis_options(bank, lo, hi)` reads the window's observed bounds. A window at `+0..+3` on DOMAIN offers `{"domain": 0}` ("general knowledge", the zero state) versus `{"domain": 1}` — *not* `-1`, because no result lives there and answering it would return an empty set. Offering a direction the window doesn't occupy is worse than silence: the caller answers, re-queries, and gets nothing.
 

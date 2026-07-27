@@ -1,6 +1,6 @@
 [project]
 name = "model-atlas"
-version = "0.2.0"
+version = "0.4.2"
 description = "MCP server exposing a navigable semantic network of ML models"
 requires-python = ">=3.10"
 dependencies = [
