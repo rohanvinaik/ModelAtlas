@@ -8,7 +8,16 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
 from math import log
+
+# SQLite caps bind parameters per statement (SQLITE_MAX_VARIABLE_NUMBER:
+# 32766 since 3.32, 999 on older builds). The corpus is larger than either
+# ceiling — 50,906 models as of the v0.4.0 asset — so an unfiltered candidate
+# set splatted into one `IN (...)` raises OperationalError: too many SQL
+# variables. Every IN over a candidate set MUST go through `chunked()`.
+# Sized under the 999 floor so the same code is correct on an old SQLite.
+SQL_VAR_CHUNK = 900
 
 
 def get_model(conn: sqlite3.Connection, model_id: str) -> dict | None:
@@ -156,6 +165,17 @@ def _in_clause(n: int) -> str:
     return ",".join("?" for _ in range(n))
 
 
+def chunked(items: list[str], size: int = SQL_VAR_CHUNK) -> Iterator[list[str]]:
+    """Yield `items` in slices that fit under SQLite's bind-parameter cap.
+
+    Chunks are disjoint and cover `items` exactly once, so a caller that
+    SUMs per-group counts across chunks gets the same total a single query
+    would have produced.
+    """
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
 def batch_get_positions(
     conn: sqlite3.Connection, model_ids: list[str]
 ) -> dict[str, dict[str, tuple[int, int]]]:
@@ -165,17 +185,17 @@ def batch_get_positions(
     """
     if not model_ids:
         return {}
-    sql = (
-        "SELECT model_id, bank, path_sign, path_depth "
-        "FROM model_positions WHERE model_id IN (%s)" % _in_clause(len(model_ids))
-    )
-    rows = conn.execute(sql, model_ids).fetchall()
     result: dict[str, dict[str, tuple[int, int]]] = {}
-    for r in rows:
-        result.setdefault(r["model_id"], {})[r["bank"]] = (
-            r["path_sign"],
-            r["path_depth"],
+    for chunk in chunked(model_ids):
+        sql = (
+            "SELECT model_id, bank, path_sign, path_depth "
+            "FROM model_positions WHERE model_id IN (%s)" % _in_clause(len(chunk))
         )
+        for r in conn.execute(sql, chunk).fetchall():
+            result.setdefault(r["model_id"], {})[r["bank"]] = (
+                r["path_sign"],
+                r["path_depth"],
+            )
     return result
 
 
@@ -188,12 +208,14 @@ def batch_get_anchor_sets(
     """
     if not model_ids:
         return {}
-    sql = (
-        "SELECT ma.model_id, a.label "
-        "FROM model_anchors ma JOIN anchors a ON ma.anchor_id = a.anchor_id "
-        "WHERE ma.model_id IN (%s)" % _in_clause(len(model_ids))
-    )
-    rows = conn.execute(sql, model_ids).fetchall()
+    rows: list[sqlite3.Row] = []
+    for chunk in chunked(model_ids):
+        sql = (
+            "SELECT ma.model_id, a.label "
+            "FROM model_anchors ma JOIN anchors a ON ma.anchor_id = a.anchor_id "
+            "WHERE ma.model_id IN (%s)" % _in_clause(len(chunk))
+        )
+        rows.extend(conn.execute(sql, chunk).fetchall())
     result: dict[str, set[str]] = {}
     for r in rows:
         result.setdefault(r["model_id"], set()).add(r["label"])

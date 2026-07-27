@@ -57,6 +57,7 @@ def test_every_template_is_renderable_and_gapless():
         "count": 8, "range_low": "-1", "range_high": "+2", "bank": "DOMAIN",
         "answer_low": "a", "answer_high": "b",
         "present_in": 3, "out_of": 8, "anchor": "x",
+        "scope": "all 50,906 models",
     }
     for tid in QUESTION_TEMPLATES:
         assert "<" not in render_question(tid, slots)
@@ -170,3 +171,101 @@ def test_guidance_is_deterministic():
     a = build_refinement_guidance(results, q, idf)
     b = build_refinement_guidance(results, q, idf)
     assert a == b
+
+
+# ─── Unfiltered scope ─────────────────────────────────────────────
+
+
+def test_no_require_anchors_flags_unfiltered_scope():
+    """`require_anchors` is the only narrowing parameter; its absence means
+    the candidate set was the whole corpus, and that must announce itself."""
+    results = [_r("a", {}, ["chat"]), _r("b", {}, [])]
+    q = StructuredQuery(prefer_anchors=["chat"])
+    g = build_refinement_guidance(results, q, idf={"chat": 5.0})
+    assert g.scope_unfiltered is True
+    assert g.question_id == "unconstrained_query"
+
+
+def test_bank_directions_do_not_narrow_scope():
+    """Bank directions score the set, they never shrink it — a query carrying
+    only directions is still unfiltered."""
+    results = [_r("a", {"EFFICIENCY": (-1, 1)}, ["chat"]), _r("b", {}, [])]
+    q = StructuredQuery(efficiency=-1, prefer_anchors=["chat"])
+    g = build_refinement_guidance(results, q, idf={"chat": 5.0})
+    assert g.scope_unfiltered is True
+
+
+def test_require_anchors_clears_unfiltered_scope():
+    results = [_r("a", {"EFFICIENCY": (-1, 1)}, ["chat"]), _r("b", {}, [])]
+    q = StructuredQuery(require_anchors=["code-generation"], prefer_anchors=["x"])
+    g = build_refinement_guidance(results, q, idf={})
+    assert g.scope_unfiltered is False
+    assert g.question_id != "unconstrained_query"
+
+
+def test_unfiltered_scope_is_asked_before_degraded_ranking():
+    """Filtering precedes ordering: a query missing BOTH is told to narrow
+    first, because prefer_anchors cannot order what require never narrowed."""
+    results = [_r("a", {}, ["chat"]), _r("b", {}, [])]
+    q = StructuredQuery()
+    g = build_refinement_guidance(results, q, idf={"chat": 5.0})
+    assert g.scope_unfiltered is True and g.ranking_degraded is True
+    assert g.question_id == "unconstrained_query"
+
+
+def test_unfiltered_options_name_anchors_from_the_window():
+    """Invariant 1 applies here too — an option must never point outside the
+    window, or answering it would return an empty set."""
+    results = [_r("a", {}, ["tool-calling"]), _r("b", {}, [])]
+    g = build_refinement_guidance(results, StructuredQuery(), idf={"tool-calling": 5.0})
+    assert g.options[0].apply == {"require_anchors": ["tool-calling"]}
+    window_anchors = {a for r in results for a in r.anchor_labels}
+    for o in g.options:
+        assert set(o.apply["require_anchors"]) <= window_anchors
+
+
+def test_corpus_total_sharpens_prose_but_not_the_question():
+    """`corpus_total` is prose-only — it must not change which question fires."""
+    results = [_r("a", {}, ["chat"]), _r("b", {}, [])]
+    q = StructuredQuery()
+    bare = build_refinement_guidance(results, q, idf={"chat": 5.0})
+    sized = build_refinement_guidance(results, q, idf={"chat": 5.0}, corpus_total=50906)
+    assert bare.question_id == sized.question_id == "unconstrained_query"
+    assert "50,906 models" in sized.question
+    assert "the entire corpus" in bare.question
+
+
+def test_every_question_template_is_reachable():
+    """Guards against a template that no code path can ever render."""
+    assert set(QUESTION_TEMPLATES) == {
+        "unconstrained_query",
+        "ranking_degraded",
+        "unconstrained_axis",
+        "splitting_anchor",
+    }
+
+
+def test_degraded_ranking_offers_prefer_anchors_to_answer_with():
+    """A question the caller cannot answer is a dead end. `ranking_degraded`
+    asks for prefer_anchors, so it must hand back prefer_anchors — otherwise a
+    caller driving the loop mechanically has nothing to merge and stalls."""
+    results = [_r("a", {}, ["tool-calling"]), _r("b", {}, [])]
+    q = StructuredQuery(require_anchors=["code-generation"])
+    g = build_refinement_guidance(results, q, idf={"tool-calling": 5.0})
+    assert g.question_id == "ranking_degraded"
+    assert g.options, "ranking_degraded must offer answerable options"
+    assert g.options[0].apply == {"prefer_anchors": ["tool-calling"]}
+
+
+def test_every_question_with_hints_available_is_answerable():
+    """No question type may return options=[] when the window offers hints."""
+    results = [_r("a", {"DOMAIN": (0, 0)}, ["tool-calling"]), _r("b", {"DOMAIN": (1, 2)}, [])]
+    idf = {"tool-calling": 5.0}
+    for q in (
+        StructuredQuery(),                                    # unconstrained_query
+        StructuredQuery(require_anchors=["x"]),               # ranking_degraded
+        StructuredQuery(require_anchors=["x"], prefer_anchors=["y"]),  # axis/anchor
+    ):
+        g = build_refinement_guidance(results, q, idf=idf)
+        assert g.question_id, f"expected a question for {q}"
+        assert g.options, f"{g.question_id} returned no answerable options"

@@ -13,6 +13,7 @@ import sqlite3
 from mcp.server.fastmcp import FastMCP
 
 from . import db
+from .aliases import canonicalize_labels
 from ._formatting import (
     candidates_to_dicts,
     fetch_from_hf_api,
@@ -20,6 +21,7 @@ from ._formatting import (
     format_network_results,
     structured_to_dict,
 )
+from . import config
 from .config import DEFAULT_CANDIDATE_LIMIT, DEFAULT_INDEX_SIZE, DEFAULT_RESULT_LIMIT
 from .extraction.pipeline import extract_batch
 from .query import StructuredQuery, compare, navigate, search
@@ -48,8 +50,32 @@ mcp = FastMCP(
 
 
 def _ensure_db() -> None:
-    """Initialize the database if it doesn't exist."""
-    conn = db.get_connection()
+    """Initialize the database if it doesn't exist.
+
+    A corrupt file here is almost always a failed corpus download rather than
+    real corruption: the documented install pipes a URL straight into
+    `network.db` with `curl -o`, so an HTTP error page lands at that path and
+    SQLite reports only "file is not a database". Say what actually happened.
+    """
+    try:
+        conn = db.get_connection()
+    except sqlite3.DatabaseError as exc:
+        path = config.NETWORK_DB_PATH
+        size = path.stat().st_size if path.exists() else 0
+        head = ""
+        if 0 < size < 4096:
+            try:
+                head = path.read_text(errors="replace").strip()[:200]
+            except OSError:
+                head = ""
+        raise RuntimeError(
+            f"{path} is not a valid SQLite database ({size} bytes)."
+            + (f" It contains: {head!r}." if head else "")
+            + " This usually means the corpus download failed and an error page"
+            " was saved instead. Delete the file and re-download the network.db"
+            " asset from a release that actually has one:"
+            " https://github.com/rohanvinaik/ModelAtlas/releases"
+        ) from exc
     try:
         db.init_db(conn)
     finally:
@@ -162,6 +188,36 @@ def navigate_models(
     The primary recommendation engine. Decompose the user's natural language
     query into these structured parameters — ModelAtlas does deterministic math.
 
+    ── START HERE: NARROW, THEN ORDER ──────────────────────────────────
+
+      `require_anchors` is the ONLY parameter that narrows the candidate set.
+      Bank directions, `prefer_anchors`, `avoid_anchors`, and `similar_to`
+      all SCORE a set they never shrink. Omit `require_anchors` and every
+      model in the corpus is scored, with `limit` lopping off the tail — you
+      get the top slice of an unfiltered corpus, not the best of a considered
+      field. The response says so: `refine.scope_unfiltered: true`.
+
+      So drive it in that order:
+
+        1. NARROW — one or two `require_anchors` naming what the model must
+           have ("code-generation", "GGUF-available"). The vocabulary is
+           CLOSED — an anchor that does not exist returns zero results, so do
+           not invent labels. If you do not know it, call with no
+           `require_anchors` and read the anchors offered by
+           `refine.options` and `refine.splitting_anchors`: they are real
+           labels drawn from the returned window. The `anchors` list on each
+           result is the same vocabulary seen from the other side.
+        2. ORDER — `prefer_anchors` for what would be nice. Without them the
+           ranking is filtered but not meaningfully sorted
+           (`refine.ranking_degraded: true`).
+        3. SHAPE — bank directions, `mode`, `bank_weights` to tilt the result.
+        4. REFINE — answer `refine.question` and re-call (see below).
+
+      A well-formed query considers hundreds of candidates, not tens of
+      thousands. If you find yourself reaching for `limit` to make a broad
+      query manageable, add a `require_anchor` instead — `limit` truncates,
+      it does not select.
+
     BANK DIRECTIONS (-1, 0, or +1 for each; omit to express "don't care"):
 
       architecture:  -1=simpler/older (encoder-only, RNN)
@@ -260,6 +316,13 @@ def navigate_models(
            (`efficiency`) replace; list keys (`require_anchors`) append.
         5. Re-call. Repeat until `refine.question` is empty.
 
+      `refine.scope_unfiltered: true` means you passed no `require_anchors`,
+      so the candidate set was the whole corpus. This is the sibling of
+      `ranking_degraded` one stage earlier, and it is asked FIRST — no
+      ordering signal repairs a field that was never narrowed. The options
+      on that question are anchors drawn from the window itself, so each one
+      names something at least one returned model actually has.
+
       `refine.ranking_degraded: true` means you passed no `prefer_anchors`.
       The results are correctly FILTERED but not meaningfully ORDERED —
       three of five soft signals score identically for every candidate that
@@ -319,8 +382,29 @@ def navigate_models(
         )
         results = navigate(conn, sq)
 
+        # Anchor mentions that name nothing in the closed vocabulary. A bad
+        # `require_anchors` label makes the result set empty by definition, and
+        # returning that silently is indistinguishable from "nothing matches" —
+        # the caller retries the same typo forever. Name them instead.
+        unknown = _unknown_anchors(
+            conn,
+            sq.require_anchors + sq.prefer_anchors + sq.avoid_anchors + sq.context_anchors,
+        )
+
         return json.dumps(
             {
+                **(
+                    {
+                        "unknown_anchors": unknown,
+                        "unknown_anchors_note": (
+                            "These match no anchor or alias. The vocabulary is closed — "
+                            "labels cannot be invented. A required anchor that names "
+                            "nothing makes the result set empty."
+                        ),
+                    }
+                    if unknown
+                    else {}
+                ),
                 "query": {
                     "banks": sq.bank_directions(),
                     "require_anchors": sq.require_anchors,
@@ -370,13 +454,34 @@ def navigate_models(
                 # actually narrow the set. Answer `question` by merging one
                 # option's `apply` into the args you already sent, then re-call.
                 "refine": _refine_payload(
-                    build_refinement_guidance(results, sq, _get_idf(conn))
+                    build_refinement_guidance(
+                        results, sq, _get_idf(conn), stats["total_models"]
+                    )
                 ),
             },
             indent=2,
         )
     finally:
         conn.close()
+
+
+def _unknown_anchors(conn, mentions: list[str]) -> list[str]:
+    """Anchor mentions resolving to neither a canonical label nor an alias.
+
+    Deduplicated, order preserved. Empty on a DB predating the alias tables
+    rather than raising — a missing table means "cannot tell", not "unknown".
+    """
+    if not mentions:
+        return []
+    try:
+        _, unresolved = canonicalize_labels(conn, mentions)
+    except sqlite3.OperationalError:
+        return []
+    seen: list[str] = []
+    for m in unresolved:
+        if m not in seen:
+            seen.append(m)
+    return seen
 
 
 def _refine_payload(g: RefinementGuidance) -> dict:
@@ -391,6 +496,7 @@ def _refine_payload(g: RefinementGuidance) -> dict:
         "question": g.question,
         "options": [{"answer": o.answer, "apply": o.apply} for o in g.options],
         "merge_rule": g.merge_rule,
+        "scope_unfiltered": g.scope_unfiltered,
         "ranking_degraded": g.ranking_degraded,
         "unspecified_axes": [
             {
@@ -688,8 +794,8 @@ def search_models(  # pragma: no cover — calls source adapters
         filters["author"] = author
 
     if source == "all":
-        all_results = []
-        errors = {}
+        all_results: list[dict] = []
+        errors: dict[str, str] = {}
         for name, adapter in _list_sources().items():
             try:
                 results = adapter.search(query, limit=limit, filters=filters)

@@ -72,6 +72,47 @@ def resolve_anchor(conn: sqlite3.Connection, mention: str) -> int | None:
     return None
 
 
+def resolve_anchor_label(conn: sqlite3.Connection, mention: str) -> str | None:
+    """Canonical anchor LABEL for `mention`, or None if nothing matches.
+
+    The query engine matches on labels, not ids, so this is the form the
+    navigation path needs. Same two-step lookup as `resolve_anchor`.
+    """
+    anchor_id = resolve_anchor(conn, mention)
+    if anchor_id is None:
+        return None
+    row = conn.execute(
+        "SELECT label FROM anchors WHERE anchor_id = ?", (anchor_id,)
+    ).fetchone()
+    return str(row[0]) if row else None
+
+
+def canonicalize_labels(
+    conn: sqlite3.Connection, mentions: list[str]
+) -> tuple[list[str], list[str]]:
+    """Map anchor mentions to canonical labels. Returns (labels, unresolved).
+
+    An unresolved mention is passed through UNCHANGED rather than dropped.
+    That keeps the pre-alias contract exactly: a label that names nothing
+    still reaches the candidate query and still yields no results, so this
+    can only ever ADD matches (`gguf` now finds `GGUF-available`), never
+    silently widen a query by discarding a constraint it could not read.
+
+    Order is preserved and duplicates collapse — two mentions of the same
+    anchor under different spellings must not double-count downstream.
+    """
+    labels: list[str] = []
+    unresolved: list[str] = []
+    for mention in mentions:
+        canonical = resolve_anchor_label(conn, mention)
+        if canonical is None:
+            unresolved.append(mention)
+            canonical = mention
+        if canonical not in labels:
+            labels.append(canonical)
+    return labels, unresolved
+
+
 def resolve_model(conn: sqlite3.Connection, mention: str) -> str | None:
     """Return canonical model_id for `mention` if any alias or exact-id matches."""
     row = conn.execute(

@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from .aliases import _ALIAS_SCHEMA
 from .config import NETWORK_DB_PATH
 from .db_bootstrap import BOOTSTRAP_ANCHORS
 
@@ -193,6 +194,11 @@ def init_db(conn: sqlite3.Connection | None = None) -> None:
     with transaction(conn) as c:
         c.executescript(_SCHEMA)
         c.executescript(_PHASE_D_SCHEMA)
+        # Alias tables. All CREATE ... IF NOT EXISTS, so this is idempotent and
+        # a no-op on the shipped corpus (which already carries them). Without
+        # it a freshly-initialised DB has no `anchor_aliases` at all and every
+        # alias lookup has to be written defensively around a missing table.
+        c.executescript(_ALIAS_SCHEMA)
         _migrate_schema(c)
         # Bootstrap anchors (skip duplicates)
         c.executemany(
@@ -482,8 +488,10 @@ from .db_ingest import (  # noqa: E402
     init_db as init_ingest_db,
 )
 from .db_queries import (  # noqa: E402
+    SQL_VAR_CHUNK,
     batch_get_anchor_sets,
     batch_get_positions,
+    chunked,
     compute_anchor_idf,
     find_models_by_anchor,
     find_models_by_bank_range,
@@ -511,6 +519,8 @@ __all__ = [
     "compute_anchor_idf",
     "batch_get_positions",
     "batch_get_anchor_sets",
+    "chunked",
+    "SQL_VAR_CHUNK",
     "network_stats",
     "get_ingest_connection",
     "init_ingest_db",

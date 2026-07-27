@@ -256,6 +256,16 @@ class RefinementGuidance:
     toward PageRank + absence. The results are still correctly FILTERED; they
     are just not meaningfully ORDERED. Callers should treat the window as a
     set, not a ranking, until they add prefer_anchors."""
+    scope_unfiltered: bool = False
+    """True when the query supplied no `require_anchors` — the sibling defect
+    to `ranking_degraded`, one level earlier. `require_anchors` is the ONLY
+    parameter that narrows the candidate set; bank directions, prefer/avoid,
+    and `similar_to` all score a set they never shrink. With none supplied,
+    every model in the corpus is scored and `limit` truncates the tail, so the
+    window is the top slice of an unfiltered corpus rather than the best of a
+    considered field. Filtering precedes ordering: fix this before
+    `ranking_degraded`, because prefer_anchors cannot order what require
+    never narrowed."""
     question_id: str = ""
     """Which skeleton in `QUESTION_TEMPLATES` produced `question` — e.g.
     `unconstrained_axis`. Switch on this rather than parsing the prose; the

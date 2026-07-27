@@ -7,6 +7,7 @@ import re as _re
 import sqlite3
 
 from . import db
+from .aliases import canonicalize_labels
 from .config import (
     NAVIGATE_AVOID_DECAY,
     NAVIGATE_MISSING_BANK_PENALTY,
@@ -437,6 +438,11 @@ def _anchor_hints(
 # the window; nothing is phrased ad-hoc, so the question set is enumerable and
 # a caller can switch on `question_id` instead of parsing prose.
 QUESTION_TEMPLATES: dict[str, str] = {
+    "unconstrained_query": (
+        "Nothing in that query narrows the field, so I scored <scope> and kept "
+        "the top <count>. Name one thing a model MUST have and I'll search a "
+        "considered field instead of the whole corpus."
+    ),
     "ranking_degraded": (
         "All <count> of these match what you asked for, though there's little "
         "to separate them without a sense of what you'd prefer. Name a few "
@@ -474,19 +480,51 @@ def render_question(template_id: str, slots: dict[str, object]) -> str:
 
 
 def _phrase_question(
-    axes: list[AxisHint], anchors: list[AnchorHint], degraded: bool, count: int
+    axes: list[AxisHint],
+    anchors: list[AnchorHint],
+    degraded: bool,
+    count: int,
+    unfiltered: bool = False,
+    corpus_total: int = 0,
 ) -> tuple[str, str, list[RefinementOption]]:
     """The highest-value refinement as (question_id, question, options).
 
-    Ordering is deliberate: a degraded ranking is reported first because no
-    axis answer fixes it; then the widest unconstrained axis; then the
-    sharpest splitting anchor. Returns ('', '', []) when nothing would help.
+    Ordering is deliberate, and it follows the pipeline: an unfiltered scope
+    is reported first because no amount of ordering repairs a candidate set
+    that was never narrowed; then a degraded ranking, because no axis answer
+    fixes THAT; then the widest unconstrained axis; then the sharpest
+    splitting anchor. Returns ('', '', []) when nothing would help.
     """
+    if unfiltered:
+        scope = f"all {corpus_total:,} models" if corpus_total else "the entire corpus"
+        # Options are the window's own splitting anchors, promoted from a
+        # soft `require?` to the answer to "what MUST it have" — so they are
+        # guaranteed to name something at least one result actually carries.
+        # An anchor universal to the window would narrow nothing and is
+        # already dropped by `_anchor_hints`.
+        options = [
+            RefinementOption(h.anchor, {"require_anchors": [h.anchor]})
+            for h in anchors[:3]
+        ]
+        return (
+            "unconstrained_query",
+            render_question("unconstrained_query", {"scope": scope, "count": count}),
+            options,
+        )
     if degraded:
+        # The question asks for prefer_anchors, so it must hand back
+        # prefer_anchors to answer it with. Returning none made this a dead end
+        # for any caller driving the loop mechanically: the documented contract
+        # is "merge an option's `apply` and re-call", and there was nothing to
+        # merge. Same window-drawn anchors as the unconstrained case, applied
+        # as a soft preference rather than a hard filter.
         return (
             "ranking_degraded",
             render_question("ranking_degraded", {"count": count}),
-            [],
+            [
+                RefinementOption(h.anchor, {"prefer_anchors": [h.anchor]})
+                for h in anchors[:3]
+            ],
         )
     if axes:
         a = axes[0]
@@ -519,11 +557,15 @@ def build_refinement_guidance(
     results: list[NavigationResult],
     query: StructuredQuery,
     idf: dict[str, float],
+    corpus_total: int = 0,
 ) -> RefinementGuidance:
     """Report what the query left unsaid — see `RefinementGuidance`.
 
     Pure function of the returned window plus the query. Deterministic: the
-    same window and query always produce the same guidance.
+    same window and query always produce the same guidance. `corpus_total`
+    only sharpens the prose of the `unconstrained_query` question ("all
+    50,906 models" vs "the entire corpus"); it never changes which question
+    is asked, so callers that cannot cheaply supply it may omit it.
     """
     if not results:
         return RefinementGuidance()
@@ -532,13 +574,18 @@ def build_refinement_guidance(
     axes = _axis_hints(results, specified)
     anchors = _anchor_hints(results, idf, already)
     degraded = not query.prefer_anchors
+    # `require_anchors` is the only parameter `_nav_candidates` filters on —
+    # everything else scores a set it never shrinks. So its absence, and
+    # nothing else, means "the candidate set was the whole corpus".
+    unfiltered = not query.require_anchors
     question_id, question, options = _phrase_question(
-        axes, anchors, degraded, len(results)
+        axes, anchors, degraded, len(results), unfiltered, corpus_total
     )
     return RefinementGuidance(
         unspecified_axes=axes,
         splitting_anchors=anchors,
         ranking_degraded=degraded,
+        scope_unfiltered=unfiltered,
         question_id=question_id,
         question=question,
         options=options,
@@ -667,6 +714,31 @@ def _mode_weights(mode: str, mech_frac: float) -> dict[str, float]:
     }
 
 
+def _anchor_counts_over(
+    conn: sqlite3.Connection, candidate_ids: list[str]
+) -> dict[str, int]:
+    """`{anchor_label: how many of `candidate_ids` carry it}`.
+
+    Chunked under SQLite's bind-parameter cap. `db.chunked` yields disjoint
+    slices, and a model contributes to exactly one of them, so summing the
+    per-chunk `COUNT(DISTINCT model_id)` reproduces the single-query total
+    exactly — no double-counting to correct for.
+    """
+    counts: dict[str, int] = {}
+    for chunk in db.chunked(candidate_ids):
+        ph = ",".join("?" for _ in chunk)
+        rows = conn.execute(
+            f"""SELECT a.label, COUNT(DISTINCT ma.model_id) as n
+                  FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
+                 WHERE ma.model_id IN ({ph})
+                 GROUP BY a.anchor_id""",
+            chunk,
+        ).fetchall()
+        for r in rows:
+            counts[r["label"]] = counts.get(r["label"], 0) + int(r["n"])
+    return counts
+
+
 def _pmi_map(
     conn: sqlite3.Connection, candidate_ids: list[str], corpus_total: int
 ) -> dict[str, float]:
@@ -674,15 +746,8 @@ def _pmi_map(
     with the query's candidate set relative to the corpus."""
     if not candidate_ids:
         return {}
-    ph = ",".join("?" for _ in candidate_ids)
-    cand_rows = conn.execute(
-        f"""SELECT a.label, COUNT(DISTINCT ma.model_id) as n
-              FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
-             WHERE ma.model_id IN ({ph})
-             GROUP BY a.anchor_id""",
-        candidate_ids,
-    ).fetchall()
-    if not cand_rows:
+    cand_counts = _anchor_counts_over(conn, candidate_ids)
+    if not cand_counts:
         return {}
     corpus_rows = conn.execute(
         """SELECT a.label, COUNT(DISTINCT ma.model_id) as n
@@ -692,13 +757,13 @@ def _pmi_map(
     corpus = {r["label"]: int(r["n"]) for r in corpus_rows}
     cand_total = len(candidate_ids)
     out: dict[str, float] = {}
-    for row in cand_rows:
-        n_g = corpus.get(row["label"], 0)
+    for label, n_c in cand_counts.items():
+        n_g = corpus.get(label, 0)
         if n_g == 0:
             continue
-        pmi = _math.log((int(row["n"]) / cand_total) / (n_g / corpus_total))
+        pmi = _math.log((n_c / cand_total) / (n_g / corpus_total))
         if pmi > 0:
-            out[row["label"]] = pmi
+            out[label] = pmi
     return out
 
 
@@ -714,19 +779,12 @@ def _standards_and_probs(
     absence-bonus (-log(P) is the surprise mass of being missing)."""
     if not candidate_ids:
         return {}
-    ph = ",".join("?" for _ in candidate_ids)
-    rows = conn.execute(
-        f"""SELECT a.label, COUNT(DISTINCT ma.model_id) as n
-              FROM anchors a JOIN model_anchors ma ON a.anchor_id = ma.anchor_id
-             WHERE ma.model_id IN ({ph})
-             GROUP BY a.anchor_id""",
-        candidate_ids,
-    ).fetchall()
+    counts = _anchor_counts_over(conn, candidate_ids)
     cand_total = len(candidate_ids)
     return {
-        r["label"]: int(r["n"]) / cand_total
-        for r in rows
-        if r["label"] not in exclude and int(r["n"]) / cand_total > threshold
+        label: n / cand_total
+        for label, n in counts.items()
+        if label not in exclude and n / cand_total > threshold
     }
 
 
@@ -863,6 +921,22 @@ def _nav_bank_alignment_weighted(
     return result
 
 
+def _canonical(conn: sqlite3.Connection, mentions: list[str]) -> list[str]:
+    """Anchor mentions mapped through the alias table, unknowns left as-is.
+
+    Tolerates a DB predating the alias tables: `init_db` creates them now, but
+    a corpus snapshot restored from before that still queries fine, just
+    without aliases.
+    """
+    if not mentions:
+        return []
+    try:
+        labels, _ = canonicalize_labels(conn, mentions)
+    except sqlite3.OperationalError:  # no anchor_aliases table
+        return list(mentions)
+    return labels
+
+
 def navigate(
     conn: sqlite3.Connection,
     query: StructuredQuery,
@@ -886,10 +960,14 @@ def navigate(
     """
     idf = _get_idf(conn)
     directions = query.bank_directions()
-    require_set = set(query.require_anchors)
-    prefer_set = set(query.prefer_anchors)
-    avoid_set = set(query.avoid_anchors)
-    context_set = set(query.context_anchors)
+    # Anchor mentions are canonicalized through the alias table before
+    # anything reads them, so `gguf` finds `GGUF-available`. An unresolvable
+    # mention passes through unchanged and still matches nothing — this can
+    # only add matches, never drop a constraint. See `aliases.canonicalize_labels`.
+    require_set = set(_canonical(conn, query.require_anchors))
+    prefer_set = set(_canonical(conn, query.prefer_anchors))
+    avoid_set = set(_canonical(conn, query.avoid_anchors))
+    context_set = set(_canonical(conn, query.context_anchors))
     has_anchor_constraints = bool(require_set or prefer_set or avoid_set)
     prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
 
@@ -905,28 +983,35 @@ def navigate(
         db.get_anchor_set(conn, query.similar_to) if query.similar_to else set()
     )
 
-    ph = ",".join("?" for _ in candidate_ids)
-    author_rows = conn.execute(
-        f"SELECT model_id, author FROM models WHERE model_id IN ({ph})",
-        candidate_ids,
-    ).fetchall()
-    authors = {r["model_id"]: r["author"] or "" for r in author_rows}
+    authors: dict[str, str] = {}
+    for chunk in db.chunked(candidate_ids):
+        ph = ",".join("?" for _ in chunk)
+        for r in conn.execute(
+            f"SELECT model_id, author FROM models WHERE model_id IN ({ph})",
+            chunk,
+        ).fetchall():
+            authors[r["model_id"]] = r["author"] or ""
 
     # Batch-fetch certification scores (Phase 6 coherence). Missing = 1.0.
     # Also pull pagerank + EPA in the SAME query — one round-trip for every
     # per-model soft signal navigate consumes. Adding another metadata read
-    # per key would N+1 the score loop; a single IN + WHERE key IN (...)
-    # stays O(1) queries regardless of how many soft signals we wire in.
-    meta_rows = conn.execute(
-        f"""SELECT model_id, key, value FROM model_metadata
-            WHERE key IN ('certification_score', 'pagerank', 'vibe_e', 'vibe_p', 'vibe_a')
-              AND model_id IN ({ph})""",
-        candidate_ids,
-    ).fetchall()
+    # per key would N+1 the score loop; one IN + WHERE key IN (...) per
+    # candidate CHUNK stays independent of how many soft signals we wire in.
     coherence_by_id: dict[str, float] = {}
     pagerank_by_id: dict[str, float] = {}
     epa_by_id: dict[str, tuple[float, float, float]] = {}
     _epa_tmp: dict[str, dict[str, float]] = {}
+    meta_rows = []
+    for chunk in db.chunked(candidate_ids):
+        ph = ",".join("?" for _ in chunk)
+        meta_rows.extend(
+            conn.execute(
+                f"""SELECT model_id, key, value FROM model_metadata
+                    WHERE key IN ('certification_score', 'pagerank', 'vibe_e', 'vibe_p', 'vibe_a')
+                      AND model_id IN ({ph})""",
+                chunk,
+            ).fetchall()
+        )
     for row in meta_rows:
         try:
             v = float(row["value"])
