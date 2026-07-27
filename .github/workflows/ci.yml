@@ -24,6 +24,11 @@ jobs:
       - name: Lint
         run: uv run ruff check src/ tests/
 
+      # No path argument: a path overrides `files` in [tool.mypy] and pulls in
+      # scripts/, which is out of scope. See AGENTS.md → Required Validation.
+      - name: Type check
+        run: uv run mypy
+
       - name: Test with coverage
         run: uv run pytest tests/ --cov=src/model_atlas --cov-report=xml:coverage.xml -q
 

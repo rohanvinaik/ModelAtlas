@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-from src.model_atlas.query import _score_constraint
-from src.model_atlas.query_types import BankConstraint
+from model_atlas.query import _score_constraint
+from model_atlas.query_types import BankConstraint
 
 
 def _bc(**kwargs) -> BankConstraint:
     """Shorthand for BankConstraint with defaults."""
-    defaults = {"bank": "TEST", "direction": None, "min_signed": None, "max_signed": None}
+    defaults: dict = {"bank": "TEST", "direction": None, "min_signed": None, "max_signed": None}
     defaults.update(kwargs)
     return BankConstraint(**defaults)
 

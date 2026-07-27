@@ -170,7 +170,7 @@ def score_models(
     if not tokens:
         return [FuzzyScore(m["model_id"], 0.0, "", "") for m in models]
 
-    results = []
+    results: list[FuzzyScore] = []
     for model in models:
         fields = _build_searchable_strings(
             model["model_id"],

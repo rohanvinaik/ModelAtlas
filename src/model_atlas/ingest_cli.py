@@ -157,9 +157,9 @@ def _cmd_phase_d(args: argparse.Namespace) -> bool:
             return True
         network_conn = db.get_connection()
         db.init_db(network_conn)
-        result = merge_d3(network_conn, args.merge_d3, args.run_id)
+        merge_result = merge_d3(network_conn, args.merge_d3, args.run_id)
         network_conn.close()
-        print(f"D3 merge: {result}")
+        print(f"D3 merge: {merge_result}")
         return True
 
     if args.export_training_data:

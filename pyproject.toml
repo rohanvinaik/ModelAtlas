@@ -15,6 +15,12 @@ dev = [
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
+    "mypy>=1.8.0",
+    # Stub-only packages. `yaml` and `requests` are imported by first-party
+    # code, so without these mypy reports import-untyped and stops resolving
+    # anything downstream of them.
+    "types-PyYAML",
+    "types-requests",
 ]
 ingest = [
     "outlines>=0.1.0",
@@ -56,8 +62,26 @@ exclude = ["mutants", "deploy", ".claude"]
 "tests/generated/*.py" = ["F401", "F811", "E402"]
 
 [tool.mypy]
-files = ["src", "tests"]
+# src-layout + editable install: site-packages carries a .pth pointing at
+# `src/`, so mypy can reach every module by two names at once. With namespace
+# packages on (mypy's default since 0.990) the bare `src/` directory also
+# counts as a package root, and the same file resolves as BOTH
+# `model_atlas.x` and `src.model_atlas.x` — "Source file found twice under
+# different module names", which aborts the run before type checking starts.
+# `mypy_path` fixes the package base at `src/`; `namespace_packages = false`
+# stops `src/` (no __init__.py) from being a second one. Keep both.
+files = ["src/model_atlas", "tests"]
+mypy_path = "src"
+namespace_packages = false
 exclude = ["^mutants/", "^deploy/", "^\\.claude/"]
+
+# Optional heavy dependencies. These live in the `ingest` extra and are absent
+# from a `--extra dev` environment by design — the ingest workers run on
+# separate machines. Ignoring their missing stubs is scoped per-module so a
+# genuinely missing FIRST-party import still fails the run.
+[[tool.mypy.overrides]]
+module = ["outlines.*", "transformers.*", "torch.*", "datasets.*", "openai.*"]
+ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["mutants", "deploy", ".claude", "tests"]

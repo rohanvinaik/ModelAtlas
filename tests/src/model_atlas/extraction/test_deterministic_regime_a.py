@@ -9,7 +9,7 @@ Call site this was generated from:
 
 from __future__ import annotations
 
-from src.model_atlas.extraction.deterministic import _context_length_anchors
+from model_atlas.extraction.deterministic import _context_length_anchors
 
 
 def test__context_length_anchors_characterization():

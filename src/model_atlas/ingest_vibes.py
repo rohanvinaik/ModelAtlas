@@ -9,10 +9,19 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from . import db
 from .config import INGEST_VIBE_MIN_LIKES, VIBE_MAX_RETRIES
+
+if TYPE_CHECKING:
+    # Type-only: `extraction.vibes` stays a lazy import at the call site so
+    # the heavy Outlines/transformers stack is never pulled in on the
+    # non-Phase-C paths. `from __future__ import annotations` keeps these
+    # names out of the runtime module namespace.
+    from .extraction.vibes import VibeExtractor, VibeOutput
 
 logger = logging.getLogger(__name__)
 
@@ -24,18 +33,27 @@ def _now_iso() -> str:
 def _store_vibe_result(
     network_conn: sqlite3.Connection,
     model_id: str,
-    result: object,
+    result: VibeOutput,
 ) -> None:
-    """Persist vibe extraction results (summary + extra anchors)."""
-    if result.summary:  # type: ignore[union-attr]
+    """Persist vibe extraction results (summary + selected anchors)."""
+    if result.summary:
         db.set_metadata(
             network_conn,
             model_id,
             "vibe_summary",
             result.summary,
-            "str",  # type: ignore[union-attr]
+            "str",
         )
-    for anchor_label in result.extra_anchors:  # type: ignore[union-attr]
+    # `selected_anchors` is the field `VibeExtractor.extract()` actually
+    # returns. This read was `result.extra_anchors` — the pre-v0.3 name,
+    # which VibeOutput has never carried, so Phase C raised AttributeError
+    # the moment it stored a result. The dict-based merge paths
+    # (`phase_c_worker`, `ingest_phase_c_merge`) accept either spelling, so
+    # the old name is still honoured here for a result object that has it.
+    anchors: list[str] = result.selected_anchors or getattr(
+        result, "extra_anchors", []
+    )
+    for anchor_label in anchors:
         anchor_label = anchor_label.strip().lower()
         if anchor_label:
             from .admin import ensure_anchor
@@ -54,15 +72,15 @@ def _extract_single_vibe(
     network_conn: sqlite3.Connection,
     model_id: str,
     raw: dict,
-    extractor: object,
-    build_vibe_prompt: object,
-) -> object:
+    extractor: VibeExtractor,
+    build_vibe_prompt: Callable[..., str],
+) -> VibeOutput:
     """Build prompt from pre-extracted data and run vibe extraction."""
     capabilities = _get_model_capabilities(network_conn, model_id)
     family = _get_model_family(network_conn, model_id)
     param_count = _get_param_count(network_conn, model_id)
 
-    prompt = build_vibe_prompt(  # type: ignore[operator]
+    prompt = build_vibe_prompt(
         model_id=raw.get("model_id", model_id),
         author=raw.get("author", ""),
         pipeline_tag=raw.get("pipeline_tag", ""),
@@ -71,7 +89,7 @@ def _extract_single_vibe(
         family=family,
         capabilities=capabilities,
     )
-    return extractor.extract(prompt)  # type: ignore[union-attr]
+    return extractor.extract(prompt)
 
 
 def phase_c(
@@ -79,7 +97,7 @@ def phase_c(
     network_conn: sqlite3.Connection,
     vibe_min_likes: int = INGEST_VIBE_MIN_LIKES,
     *,
-    is_shutdown: object = None,
+    is_shutdown: Callable[[], bool] | None = None,
 ) -> int:
     """Run Outlines-based vibe extraction on eligible models.
 

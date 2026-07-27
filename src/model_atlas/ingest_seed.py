@@ -15,11 +15,17 @@ import logging
 import signal
 import sqlite3
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from . import db
 from .config import INGEST_BATCH_SIZE
 from .extraction.deterministic import ModelInput
 from .extraction.pipeline import extract_and_store
+
+if TYPE_CHECKING:
+    # Type-only: `huggingface_hub` is a hard dependency and ships py.typed,
+    # but it is imported lazily at the call site to keep module import cheap.
+    from huggingface_hub.hf_api import ModelInfo
 
 logger = logging.getLogger(__name__)
 
@@ -109,21 +115,21 @@ def _safetensors_to_dict(info: object) -> dict | None:
     return result if result else None
 
 
-def _hf_model_to_input(model: object) -> ModelInput:
+def _hf_model_to_input(model: ModelInfo) -> ModelInput:
     """Convert an HF model listing object to a ModelInput for extraction."""
     safetensors_info = None
     if hasattr(model, "safetensors") and model.safetensors:
         safetensors_info = _safetensors_to_dict(model.safetensors)
 
     return ModelInput(
-        model_id=model.id or "",  # type: ignore[union-attr]
-        author=model.author or "",  # type: ignore[union-attr]
-        pipeline_tag=model.pipeline_tag or "",  # type: ignore[union-attr]
-        tags=list(model.tags or []),  # type: ignore[union-attr]
-        library_name=model.library_name or "",  # type: ignore[union-attr]
-        likes=model.likes or 0,  # type: ignore[union-attr]
-        downloads=model.downloads or 0,  # type: ignore[union-attr]
-        created_at=str(model.created_at) if model.created_at else None,  # type: ignore[union-attr]
+        model_id=model.id or "",
+        author=model.author or "",
+        pipeline_tag=model.pipeline_tag or "",
+        tags=list(model.tags or []),
+        library_name=model.library_name or "",
+        likes=model.likes or 0,
+        downloads=model.downloads or 0,
+        created_at=str(model.created_at) if model.created_at else None,
         license_str=getattr(model, "license", "") or "",
         safetensors_info=safetensors_info,
         config=getattr(model, "config", None),
@@ -178,7 +184,7 @@ def _passes_seed_filters(
 
 def _try_index_model(
     network_conn: sqlite3.Connection,
-    model: object,
+    model: ModelInfo,
     model_id: str,
     existing: set[str],
     count: int,

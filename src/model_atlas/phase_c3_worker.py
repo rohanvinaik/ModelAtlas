@@ -36,29 +36,35 @@ _VALID_FLAGS = frozenset(
 )
 
 
+def _require_score(data: dict, name: str) -> int:
+    """One 0-3 quality sub-score, validated and narrowed to int.
+
+    Raises ValueError with the same message the caller's inline checks used.
+    """
+    value = data.get(name)
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"'{name}' must be int or float, got {type(value).__name__}")
+    if not (0 <= value <= 3):
+        raise ValueError(f"'{name}' must be 0-3, got {value}")
+    return int(value)
+
+
 def _parse_and_validate(text: str) -> dict:
     """Parse and validate quality gate JSON output."""
     data = json.loads(text)
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object, got {type(data).__name__}")
 
-    specificity = data.get("specificity")
-    coherence = data.get("coherence")
-    artifacts = data.get("artifacts")
+    # Validated one field at a time rather than in a loop: a loop over
+    # (name, value) pairs raises identically at runtime, but the narrowing is
+    # invisible to the type checker, so the int() calls below read as
+    # int(Any | None) and the guarantee the validation just established is
+    # lost. Same messages, same raise order, now provable.
+    specificity = _require_score(data, "specificity")
+    coherence = _require_score(data, "coherence")
+    artifacts = _require_score(data, "artifacts")
+
     flags = data.get("flags", [])
-
-    for name, value in [
-        ("specificity", specificity),
-        ("coherence", coherence),
-        ("artifacts", artifacts),
-    ]:
-        if not isinstance(value, (int, float)):
-            raise ValueError(
-                f"'{name}' must be int or float, got {type(value).__name__}"
-            )
-        if not (0 <= value <= 3):
-            raise ValueError(f"'{name}' must be 0-3, got {value}")
-
     if not isinstance(flags, list):
         raise ValueError("'flags' must be a list")
 
@@ -67,9 +73,6 @@ def _parse_and_validate(text: str) -> dict:
         f for f in flags if isinstance(f, str) and f.strip().lower() in _VALID_FLAGS
     ]
 
-    specificity = int(specificity)
-    coherence = int(coherence)
-    artifacts = int(artifacts)
     quality_score = (specificity + coherence + artifacts) / 9.0
 
     return {
