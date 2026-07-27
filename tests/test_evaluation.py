@@ -194,7 +194,7 @@ def test_case_names_are_unique():
 def test_every_case_asserts_something():
     """A case with no expectations always scores 1.0 and inflates the total."""
     for c in CASES:
-        assert c.require_all or c.expect_any_of, f"{c.name} asserts nothing"
+        assert c.require_all or c.expect_any_of or c.window, f"{c.name} asserts nothing"
 
 
 def test_every_case_documents_why_it_exists():
@@ -230,3 +230,101 @@ def test_harness_tolerates_a_corpus_missing_optional_tables(conn):
         conn.execute("SELECT 1 FROM anchor_aliases_missing")
     rep = run_eval(conn, CASES[:1])
     assert rep.total_checks >= 1
+
+
+# ── Window-level assertions ───────────────────────────────────────────
+
+
+def _f(model_id: str, size: float | None = None, **kw):
+    return ModelFacts(model_id=model_id, param_count_b=size, **kw)
+
+
+def test_largest_ranks_first_detects_disorder():
+    """The real window for 'give me the largest' ordered sizes 31B, 120B,
+    14B, 12B, 32B, 26B — a 120B model at #2 is the defect."""
+    from model_atlas.evaluation.facts import larger_models_rank_higher
+
+    p = larger_models_rank_higher()
+    assert p([_f("a", 31.0), _f("b", 120.0), _f("c", 14.0)]) is False
+    assert p([_f("a", 120.0), _f("b", 31.0), _f("c", 14.0)]) is True
+
+
+def test_smallest_ranks_first_is_the_mirror():
+    from model_atlas.evaluation.facts import smaller_models_rank_higher
+
+    p = smaller_models_rank_higher()
+    assert p([_f("a", 0.02), _f("b", 0.3), _f("c", 0.1)]) is True
+    assert p([_f("a", 0.3), _f("b", 0.02)]) is False
+
+
+def test_ordering_predicates_fail_on_an_unmeasurable_window():
+    """Fewer than two known sizes means the assertion cannot be evaluated.
+    That must read as a failure, not a free pass — a window whose sizes are
+    all unknown is exactly the zero-state defect and should not score."""
+    from model_atlas.evaluation.facts import (
+        larger_models_rank_higher,
+        smaller_models_rank_higher,
+    )
+
+    for p in (larger_models_rank_higher(), smaller_models_rank_higher()):
+        assert p([_f("a", None), _f("b", None)]) is False
+        assert p([_f("a", 7.0)]) is False
+        assert p([]) is False
+
+
+def test_ordering_predicates_ignore_unknown_sizes_among_known_ones():
+    from model_atlas.evaluation.facts import larger_models_rank_higher
+
+    p = larger_models_rank_higher()
+    assert p([_f("a", 70.0), _f("b", None), _f("c", 13.0)]) is True
+
+
+def test_size_span_rejects_a_window_of_near_identical_models():
+    from model_atlas.evaluation.facts import sizes_span_at_least
+
+    p = sizes_span_at_least(2.0)
+    assert p([_f("a", 7.0), _f("b", 7.0), _f("c", 8.0)]) is False
+    assert p([_f("a", 70.0), _f("b", 7.0)]) is True
+
+
+def test_no_duplicate_lineage_catches_one_model_wearing_two_hats():
+    from model_atlas.evaluation.facts import no_duplicate_lineage
+
+    p = no_duplicate_lineage()
+    assert p([_f("mlabonne/Daredevil-8B"), _f("mlabonne/Daredevil-8B-abliterated")]) is False
+    assert p([_f("org/Qwen3-8B-GGUF"), _f("org/Qwen3-8B-MLX")]) is False
+    assert p([_f("a/Qwen3-8B"), _f("b/Llama-3.1-8B")]) is True
+
+
+def test_window_predicates_are_named_for_the_report():
+    from model_atlas.evaluation.facts import (
+        larger_models_rank_higher,
+        sizes_span_at_least,
+    )
+
+    assert larger_models_rank_higher().name == "largest_ranks_first"
+    assert sizes_span_at_least(2.0).name == "size_span>=2.0x"
+
+
+def test_window_assertion_scores_once_not_once_per_result(corpus):
+    """Otherwise one ordering property would outweigh the whole on-topic
+    check on a wide window."""
+    from model_atlas.evaluation.facts import smaller_models_rank_higher
+
+    case = EvalCase(
+        name="t", ask="", query={"require_anchors": ["chat"]}, top_n=2,
+        window=(smaller_models_rank_higher(),),
+    )
+    r = run_case(corpus, case)
+    assert r.total_checks == 1  # one window predicate, not one per result
+
+
+def test_window_failures_are_labelled_distinctly(corpus):
+    from model_atlas.evaluation.facts import sizes_span_at_least
+
+    case = EvalCase(
+        name="t", ask="", query={"require_anchors": ["chat"]}, top_n=2,
+        window=(sizes_span_at_least(1000.0),),
+    )
+    r = run_case(corpus, case)
+    assert r.failures == ["<window>:size_span>=1000.0x"]

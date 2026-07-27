@@ -53,14 +53,14 @@ class CaseResult:
     score: float
     total_checks: int
     passed_checks: int
+    window_failures: list[str] = field(default_factory=list)
     empty: bool = False
 
     @property
     def failures(self) -> list[str]:
         """Flat `model_id:predicate` list of everything that failed."""
-        return [
-            f"{c.model_id}:{p}" for c in self.checks for p in c.failed
-        ]
+        per_result = [f"{c.model_id}:{p}" for c in self.checks for p in c.failed]
+        return per_result + [f"<window>:{w}" for w in self.window_failures]
 
 
 def run_case(conn: sqlite3.Connection, case: EvalCase) -> CaseResult:
@@ -72,9 +72,11 @@ def run_case(conn: sqlite3.Connection, case: EvalCase) -> CaseResult:
     checks: list[ResultCheck] = []
     passed = 0
     total = 0
+    window_facts: list[ModelFacts] = []
 
     for rank, model_id in enumerate(returned, 1):
         facts: ModelFacts = load_facts(conn, model_id)
+        window_facts.append(facts)
         rc = ResultCheck(model_id=model_id, rank=rank)
         for pred in case.require_all:
             total += 1
@@ -84,6 +86,16 @@ def run_case(conn: sqlite3.Connection, case: EvalCase) -> CaseResult:
             else:
                 rc.failed.append(pred.name)
         checks.append(rc)
+
+    # Window-level assertions score once each, not once per result, so a
+    # single ordering property cannot outweigh the whole on-topic check.
+    window_failures: list[str] = []
+    for wpred in case.window:
+        total += 1
+        if wpred(window_facts):
+            passed += 1
+        else:
+            window_failures.append(wpred.name)
 
     hits: list[str] = []
     misses: list[str] = []
@@ -111,6 +123,7 @@ def run_case(conn: sqlite3.Connection, case: EvalCase) -> CaseResult:
         checks=checks,
         expected_hits=hits,
         expected_misses=misses,
+        window_failures=window_failures,
         score=score,
         total_checks=total,
         passed_checks=passed,
@@ -206,6 +219,8 @@ def format_report(report: EvalReport, verbose: bool = False) -> str:
             if rc.failed or verbose:
                 out.append(f"        #{rc.rank} {rc.model_id}")
                 out.append(f"            {status}")
+        for wf in c.window_failures:
+            out.append(f"        window: {wf}")
         for miss in c.expected_misses:
             out.append(f"        expected something matching {miss!r}, absent")
         out.append("")

@@ -156,6 +156,91 @@ def not_a_vision_model() -> Predicate:
     return lacks_all_anchors("image-understanding", "image-generation")
 
 
+@dataclass(frozen=True)
+class WindowPredicate:
+    """An assertion about the ORDERED window, not about one model.
+
+    Per-result predicates ask "is everything here on-topic". They cannot ask
+    "is it in a sensible order" — and ordering is exactly what a filter-heavy
+    scoring layer gets wrong. A window can be entirely on-topic and still
+    ranked arbitrarily.
+    """
+
+    name: str
+    test: Callable[[list[ModelFacts]], bool]
+
+    def __call__(self, window: list[ModelFacts]) -> bool:
+        return self.test(window)
+
+
+def _known_sizes(window: list[ModelFacts]) -> list[float]:
+    return [f.param_count_b for f in window if f.param_count_b is not None]
+
+
+def larger_models_rank_higher() -> WindowPredicate:
+    """Asking for large should put the largest first.
+
+    Fails today: `_bank_score_single` is a step function for directional
+    queries, so +1, +2, +4 and +6 all score 1.000 against `efficiency=+1` and
+    "large" cannot prefer 70B to 13B. See docs/scoring-dynamic-range.md.
+    """
+
+    def test(window: list[ModelFacts]) -> bool:
+        sizes = _known_sizes(window)
+        if len(sizes) < 2:
+            return False
+        return sizes[0] >= max(sizes)
+
+    return WindowPredicate("largest_ranks_first", test)
+
+
+def smaller_models_rank_higher() -> WindowPredicate:
+    """The mirror: asking for small should put the smallest first."""
+
+    def test(window: list[ModelFacts]) -> bool:
+        sizes = _known_sizes(window)
+        if len(sizes) < 2:
+            return False
+        return sizes[0] <= min(sizes)
+
+    return WindowPredicate("smallest_ranks_first", test)
+
+
+def sizes_span_at_least(factor: float) -> WindowPredicate:
+    """The window should not be N near-identical models.
+
+    A recommendation of five 7B models dressed as a ranking is less useful
+    than a spread the caller can choose from — and a collapsed spread is a
+    symptom of a scoring layer that stopped discriminating.
+    """
+
+    def test(window: list[ModelFacts]) -> bool:
+        sizes = _known_sizes(window)
+        return len(sizes) >= 2 and max(sizes) >= min(sizes) * factor
+
+    return WindowPredicate(f"size_span>={factor}x", test)
+
+
+def no_duplicate_lineage() -> WindowPredicate:
+    """Distinct recommendations, not one model and its quantisations.
+
+    `Daredevil-8B` and `Daredevil-8B-abliterated` occupying two of three slots
+    is a window of one answer wearing two hats.
+    """
+
+    def test(window: list[ModelFacts]) -> bool:
+        stems = set()
+        for f in window:
+            name = f.model_id.split("/")[-1].lower()
+            for suffix in ("-gguf", "-mlx", "-awq", "-gptq", "-abliterated",
+                           "-instruct", "-base", "-4bit", "-8bit", "-int8"):
+                name = name.replace(suffix, "")
+            stems.add(name)
+        return len(stems) == len(window)
+
+    return WindowPredicate("no_duplicate_lineage", test)
+
+
 def min_downloads(n: int) -> Predicate:
     """A weak popularity floor. Not a quality signal on its own, but a model
     with single-digit downloads outranking an established one is a symptom of
