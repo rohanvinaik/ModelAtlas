@@ -1,0 +1,84 @@
+{
+  "score": 0.9254,
+  "passed_checks": 62,
+  "total_checks": 67,
+  "corpus_models": 50906,
+  "cases": {
+    "audio_transcription": {
+      "score": 1.0,
+      "returned": [
+        "openai/whisper-large-v3",
+        "bosonai/higgs-audio-v2-generation-3B-base",
+        "pyannote/segmentation-3.0"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "mac_on_device_summarization": {
+      "score": 1.0,
+      "returned": [
+        "lmstudio-community/gemma-3-270m-it-qat-MLX-4bit",
+        "mlx-community/LFM2-350M-4bit",
+        "mlx-community/gemma-3-270m-it-4bit"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rag_embeddings": {
+      "score": 1.0,
+      "returned": [
+        "BAAI/bge-m3",
+        "google-bert/bert-base-uncased",
+        "intfloat/multilingual-e5-large"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "code_review_bot_consumer_gpu": {
+      "score": 0.6667,
+      "returned": [
+        "Shekswess/trlm-stage-2-sft-final-2",
+        "zai-org/GLM-4.6",
+        "ggml-org/SmolVLM-256M-Instruct-GGUF"
+      ],
+      "failures": [
+        "Shekswess/trlm-stage-2-sft-final-2:size<=34.0B",
+        "Shekswess/trlm-stage-2-sft-final-2:downloads>=1000",
+        "zai-org/GLM-4.6:size<=34.0B",
+        "ggml-org/SmolVLM-256M-Instruct-GGUF:lacks_all:image-understanding|image-generation",
+        "ggml-org/SmolVLM-256M-Instruct-GGUF:size<=34.0B"
+      ],
+      "expected_misses": []
+    },
+    "medical_text_classification": {
+      "score": 1.0,
+      "returned": [
+        "StanfordAIMI/stanford-deidentifier-base",
+        "emilyalsentzer/Bio_ClinicalBERT",
+        "ncbi/MedCPT-Cross-Encoder"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "small_local_chat_model": {
+      "score": 1.0,
+      "returned": [
+        "Qwen/Qwen3-0.6B",
+        "tiiuae/Falcon-H1-Tiny-R-0.6B-GGUF",
+        "Mungert/Qwen3-0.6B-abliterated-GGUF"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rust_systems_code": {
+      "score": 1.0,
+      "returned": [
+        "openai-community/gpt2",
+        "Etherll/Mellum-4b-sft-rust-GGUF",
+        "QuantFactory/gpt2-GGUF"
+      ],
+      "failures": [],
+      "expected_misses": []
+    }
+  }
+}

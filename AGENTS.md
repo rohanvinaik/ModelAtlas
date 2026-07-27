@@ -43,6 +43,22 @@ see `_anchor_counts_over()` in `query_navigate.py`, shared by `_pmi_map()` and
 invisible to the suite unless the test builds a set past it: `tests/test_sql_var_chunking.py`
 pins the boundary and asserts the raw unchunked query still raises.
 
+### Corpus-quality eval (the instrument)
+`python -m model_atlas.evaluation` scores canonical questions against the real corpus.
+**Run it before and after any corpus or scoring change** — `--baseline` diffs against a
+saved run, and baselines live in `data/eval/`. Expectations are named predicates over
+recorded facts (`evaluation/facts.py`), not expected model IDs, so they survive corpus
+churn; a failure reads `model_id:predicate`. Scoring is per-CHECK, not per-case, so a
+small easy case cannot flatter the average.
+
+Size predicates deliberately FAIL on an unknown parameter count rather than passing it —
+46% of the corpus has none, and the extractor writes the EFFICIENCY zero state ("~7B")
+anyway, so an eval that let unknown pass would hide exactly the defect it exists to find.
+
+`tests/test_evaluation_corpus.py` enforces a floor and skips when the corpus is absent.
+The floor catches a collapse; ratchet it up after a real improvement, never down to make
+a red run green.
+
 ### Anchor aliases (query-boundary resolution)
 `navigate()` canonicalizes every anchor mention through `aliases.canonicalize_labels()`
 before reading it, so `gguf` finds `GGUF-available`. Two invariants, both test-pinned
