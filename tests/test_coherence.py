@@ -15,6 +15,7 @@ from model_atlas.coherence import (
     check_null_coverage,
     check_uncited_canonical_writes,
     format_report_human,
+    CoherenceReport,
     run_audit,
 )
 
@@ -219,3 +220,86 @@ def test_report_to_dict_round_trips(conn, tmp_path):
     d = report.to_dict()
     serialized = json.dumps(d, default=str)
     assert json.loads(serialized)["model_total"] == 2
+
+
+def test_run_audit_surfaces_uncited_writes_from_a_real_log(conn, tmp_path):
+    """Every other run_audit test points at a log path that does not exist, so
+    `uncited_canonical_writes` is [] in all of them and the branch that
+    populates it never runs. Detective flagged the gap: the return value was
+    pinned only where the suite happened to look.
+    """
+    _seed_minimal(conn)
+    log = tmp_path / "patches.jsonl"
+    log.write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in [
+                {"table": "models", "reason": "sourced from the HF config sha", "op": "patch"},
+                {"table": "models", "reason": "fix", "op": "patch"},
+                {"table": "anchors", "reason": "", "op": "patch"},
+            ]
+        )
+        + "\n"
+    )
+    report = run_audit(conn, audit_log_path=log)
+
+    issues = {u["issue"] for u in report.uncited_canonical_writes}
+    assert issues == {"thin_single_word", "empty"}
+    reasons = {u["reason"] for u in report.uncited_canonical_writes}
+    assert "sourced from the HF config sha" not in reasons  # a real citation survives
+    assert report.to_dict()["uncited_canonical_writes"]
+
+
+def test_audit_thresholds_actually_govern_the_report(conn, tmp_path):
+    """The audit's whole output is threshold-dependent, and nothing pinned
+    that 0.7 means 0.7 — Detective's six surviving VALUE mutants were all
+    "replace constant with boundary value" on these defaults. A default that
+    no test distinguishes from its boundary is not a specification.
+    """
+    _seed_minimal(conn)
+    log = tmp_path / "patches.jsonl"
+
+    # oversaturation_pct: an anchor on 100% of models is flagged at 50 but not
+    # at a threshold above its own share.
+    lax = run_audit(conn, audit_log_path=log, oversaturation_pct=99.9)
+    strict = run_audit(conn, audit_log_path=log, oversaturation_pct=10.0)
+    lax_labels = {i["label"] for i in lax.anchor_oversaturated}
+    strict_labels = {i["label"] for i in strict.anchor_oversaturated}
+    assert strict_labels > lax_labels, "a lower threshold must flag strictly more"
+
+    # correlation_threshold governs which pairs are called suspicious, and must
+    # never widen the set as it rises.
+    loose = run_audit(conn, audit_log_path=log, correlation_threshold=0.0)
+    tight = run_audit(conn, audit_log_path=log, correlation_threshold=1.0)
+    assert len(loose.bank_correlations_suspicious) >= len(
+        tight.bank_correlations_suspicious
+    )
+
+
+def test_run_audit_returns_a_report_not_none(conn, tmp_path):
+    """Pins the STATE mutant by value rather than by the AttributeError that
+    happens to follow — a suite that only crashes on None proves the code ran,
+    not what it produced."""
+    _seed_minimal(conn)
+    report = run_audit(conn, audit_log_path=tmp_path / "patches.jsonl")
+    assert isinstance(report, CoherenceReport)
+    assert report is not None
+
+
+def test_the_defaults_themselves_are_specified(conn, tmp_path):
+    """Passing explicit thresholds proves the parameters work; it does not
+    pin what the DEFAULTS are. Detective's surviving VALUE mutants replace
+    those constants with boundary values, and a suite that always passes an
+    explicit threshold never notices. This calls run_audit bare.
+    """
+    _seed_minimal(conn)
+    report = run_audit(conn, audit_log_path=tmp_path / "patches.jsonl")
+
+    # An anchor carried by every model is 100% saturated, so the default
+    # (50.0) must flag it. A default pushed to its 100.0 boundary would not.
+    assert {i["label"] for i in report.anchor_oversaturated} >= {"decoder-only"}
+    assert all(i["share_pct"] > 50.0 for i in report.anchor_oversaturated)
+
+    # And the default must not be so low that it flags an anchor on one of two
+    # models — that would make the check meaningless rather than strict.
+    assert "orphan-anchor" not in {i["label"] for i in report.anchor_oversaturated}
