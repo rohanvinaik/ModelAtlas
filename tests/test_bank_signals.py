@@ -199,3 +199,51 @@ def test_consumer_gpu_and_edge_anchors_have_their_own_thresholds():
     assert "consumer-GPU-viable" not in _extract_efficiency(4.0)[1]
     assert "edge-deployable" in _extract_efficiency(0.99)[1]
     assert "edge-deployable" not in _extract_efficiency(1.0)[1]
+
+
+# ── Step 1.5: raw facts survive extraction ────────────────────────────
+
+
+def test_raw_structural_facts_are_retained():
+    """Extraction READ these and discarded them, leaving the corpus unable to
+    answer whether its own sources agreed. A coherence layer needs several
+    INDEPENDENT estimators per bank, and independence means "derived from a
+    different raw fact" — so the raw facts have to survive."""
+    from model_atlas.extraction.deterministic import ModelInput, extract
+
+    meta = extract(ModelInput(
+        model_id="org/m",
+        tags=["license:apache-2.0", "gguf"],
+        safetensors_info={"total": 7_000_000_000, "parameters": {"BF16": 7_000_000_000}},
+        config={"architectures": ["LlamaForCausalLM"], "hidden_size": 4096,
+                "quantization_config": {"bits": 4}},
+    )).metadata
+    assert {"tags", "architectures", "safetensors_total",
+            "safetensors_dtypes", "quantization_config"} <= set(meta)
+
+
+def test_license_is_read_from_the_tag_where_hf_actually_puts_it():
+    """`ModelInfo` has no `.license` attribute, so every ingest path's
+    `getattr(info, "license", "")` returned "" — which is why the shipped
+    corpus holds 0 license rows despite the collector always asking for one."""
+    from model_atlas.extraction.deterministic import ModelInput, extract
+
+    meta = extract(ModelInput(model_id="org/m", tags=["license:apache-2.0"])).metadata
+    assert meta["license"][0] == "apache-2.0"
+
+
+def test_an_explicit_license_still_wins_over_the_tag():
+    from model_atlas.extraction.deterministic import ModelInput, extract
+
+    meta = extract(ModelInput(model_id="org/m", license_str="mit",
+                              tags=["license:apache-2.0"])).metadata
+    assert meta["license"][0] == "mit"
+
+
+def test_absent_raw_facts_add_no_rows():
+    """A model with nothing to record must not gain empty placeholder rows."""
+    from model_atlas.extraction.deterministic import ModelInput, extract
+
+    meta = extract(ModelInput(model_id="org/bare")).metadata
+    assert not {"tags", "architectures", "safetensors_total",
+                "quantization_config"} & set(meta)

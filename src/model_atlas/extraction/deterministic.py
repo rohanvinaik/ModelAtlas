@@ -8,6 +8,7 @@ likes, license, etc.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -569,6 +570,19 @@ def _add_if_not_none(
         meta[key] = (str(value), value_type)
 
 
+
+def _license_from_tags(tags: list[str]) -> str:
+    """HF encodes the license as a `license:xxx` tag, not a top-level field.
+
+    `ModelInfo` has no `.license` attribute, so every `getattr(info, "license",
+    "")` in the ingest paths returns "" — which is why the corpus holds zero
+    license rows. Read it where it actually is.
+    """
+    for tag in tags or ():
+        if tag.startswith("license:"):
+            return tag.split(":", 1)[1]
+    return ""
+
 def _collect_metadata(
     inp: ModelInput,
     param_b: float | None,
@@ -579,8 +593,37 @@ def _collect_metadata(
     if param_b:
         meta["parameter_count_b"] = (str(round(param_b, 2)), "float")
 
-    _add_if_truthy(meta, "license", inp.license_str, "str")
+    # License: HF's ModelInfo has no `.license` attribute — the value lives in
+    # the tag list as `license:apache-2.0`. Every caller was reading a
+    # `getattr(info, "license", "")` that is always empty, which is why the
+    # corpus carries 0 license rows despite this line existing since day one.
+    _add_if_truthy(meta, "license", inp.license_str or _license_from_tags(inp.tags), "str")
     _add_if_truthy(meta, "created_at", inp.created_at, "datetime")
+
+    # ── Raw structural facts (step 1.5 of docs/architecture-upgrade.md) ──
+    #
+    # Extraction READS these and, until now, discarded them once positions and
+    # anchors were derived. A coherence layer needs several INDEPENDENT
+    # estimators per bank, and independence means "derived from a different
+    # raw fact" — so the raw facts have to survive. Keeping them costs a few
+    # metadata rows per model and is the precondition for asking, later,
+    # whether the sources agreed.
+    if inp.tags:
+        meta["tags"] = (json.dumps(sorted(inp.tags)), "json")
+    if inp.safetensors_info:
+        total = inp.safetensors_info.get("total")
+        if total:
+            meta["safetensors_total"] = (str(int(total)), "int")
+        params = inp.safetensors_info.get("parameters")
+        if isinstance(params, dict) and params:
+            meta["safetensors_dtypes"] = (json.dumps(params), "json")
+    if inp.config:
+        archs = inp.config.get("architectures")
+        if archs:
+            meta["architectures"] = (json.dumps(archs), "json")
+        quant = inp.config.get("quantization_config")
+        if quant:
+            meta["quantization_config"] = (json.dumps(quant), "json")
     _add_if_truthy(meta, "likes", inp.likes, "int")
     _add_if_truthy(meta, "downloads", inp.downloads, "int")
     _add_if_truthy(meta, "pipeline_tag", inp.pipeline_tag, "str")
