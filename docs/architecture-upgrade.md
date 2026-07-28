@@ -229,3 +229,73 @@ is present (`confidence > 0`):
 Low `r` marks the model as one where the sources dissent. That is a routing
 signal, not a verdict: it selects the residue for the local model (task #5),
 which is where a judgment call like "is an 8B VLM a real tool-caller" belongs.
+
+## The blocking constraint: the corpus discarded its own evidence
+
+Building the oscillators cleanly means deriving each from a raw structural
+fact, never from the anchors — **the anchor set is the thing being judged, so
+it cannot also be a voter.** Measuring what raw material survives in the
+corpus settles whether that is possible today. It is not.
+
+**What the corpus retained, of the facts extraction consumed:**
+
+| fact | coverage |
+|---|---|
+| `pipeline_tag` | 72.4% |
+| `library_name` | 70.8% |
+| `model_type` | 56.1% |
+| `parameter_count_b` | 53.7% |
+| `context_length` | 40.9% |
+| `tags` | **0%** |
+| `config.architectures` | **0%** |
+| `safetensors_info` | **0%** |
+| `quantization_config` | **0%** |
+| `license` | **0%** |
+
+Extraction read those, produced 555,467 anchor attachments and 405,568 bank
+positions, and **threw the inputs away.** `HFFacts` — the certifier's own
+read-only view — names ten fields; the corpus can still answer five.
+
+**And the survivors are not independent.** `pipeline_tag` is **83% predictable
+from `model_type`** across the 24,427 models carrying both. Two phasors that
+agree 83% of the time by construction cannot meaningfully dissent; an order
+parameter over them sits near 1 and carries almost no information. For
+CAPABILITY there is effectively **one** structural oscillator, and one
+oscillator cannot disagree with anything.
+
+Coverage compounds it: only 53.8% of models carry ≥3 of the four surviving
+facts, 29.3% carry all four, and 9.2% carry none.
+
+### What this means
+
+Step 2 is not blocked on choosing the right measure. It is blocked on the
+corpus not containing the evidence a coherence measure would read.
+
+That is also the architectural upgrade stated at its root. TriageGeist retains
+every bank's inputs — each `BankSignal` carries the `evidence` that produced
+it, and the raw patient record stays available to every bank independently.
+ModelAtlas retains only outputs. A pipeline that reduces raw facts to
+coordinates and discards the facts cannot later ask whether its sources agreed,
+because it kept only their conclusion.
+
+Step 1 fixed this going forward for positions (`evidence` on
+`model_positions`). The corpus itself needs the same treatment, and that is a
+**re-ingest**, not a migration: the facts are not degraded in the corpus, they
+are absent from it.
+
+### Revised sequencing
+
+- **Step 1.5 (new, blocking).** Teach ingestion to persist the raw structural
+  facts it already reads — `tags`, `config.architectures`, `safetensors_info`,
+  `quantization_config`, `license`. Cheap in code, and it is the precondition
+  for everything below. Nothing about the extraction logic changes; the inputs
+  simply stop being discarded.
+- **Step 1.6.** Re-ingest the corpus against HF so those columns are populated.
+  ~51K models, network-bound, and it produces a new release asset.
+- **Step 2** then has real oscillators to work with, and its verification
+  gate — separating SmolVLM-256M, Wan2.1-T2V and DNABERT-2 from known-good
+  models — becomes meaningful rather than a measurement of one signal against
+  itself.
+
+Until 1.5/1.6 land, any coherence number computed on this corpus is a
+measurement of `model_type` against a near-copy of itself.
