@@ -146,3 +146,45 @@ unresolved there and are *scalar* questions, not navigation ones:
   `−` Local), derived from PageRank plus significance. ModelAtlas has no
   SCALE bank; EFFICIENCY carries both "how big is the artifact" and "how
   significant is it", which are not the same axis.
+
+## The zero-state defect, and why its fix must not ship alone
+
+`_extract_efficiency(None)` returned `BankPosition()`, whose defaults are
+`sign=0, depth=0` — so "no size known" was written as *literally the zero
+state*. On the v0.4.0 corpus, 32,697 models sat at EFFICIENCY `(0,0)` and
+**23,352 of them (71%) were there only because no parameter count was
+extracted.**
+
+Fixed at the source: `BankPosition.known` marks a position we could not
+determine, and the write path skips it, so the bank is left absent and
+`NAVIGATE_MISSING_BANK_PENALTY` applies. Unknown costs something; it no longer
+masquerades as a match.
+
+None of the 23,352 is recoverable from the model id — `_estimate_params_billions`
+already tried the name at ingest — so correcting the existing corpus means
+removing those positions, not backfilling them.
+
+**Applied to a corpus copy, that migration made the eval WORSE: 96.5% → 95.8%,
+`code_review_bot_consumer_gpu` 80% → 73%.** It is still the right fix, and the
+reason is the useful part:
+
+```
+before          #1 zai-org/GLM-4.6                    size<=34B ✗
+                #2 OpenGVLab/InternVL3-8B-Instruct    not-a-vision-model ✗
+                #3 deepseek-ai/DeepSeek-V3            size<=34B ✗
+
+after           #1 OpenGVLab/InternVL3-8B-Instruct    not-a-vision-model ✗
+                #2 Jackrong/Qwen3.5-9B-...-Distilled  not-a-vision-model ✗
+                #3 OpenGVLab/InternVL3-8B-Pretrained  not-a-vision-model ✗ downloads ✗
+```
+
+The migration did exactly what it should — the unknown-size frontier models
+are gone and every `size` failure with them. What filled the vacated slots is
+vision models with *known* 8B sizes carrying `code-generation` and
+`tool-calling` anchors they should never have had. The zero-state defect was
+**masking** the over-attachment defect; removing the first exposes the second.
+
+So the corpus migration must land WITH the pipeline/size certifier rules, not
+before them. A score that drops is not automatically a change that was wrong —
+here it is a change that removed the thing standing in front of the next
+problem.

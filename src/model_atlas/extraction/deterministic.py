@@ -40,6 +40,22 @@ class BankPosition:
     sign: int = 0
     depth: int = 0
     nodes: list[str] = field(default_factory=list)
+    known: bool = True
+    """False when the underlying fact is missing.
+
+    An unknown position must NOT be written. The zero state is a claim — "we
+    know this sits at the corpus mode" — while absence is the admission that
+    we do not know. Writing `(0, 0)` for both makes every unmeasured model
+    impersonate the single most-requested value on that bank.
+
+    Measured on the v0.4.0 corpus: 32,697 models sat at EFFICIENCY `(0,0)`,
+    and 23,352 of them — 71% — were there only because no parameter count was
+    extracted. GLM-4.6 (~355B) is one of them, which is why it satisfies
+    `efficiency=0` perfectly and survives every `max_depth` ceiling.
+
+    An absent position is not silently favourable: `_nav_bank_alignment`
+    applies `NAVIGATE_MISSING_BANK_PENALTY` to it. Unknown should cost
+    something; it should not masquerade as a match."""
 
 
 class AnchorTag(NamedTuple):
@@ -289,7 +305,9 @@ def _extract_efficiency(param_b: float | None) -> tuple[BankPosition, list[str]]
     """Map parameter count to EFFICIENCY bank position and size anchors."""
     anchors: list[str] = []
     if param_b is None:
-        return BankPosition(), anchors
+        # No size fact — leave the bank UNPOSITIONED rather than asserting the
+        # zero state. See BankPosition.known.
+        return BankPosition(known=False), anchors
 
     for min_b, max_b, sign, depth, anchor in _PARAM_RANGES:
         if min_b <= param_b < max_b:
@@ -299,7 +317,9 @@ def _extract_efficiency(param_b: float | None) -> tuple[BankPosition, list[str]]
             if param_b < 1:
                 anchors.append("edge-deployable")
             return BankPosition(sign=sign, depth=depth), anchors
-    return BankPosition(), anchors
+    # A count we could not place on the bank is still a position we do not
+    # know, even though we know the number.
+    return BankPosition(known=False), anchors
 
 
 def _extract_quality(

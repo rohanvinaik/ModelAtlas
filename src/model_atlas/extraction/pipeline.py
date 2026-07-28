@@ -25,6 +25,7 @@ from ..reconciler import reconcile_items
 from .benchmarks import derive_benchmark_anchors, extract_benchmarks
 from .deterministic import (
     AnchorTag,
+    BankPosition,
     DeterministicResult,
     ModelInput,
 )
@@ -168,19 +169,25 @@ def _build_canonical_items(
     )
 
     # 8 bank positions
-    position_specs: list[tuple[str, int, int, list[str] | None]] = [
-        ("ARCHITECTURE", det.architecture.sign, det.architecture.depth, det.architecture.nodes),
-        ("EFFICIENCY", det.efficiency.sign, det.efficiency.depth, None),
-        ("QUALITY", det.quality.sign, det.quality.depth, None),
-        ("CAPABILITY", pat.capability.sign, pat.capability.depth, None),
-        ("COMPATIBILITY", pat.compatibility.sign, pat.compatibility.depth, None),
-        ("LINEAGE", pat.lineage.sign, pat.lineage.depth, None),
-        ("DOMAIN", pat.domain.sign, pat.domain.depth, None),
-        ("TRAINING", pat.training.sign, pat.training.depth, None),
+    position_specs: list[tuple[str, BankPosition, list[str] | None]] = [
+        ("ARCHITECTURE", det.architecture, det.architecture.nodes),
+        ("EFFICIENCY", det.efficiency, None),
+        ("QUALITY", det.quality, None),
+        ("CAPABILITY", pat.capability, None),
+        ("COMPATIBILITY", pat.compatibility, None),
+        ("LINEAGE", pat.lineage, None),
+        ("DOMAIN", pat.domain, None),
+        ("TRAINING", pat.training, None),
     ]
     from ..db import ZERO_STATES
 
-    for bank, sign, depth, nodes in position_specs:
+    for bank, pos, nodes in position_specs:
+        # An unknown position is left ABSENT. Writing the zero state instead
+        # would claim "this model sits at the corpus mode", which is a very
+        # different statement from "we could not tell". See BankPosition.known.
+        if not pos.known:
+            continue
+        sign, depth = pos.sign, pos.depth
         row: dict[str, Any] = {
             "path_sign": sign,
             "path_depth": depth,
