@@ -157,3 +157,75 @@ the scalar ranks.** Coherence is a third thing — a statement about how much
 the corpus's own evidence agrees, which belongs to confidence and routing, not
 to the ternary coordinates or the ordering scalar. Folding it into either
 would repeat the mistake `navigation.md` documents.
+
+## Step 2, first findings: the oscillators cannot be corpus statistics
+
+Three read-only probes on the shipped corpus, before building anything.
+
+**1. Within-bank anchor dissent is real but narrow.** 706 models (2.5% of the
+28,342 carrying any size anchor) carry *contradictory* ones — `rwkv7-0.1B-g1`
+is tagged both `sub-1B` and `frontier-class`, a spread of 7 buckets. A genuine
+bug class, cheaply detectable, and **not** the one blocking the eval.
+
+**2. Evidence sources are sparse.** Only 72% of the corpus has a
+`pipeline_tag` at all, and `ggml-org/SmolVLM-256M-Instruct-GGUF` — the
+canonical over-attachment case — is in the missing 28%. Any per-bank order
+parameter must treat an absent source as contributing *no phasor*, not a
+neutral one. This is exactly what `confidence` from step 1 is for.
+
+**3. Anchor surprisal conditioned on `pipeline_tag` separates only at the
+extreme.** Worst-anchor log-ratio, per model:
+
+| model | worst anchor | log-ratio |
+|---|---|---|
+| `SmolVLM2-256M-Video-Instruct` | `code-completion` (24/2962) | **−1.34** |
+| `InternVL3-8B-Instruct` | `decoder-only` (403/2962) | −1.23 |
+| `whisper-large-v3` | `safetensors` | −0.26 |
+| `Qwen2.5-Coder-14B-Instruct` | `base-model` | −0.06 |
+| `Wan2.1-T2V-1.3B` | *nothing anomalous* | +0.07 |
+
+Good models bottom out near −0.26; the bad ones reach −1.2 to −1.3. Real
+separation — but `Wan2.1-T2V` is not flagged at all, and `InternVL3`, which is
+a mediocre answer rather than a wrong one, scores as badly as the clear defect.
+
+### Why, and what it means
+
+**The contamination is systematic, not anomalous.** 2,117 image-text-to-text
+models carry generative/agentic capability anchors. Within that tag, carrying
+`code-generation` *is typical* — so a statistic derived from the corpus cannot
+flag it. You cannot find outliers when the error is the norm.
+
+This is the constraint that decides the design. **A coherence measure needs
+oscillators that are independently authored, not re-derived from the same
+contaminated data.** TriageGeist's 11 banks are exactly that: each is a
+hand-specified clinical estimator with handbook-seeded floor/ceiling
+constraints. Their independence is what makes their agreement mean something.
+Three attempts here to synthesise oscillators out of corpus statistics — bank
+positions, pairwise anchor PMI, tag-conditioned surprisal — failed for the same
+underlying reason, and the third failed *most informatively*.
+
+So the certifier rules are not the thing coherence replaces. **They are the
+second estimator**, and the only source in the system not derived from the
+anchors themselves.
+
+That also dissolves the objection to them. A rule felt brittle because it was
+the *sole* signal and therefore had to be exhaustive and exactly calibrated —
+"does an 8B VLM legitimately do tool-calling?" had to be answered globally,
+correctly, once. As one oscillator among several it does not: it needs to be
+right *where it fires* and silent elsewhere, and disagreement between it and
+the anchor evidence is what gets routed to judgment rather than adjudicated by
+fiat. Coverage stops being the rule set's job.
+
+### Revised step 2
+
+Oscillators per (model, bank), each contributing a phasor only when its source
+is present (`confidence > 0`):
+
+1. **measured facts** — `parameter_count_b`, `safetensors_info`, config
+2. **structural claims** — `pipeline_tag`, `library_name`, quantization tags,
+   read through the certifier's existing `requires` / `forbids`
+3. **the anchor set** — what extraction actually attached
+
+Low `r` marks the model as one where the sources dissent. That is a routing
+signal, not a verdict: it selects the residue for the local model (task #5),
+which is where a judgment call like "is an 8B VLM a real tool-caller" belongs.
