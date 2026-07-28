@@ -299,3 +299,67 @@ are absent from it.
 
 Until 1.5/1.6 land, any coherence number computed on this corpus is a
 measurement of `model_type` against a near-copy of itself.
+
+## Correction: the corpus is NOT as bare as the section above says
+
+The "blocked" finding above was drawn from a hand-picked list of ten metadata
+keys. Enumerating **all** of them shows the corpus also retains the config
+geometry:
+
+```
+vocab_size 22,570 · torch_dtype 20,780 · num_layers 20,383 · hidden_size 20,343
+num_heads 19,798 · intermediate_size 19,278 · structural_fingerprint 19,176
+has_chat_template 16,761 · num_kv_heads 14,509 · supported_languages 24,714
+quantization_level 9,730 · context_length 20,822
+```
+
+That changes the conclusion, because **parameter count is computable from
+geometry**:
+
+```
+params ≈ num_layers · (4·h² + 3·h·intermediate) + 2·vocab·h
+```
+
+which is an estimator of EFFICIENCY genuinely independent of the stored
+`parameter_count_b` — different provenance, different failure modes, neither
+derived from the anchors. That is a clean oscillator pair, available today, no
+re-ingest required.
+
+**Measured:** 18,921 models carry full geometry; 13,474 carry both estimates.
+Ratio p10 0.96 / p50 1.13 / p90 1.27 — the formula runs slightly high, as
+expected from ignoring tied embeddings, GQA and biases. **1,102 models (8.2%)
+disagree by more than 2×.**
+
+And the dissent is diagnostic. It separates two genuinely different things:
+
+| | config says | stored says | reading |
+|---|---|---|---|
+| `amd/AMD-Llama-135m` | 0.13B | **627.0B** | extraction bug |
+| `crumb/shrink-v1` | 0.30B | **627.0B** | same bug |
+| `unsloth/Mistral-Large-…-bnb-4bit` | 147B | 4B | quantized artifact |
+| `ISTA-DASLab/c4ai-command-r-plus-AQLM-2Bit` | 125B | 2B | quantized artifact |
+
+The `627.0B` value appears on **21 models** — a systematic parse bug, and
+`AMD-Llama-135m` (a 135M model) is recorded 4.6 million times too large. The
+quantized rows are not errors at all: config describes the base model, the
+stored count describes the artifact, and both answer a real question.
+
+That is precisely what a coherence layer should do. It does not need to know
+which kind of disagreement it found — flagging the dissent and routing it to
+judgment is the whole design.
+
+### Revised again
+
+- **EFFICIENCY coherence is buildable now.** Two independent estimators exist
+  on 13,474 models. Step 1.5/1.6 are *not* blocking for this bank.
+- **CAPABILITY coherence still needs re-ingest.** Its structural sources are
+  `pipeline_tag` and `model_type`, which are 83% redundant, and the facts that
+  would break the tie (`tags`, `config.architectures`) are at 0%.
+- So: build the order parameter on EFFICIENCY first, where the oscillators are
+  clean and verifiable, and let CAPABILITY follow the re-ingest.
+
+**Process note, twice over.** Both wrong conclusions this session — "unknown
+sizes broadly degrade queries" and "the corpus discarded its evidence" — came
+from generalising a narrow probe without enumerating the space first. The
+repo's own anti-pattern list says exactly this: *"do not discover constraints
+one-at-a-time through failure — enumerate the full constraint space upfront."*
