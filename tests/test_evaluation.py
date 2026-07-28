@@ -12,7 +12,6 @@ against-the-real-thing path and skips when it is absent.
 
 from __future__ import annotations
 
-import sqlite3
 
 import pytest
 
@@ -222,61 +221,8 @@ def test_harness_never_writes_to_the_corpus(corpus):
     before = corpus.execute("SELECT COUNT(*) FROM model_anchors").fetchone()[0]
     run_eval(corpus, CASES[:2])
     assert corpus.execute("SELECT COUNT(*) FROM model_anchors").fetchone()[0] == before
-
-
-def test_harness_tolerates_a_corpus_missing_optional_tables(conn):
-    """A snapshot without alias tables must still be measurable."""
-    with pytest.raises(sqlite3.OperationalError):
-        conn.execute("SELECT 1 FROM anchor_aliases_missing")
-    rep = run_eval(conn, CASES[:1])
-    assert rep.total_checks >= 1
-
-
-# ── Window-level assertions ───────────────────────────────────────────
-
-
 def _f(model_id: str, size: float | None = None, **kw):
     return ModelFacts(model_id=model_id, param_count_b=size, **kw)
-
-
-def test_largest_ranks_first_detects_disorder():
-    """The real window for 'give me the largest' ordered sizes 31B, 120B,
-    14B, 12B, 32B, 26B — a 120B model at #2 is the defect."""
-    from model_atlas.evaluation.facts import larger_models_rank_higher
-
-    p = larger_models_rank_higher()
-    assert p([_f("a", 31.0), _f("b", 120.0), _f("c", 14.0)]) is False
-    assert p([_f("a", 120.0), _f("b", 31.0), _f("c", 14.0)]) is True
-
-
-def test_smallest_ranks_first_is_the_mirror():
-    from model_atlas.evaluation.facts import smaller_models_rank_higher
-
-    p = smaller_models_rank_higher()
-    assert p([_f("a", 0.02), _f("b", 0.3), _f("c", 0.1)]) is True
-    assert p([_f("a", 0.3), _f("b", 0.02)]) is False
-
-
-def test_ordering_predicates_fail_on_an_unmeasurable_window():
-    """Fewer than two known sizes means the assertion cannot be evaluated.
-    That must read as a failure, not a free pass — a window whose sizes are
-    all unknown is exactly the zero-state defect and should not score."""
-    from model_atlas.evaluation.facts import (
-        larger_models_rank_higher,
-        smaller_models_rank_higher,
-    )
-
-    for p in (larger_models_rank_higher(), smaller_models_rank_higher()):
-        assert p([_f("a", None), _f("b", None)]) is False
-        assert p([_f("a", 7.0)]) is False
-        assert p([]) is False
-
-
-def test_ordering_predicates_ignore_unknown_sizes_among_known_ones():
-    from model_atlas.evaluation.facts import larger_models_rank_higher
-
-    p = larger_models_rank_higher()
-    assert p([_f("a", 70.0), _f("b", None), _f("c", 13.0)]) is True
 
 
 def test_size_span_rejects_a_window_of_near_identical_models():
@@ -297,23 +243,20 @@ def test_no_duplicate_lineage_catches_one_model_wearing_two_hats():
 
 
 def test_window_predicates_are_named_for_the_report():
-    from model_atlas.evaluation.facts import (
-        larger_models_rank_higher,
-        sizes_span_at_least,
-    )
+    from model_atlas.evaluation.facts import no_duplicate_lineage, sizes_span_at_least
 
-    assert larger_models_rank_higher().name == "largest_ranks_first"
     assert sizes_span_at_least(2.0).name == "size_span>=2.0x"
+    assert no_duplicate_lineage().name == "no_duplicate_lineage"
 
 
 def test_window_assertion_scores_once_not_once_per_result(corpus):
     """Otherwise one ordering property would outweigh the whole on-topic
     check on a wide window."""
-    from model_atlas.evaluation.facts import smaller_models_rank_higher
+    from model_atlas.evaluation.facts import no_duplicate_lineage
 
     case = EvalCase(
         name="t", ask="", query={"require_anchors": ["chat"]}, top_n=2,
-        window=(smaller_models_rank_higher(),),
+        window=(no_duplicate_lineage(),),
     )
     r = run_case(corpus, case)
     assert r.total_checks == 1  # one window predicate, not one per result

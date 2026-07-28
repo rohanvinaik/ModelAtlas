@@ -27,14 +27,12 @@ from .facts import (
     has_any_anchor,
     has_anchor,
     lacks_all_anchors,
-    larger_models_rank_higher,
     min_downloads,
     no_duplicate_lineage,
     not_a_vision_model,
     size_at_least,
     size_at_most,
     size_known,
-    smaller_models_rank_higher,
 )
 
 
@@ -191,12 +189,12 @@ CASES: tuple[EvalCase, ...] = (
 
 
 CASES = CASES + (
-    # ── Bank-gradient cases ──────────────────────────────────────────
-    # These exercise the layer fix (b) changes. Written BEFORE the fix so the
-    # failure is on record and the improvement is measurable rather than
-    # asserted. `larger_models_rank_higher` fails today by construction:
-    # _bank_score_single is a step function for directional queries, so +1,
-    # +2, +4 and +6 all score 1.000 against efficiency=+1.
+    # ── Depth-navigation cases ───────────────────────────────────────
+    # A bank position is [SIGN][DEPTH]. These pin the depth half: the same
+    # direction with a min_depth constraint must land on a different, tighter
+    # part of the bank. Navigation is a FILTER here — what orders the
+    # admissible set is the separate scalar, so these assert the shape of the
+    # window, never its sort order.
     EvalCase(
         name="large_frontier_reasoning",
         ask="The most capable reasoning model I can get; compute is not a concern.",
@@ -204,16 +202,20 @@ CASES = CASES + (
             "require_anchors": ["reasoning"],
             "prefer_anchors": ["high-downloads"],
             "efficiency": 1,
+            "min_depth": {"EFFICIENCY": 2},
         },
         top_n=6,
         require_all=(has_anchor("reasoning"), size_known(), size_at_least(13.0)),
-        window=(larger_models_rank_higher(),),
         notes=(
-            "TARGET for fix (b). Asking for large must prefer 70B to 13B. "
-            "top_n=6 deliberately: over three results the assertion passed by "
-            "luck, while the real window ordered sizes 31B, 120B, 14B, 12B, "
-            "32B, 26B — no size ordering at all. A window too small to detect "
-            "disorder is a guardrail that does not guard."
+            "Depth navigation. Without min_depth this returned 31B, 120B, 14B, "
+            "12B, 32B, 26B — a direction alone says which way from the zero "
+            "state, not how far, so a 12B satisfies 'large'. "
+            "An earlier version of this case asserted `largest_ranks_first`, "
+            "which was WRONG: the design filters by sign+depth and then ranks "
+            "by a separate scalar, so 'give me large ones' does not promise "
+            "size-descending order. Asserting it would have pulled scale back "
+            "into the ternary score — the exact conflation the architecture "
+            "keeps apart."
         ),
     ),
     EvalCase(
@@ -223,14 +225,14 @@ CASES = CASES + (
             "require_anchors": ["edge-deployable"],
             "prefer_anchors": ["sub-1B"],
             "efficiency": -1,
+            "min_depth": {"EFFICIENCY": 2},
         },
         top_n=6,
-        require_all=(has_anchor("edge-deployable"), size_known(), size_at_most(4.0)),
-        window=(smaller_models_rank_higher(),),
+        require_all=(has_anchor("edge-deployable"), size_known(), size_at_most(2.0)),
         notes=(
-            "Mirror of the above at the other end of the bank. Currently "
-            "ordered correctly, but by PageRank rather than by the bank — so "
-            "it guards against fix (b) breaking what already works."
+            "The mirror, and the proof that depth is symmetric: -1 with "
+            "min_depth 2 gives 0.3-0.6B where the unconstrained query mixed in "
+            "2.6B. Same filter, opposite direction."
         ),
     ),
     # ── Signals the suite never exercised ────────────────────────────

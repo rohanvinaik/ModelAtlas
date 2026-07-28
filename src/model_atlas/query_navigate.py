@@ -70,13 +70,41 @@ def _bank_score_single(model_signed_pos: int, query_direction: int) -> float:
     return NAVIGATE_OPPOSITION_PENALTY
 
 
+def _depth_constrained_ids(
+    conn: sqlite3.Connection,
+    bank: str,
+    direction: int,
+    min_depth: int,
+) -> set[str]:
+    """Models at least `min_depth` steps along `direction` on `bank`.
+
+    One leg of the query algebra's set intersection: a bank position is
+    `[SIGN][DEPTH]`, so a direction alone says only which way from the zero
+    state. This is the "how far" half.
+    """
+    rows = conn.execute(
+        """SELECT model_id FROM model_positions
+            WHERE bank = ? AND path_sign = ? AND path_depth >= ?""",
+        (bank, direction, min_depth),
+    ).fetchall()
+    return {r["model_id"] for r in rows}
+
+
 def _nav_candidates(
     conn: sqlite3.Connection,
     require_set: set[str],
+    directions: dict[str, int] | None = None,
+    min_depth: dict[str, int] | None = None,
 ) -> list[str] | None:
-    """Resolve candidate model IDs, pre-filtering by required anchors.
+    """Resolve candidate model IDs by intersecting the query's hard filters.
 
-    Returns None if a required anchor doesn't exist (→ no results possible).
+    Required anchors first, then one set-intersection leg per depth-constrained
+    bank — the design's query algebra, where navigation is a filter and the
+    ranking that follows is a separate concern.
+
+    Returns None if a required anchor doesn't exist, or if a depth constraint
+    admits nothing (→ no results possible, as distinct from "nothing scored
+    well").
     """
     if require_set:
         anchor_ids = []
@@ -98,9 +126,28 @@ def _nav_candidates(
                 HAVING COUNT(DISTINCT anchor_id) = ?""",
             [*anchor_ids, len(anchor_ids)],
         ).fetchall()
-        return [r["model_id"] for r in rows] or None
-    rows = conn.execute("SELECT model_id FROM models").fetchall()
-    return [r["model_id"] for r in rows] or None
+        base = [r["model_id"] for r in rows] or None
+    else:
+        rows = conn.execute("SELECT model_id FROM models").fetchall()
+        base = [r["model_id"] for r in rows] or None
+    if base is None:
+        return None
+
+    # Depth legs of the intersection. A bank at direction 0 is skipped: the
+    # zero state IS depth 0, so "at least N steps from it" is meaningless.
+    if not min_depth:
+        return base
+    directions = directions or {}
+    admissible = set(base)
+    for bank, depth in min_depth.items():
+        direction = directions.get(bank)
+        if not direction:  # unspecified or 0 — nothing to be N steps along
+            continue
+        admissible &= _depth_constrained_ids(conn, bank, direction, depth)
+        if not admissible:
+            return None
+    # Preserve the base ordering so the candidate list stays deterministic.
+    return [m for m in base if m in admissible]
 
 
 def _nav_bank_alignment(
@@ -1001,7 +1048,7 @@ def navigate(
     prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
 
     # Step 1: Determine candidate set
-    candidate_ids = _nav_candidates(conn, require_set)
+    candidate_ids = _nav_candidates(conn, require_set, directions, query.min_depth)
     if not candidate_ids:
         return []
 

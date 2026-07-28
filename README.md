@@ -305,7 +305,7 @@ Add that to any MCP-compatible client (Claude Code, Cursor, VS Code). Your LLM c
 
 | Tool | What it does |
 |------|-------------|
-| `navigate_models` | **Primary.** Bank directions + anchor constraints + context + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named), plus a [`refine`](#refining-a-query) block. |
+| `navigate_models` | **Primary.** Bank directions + `min_depth` + anchor constraints + context + EPA target + `mode` + `bank_weights` → scored, ranked results (coherence-weighted, PageRank-boosted, Monty-Hall-sharpened, MMR-diversified, tie-clusters named), plus a [`refine`](#refining-a-query) block. |
 | `hf_get_model_detail` | Full profile of one model: all 8 positions, anchors, lineage, `certification_score` |
 | `hf_compare_models` | Structural diff between two models: shared/unique anchors, position deltas, Jaccard |
 | `hf_search_models` | Natural-language fallback with fuzzy matching when a structured query is not needed |

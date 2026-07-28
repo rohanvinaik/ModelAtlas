@@ -114,6 +114,21 @@ class StructuredQuery:
     # attention mass is preserved.
     bank_weights: dict[str, float] | None = None
 
+    # {BANK: minimum depth}. The other half of the navigation contract: a bank
+    # position is `[SIGN][DEPTH]`, and a direction alone says only which way
+    # from the zero state, not how far. `{"EFFICIENCY": 3}` with
+    # `efficiency=+1` reads "at least three steps positive" — 30B-class and up
+    # rather than anything larger than 7B.
+    #
+    # This is a FILTER, applied by set intersection during candidate
+    # selection, not a scoring term. Depth says which models are admissible;
+    # what orders them is the separate scalar (PageRank). Folding depth into
+    # the score instead would conflate the ternary navigation with scale,
+    # which the two are deliberately kept apart. See docs/navigation.md.
+    #
+    # Ignored for a bank whose direction is 0 — the zero state has no depth.
+    min_depth: dict[str, int] | None = None
+
     # Result control
     limit: int = 20
 

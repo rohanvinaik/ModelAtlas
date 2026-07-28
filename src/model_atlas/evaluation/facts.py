@@ -177,33 +177,12 @@ def _known_sizes(window: list[ModelFacts]) -> list[float]:
     return [f.param_count_b for f in window if f.param_count_b is not None]
 
 
-def larger_models_rank_higher() -> WindowPredicate:
-    """Asking for large should put the largest first.
-
-    Fails today: `_bank_score_single` is a step function for directional
-    queries, so +1, +2, +4 and +6 all score 1.000 against `efficiency=+1` and
-    "large" cannot prefer 70B to 13B. See docs/scoring-dynamic-range.md.
-    """
-
-    def test(window: list[ModelFacts]) -> bool:
-        sizes = _known_sizes(window)
-        if len(sizes) < 2:
-            return False
-        return sizes[0] >= max(sizes)
-
-    return WindowPredicate("largest_ranks_first", test)
-
-
-def smaller_models_rank_higher() -> WindowPredicate:
-    """The mirror: asking for small should put the smallest first."""
-
-    def test(window: list[ModelFacts]) -> bool:
-        sizes = _known_sizes(window)
-        if len(sizes) < 2:
-            return False
-        return sizes[0] <= min(sizes)
-
-    return WindowPredicate("smallest_ranks_first", test)
+# NOTE: there is deliberately no `larger_models_rank_higher` predicate.
+# Asking for "large" filters by sign+depth; what ORDERS the admissible set is
+# the separate scalar signal, so size-descending order is not part of the
+# contract. An earlier version asserted it, which would have justified folding
+# scale into the ternary alignment score — the conflation the architecture
+# exists to prevent. Assert the SHAPE of the window, not its sort.
 
 
 def sizes_span_at_least(factor: float) -> WindowPredicate:

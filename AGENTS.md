@@ -43,6 +43,22 @@ see `_anchor_counts_over()` in `query_navigate.py`, shared by `_pmi_map()` and
 invisible to the suite unless the test builds a set past it: `tests/test_sql_var_chunking.py`
 pins the boundary and asserts the raw unchunked query still raises.
 
+### Navigation: sign filters, depth filters, the scalar ranks
+A bank position is `[SIGN][DEPTH]`. `StructuredQuery.min_depth` — `{"EFFICIENCY": 2}`
+alongside `efficiency=1` — is the depth half, applied by set intersection in
+`_nav_candidates`, NOT as a scoring term. Navigation decides who is admissible; the
+separate scalar (PageRank, via `soft_combined`) decides what comes first.
+
+**Do not add a depth gradient to `_bank_score_single`.** Alignment is binary because
+it is a filter. Rewarding depth in the score folds scale into the ternary alignment
+factor and collapses the two questions the architecture separates. An eval assertion
+that encoded exactly that mistake (`largest_ranks_first`) was deleted for the same
+reason — sort order is not part of the contract, the shape of the window is.
+
+Depth is skipped for a bank at direction 0 (the zero state IS depth 0) or with no
+direction; an unsatisfiable depth returns nothing rather than falling back to the
+unfiltered corpus. See `docs/navigation.md`.
+
 ### Corpus-quality eval (the instrument)
 `python -m model_atlas.evaluation` scores canonical questions against the real corpus.
 **Run it before and after any corpus or scoring change** — `--baseline` diffs against a

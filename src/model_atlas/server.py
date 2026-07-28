@@ -181,6 +181,7 @@ def navigate_models(
     similar_to: str | None = None,
     mode: str = "auto",
     bank_weights: dict[str, float] | None = None,
+    min_depth: dict[str, int] | None = None,
     limit: int = 20,
 ) -> str:
     """Navigate the semantic model network with structured scoring.
@@ -278,6 +279,24 @@ def navigate_models(
           "find the specific specialist, not the popular generalist."
         - "balanced" — fixed default weights (no auto-adaptation).
 
+    DEPTH — HOW FAR, NOT JUST WHICH WAY:
+      min_depth: {BANK: minimum steps from the zero state}, e.g.
+        {"EFFICIENCY": 3} alongside `efficiency=1`. A bank position is
+        [SIGN][DEPTH]; a direction alone says only which way, so
+        `efficiency=+1` admits a 13B model and a 400B one equally. Depth is
+        the "how far" half.
+
+        This is a FILTER, applied by set intersection when candidates are
+        selected — not a scoring term. Depth decides who is admissible;
+        what ORDERS the admissible set is the separate scalar signal. Ask
+        for the shape you want, then let ranking do its own job.
+
+        Ignored for a bank whose direction is 0 or unset — the zero state
+        is depth 0, so "at least N steps from it" means nothing there.
+
+        Rough EFFICIENCY guide: 1 ~ one class out (3B / 13B), 2 ~ two
+        (1B / 30B), 3+ ~ the far end (sub-1B / 70B+).
+
     BANK WEIGHTS:
       bank_weights: Optional per-bank exponent overrides,
         e.g. {"QUALITY": 0.0, "CAPABILITY": 2.0} to neutralize quality-
@@ -348,6 +367,8 @@ def navigate_models(
         context_anchors: Ambient-context anchors (soft bias, ≤ 1.5× boost)
         mode: Query mode — "auto" | "canonical" | "niche" | "balanced"
         bank_weights: Optional {bank: exponent} per-bank weight overrides
+        min_depth: Optional {bank: minimum depth} hard filter, e.g.
+            {"EFFICIENCY": 3}. Needs that bank's direction set to +1/-1.
         similar_to: Model ID for anchor-similarity seed
         limit: Max results to return (default 20)
     """
@@ -378,6 +399,7 @@ def navigate_models(
             similar_to=similar_to,
             mode=mode,
             bank_weights=bank_weights,
+            min_depth=min_depth,
             limit=limit,
         )
         results = navigate(conn, sq)
@@ -414,6 +436,7 @@ def navigate_models(
                     "similar_to": sq.similar_to,
                     "mode": sq.mode,
                     "bank_weights": sq.bank_weights,
+                    "min_depth": sq.min_depth,
                 },
                 "network_models": stats["total_models"],
                 "result_count": len(results),

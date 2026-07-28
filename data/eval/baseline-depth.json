@@ -1,0 +1,181 @@
+{
+  "score": 0.965,
+  "passed_checks": 138,
+  "total_checks": 143,
+  "corpus_models": 50906,
+  "cases": {
+    "audio_transcription": {
+      "score": 1.0,
+      "returned": [
+        "ResembleAI/chatterbox",
+        "canopylabs/orpheus-3b-0.1-pretrained",
+        "openai/whisper-large-v3"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "mac_on_device_summarization": {
+      "score": 1.0,
+      "returned": [
+        "Falconsai/medical_summarization",
+        "lmstudio-community/gemma-3-270m-it-qat-MLX-4bit",
+        "Falconsai/text_summarization"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rag_embeddings": {
+      "score": 1.0,
+      "returned": [
+        "BAAI/bge-m3",
+        "google-bert/bert-base-uncased",
+        "intfloat/multilingual-e5-large"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "code_review_bot_consumer_gpu": {
+      "score": 0.8,
+      "returned": [
+        "zai-org/GLM-4.6",
+        "OpenGVLab/InternVL3-8B-Instruct",
+        "deepseek-ai/DeepSeek-V3"
+      ],
+      "failures": [
+        "zai-org/GLM-4.6:size<=34.0B",
+        "OpenGVLab/InternVL3-8B-Instruct:lacks_all:image-understanding|image-generation",
+        "deepseek-ai/DeepSeek-V3:size<=34.0B"
+      ],
+      "expected_misses": []
+    },
+    "medical_text_classification": {
+      "score": 1.0,
+      "returned": [
+        "ContactDoctor/Bio-Medical-Llama-3-8B",
+        "cross-encoder/ms-marco-MiniLM-L6-v2",
+        "thomas-sounack/BioClinical-ModernBERT-base"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "small_local_chat_model": {
+      "score": 1.0,
+      "returned": [
+        "Qwen/Qwen3-0.6B",
+        "google/gemma-2-2b-it",
+        "LiquidAI/LFM2-2.6B-Exp"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rust_systems_code": {
+      "score": 1.0,
+      "returned": [
+        "openai-community/gpt2",
+        "Etherll/Mellum-4b-sft-rust-GGUF",
+        "QuantFactory/gpt2-GGUF"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "large_frontier_reasoning": {
+      "score": 1.0,
+      "returned": [
+        "google/gemma-4-26B-A4B-it",
+        "openai/gpt-oss-120b",
+        "Qwen/Qwen2.5-32B-Instruct",
+        "Qwen/Qwen3-30B-A3B",
+        "Qwen/Qwen3-32B",
+        "google/gemma-4-31B-it"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "tiny_edge_deployment": {
+      "score": 1.0,
+      "returned": [
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "baidu/ERNIE-4.5-0.3B-Paddle",
+        "google-bert/bert-base-cased",
+        "Alibaba-NLP/gte-modernbert-base",
+        "Alibaba-NLP/gte-base-en-v1.5",
+        "nomic-ai/modernbert-embed-base"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "similar_to_a_known_model": {
+      "score": 1.0,
+      "returned": [
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "sh2orc/Llama-3.1-Korean-8B-Instruct",
+        "Skywork/Skywork-o1-Open-Llama-3.1-8B"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "chat_but_not_a_vision_model": {
+      "score": 1.0,
+      "returned": [
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "moonshotai/Kimi-Linear-48B-A3B-Instruct",
+        "meta-llama/Llama-2-7b-chat-hf"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "go_specialist_over_generalist": {
+      "score": 1.0,
+      "returned": [
+        "mlx-community/Qwen3.5-35B-A3B-8bit",
+        "smcleod/llama-3-1-8b-smcleod-golang-coder-v3",
+        "Backup-bdg/Xoron-Dev-MultiMoe"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "translation": {
+      "score": 0.6667,
+      "returned": [
+        "google/gemma-3n-E4B",
+        "Wan-AI/Wan2.1-T2V-1.3B",
+        "openai/whisper-medium"
+      ],
+      "failures": [
+        "google/gemma-3n-E4B:lacks_all:image-understanding|image-generation",
+        "Wan-AI/Wan2.1-T2V-1.3B:lacks_all:image-understanding|image-generation"
+      ],
+      "expected_misses": []
+    },
+    "named_entity_recognition": {
+      "score": 1.0,
+      "returned": [
+        "microsoft/deberta-v3-base",
+        "flair/ner-english-ontonotes",
+        "google-bert/bert-base-uncased"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "image_generation": {
+      "score": 1.0,
+      "returned": [
+        "microsoft/TRELLIS-image-large",
+        "drbaph/Qwen-Image-Edit-2511-FP8",
+        "Tongyi-MAI/Z-Image-Turbo"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "structured_output_extraction": {
+      "score": 1.0,
+      "returned": [
+        "NousResearch/Hermes-2-Pro-Llama-3-8B",
+        "NousResearch/Hermes-3-Llama-3.1-8B",
+        "nbeerbower/llama-3-stella-truthy-dpo-8B"
+      ],
+      "failures": [],
+      "expected_misses": []
+    }
+  }
+}
