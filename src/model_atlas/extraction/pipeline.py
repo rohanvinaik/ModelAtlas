@@ -193,6 +193,12 @@ def _build_canonical_items(
             "path_depth": depth,
             "path_nodes": json.dumps(nodes) if nodes else None,
             "zero_state": ZERO_STATES.get(bank, ""),
+            # The signal half — see docs/architecture-upgrade.md. Carrying
+            # these to the row is what lets a later coherence layer ask "how
+            # much do this bank's sources agree" without re-deriving where
+            # every position came from.
+            "confidence": pos.confidence,
+            "evidence": pos.evidence,
         }
         items.append(
             {

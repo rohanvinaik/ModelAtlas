@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS model_positions (
     path_depth  INTEGER,
     path_nodes  TEXT,
     zero_state  TEXT,
+    -- A bank emits a SIGNAL, not a bare coordinate. `confidence` separates
+    -- "we know this sits at the zero state" from "we could not tell and wrote
+    -- the default anyway"; `evidence` records WHICH fact produced the
+    -- position, so an anchor scraped from card boilerplate is distinguishable
+    -- from one derived from pipeline_tag. See docs/architecture-upgrade.md.
+    confidence  REAL DEFAULT 1.0,
+    evidence    TEXT DEFAULT '',
     PRIMARY KEY (model_id, bank)
 );
 
@@ -188,6 +195,20 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:  # pragma: no cover — legacy schema only
         conn.execute("ALTER TABLE model_anchors ADD COLUMN confidence REAL DEFAULT 1.0")
 
+    # model_positions.confidence / .evidence — a bank signal, not a coordinate.
+    # Existing rows default to confidence 1.0, which is deliberately WRONG for
+    # the 23,352 unknown-size rows the corpus carries; it is the only default
+    # that leaves current behaviour unchanged, and correcting them is a
+    # migration with its own audit trail, not a schema default.
+    try:
+        conn.execute("SELECT confidence FROM model_positions LIMIT 1")
+    except sqlite3.OperationalError:  # pragma: no cover — legacy schema only
+        conn.execute("ALTER TABLE model_positions ADD COLUMN confidence REAL DEFAULT 1.0")
+    try:
+        conn.execute("SELECT evidence FROM model_positions LIMIT 1")
+    except sqlite3.OperationalError:  # pragma: no cover — legacy schema only
+        conn.execute("ALTER TABLE model_positions ADD COLUMN evidence TEXT DEFAULT ''")
+
 
 def init_db(conn: sqlite3.Connection | None = None) -> None:
     """Create tables and bootstrap anchor dictionary."""
@@ -236,15 +257,27 @@ def set_position(
     path_sign: int,
     path_depth: int,
     path_nodes: list[str] | None = None,
+    confidence: float = 1.0,
+    evidence: str = "",
 ) -> None:
-    """Set a model's position in a semantic bank."""
+    """Set a model's position in a semantic bank.
+
+    `confidence` and `evidence` make the row a SIGNAL rather than a bare
+    coordinate — see docs/architecture-upgrade.md. Both default to the
+    pre-existing behaviour (fully confident, unsourced) so callers that have
+    not been taught to supply them keep working.
+    """
     conn.execute(
-        """INSERT INTO model_positions (model_id, bank, path_sign, path_depth, path_nodes, zero_state)
-           VALUES (?, ?, ?, ?, ?, ?)
+        """INSERT INTO model_positions
+               (model_id, bank, path_sign, path_depth, path_nodes, zero_state,
+                confidence, evidence)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(model_id, bank) DO UPDATE SET
                path_sign=excluded.path_sign,
                path_depth=excluded.path_depth,
-               path_nodes=excluded.path_nodes""",
+               path_nodes=excluded.path_nodes,
+               confidence=excluded.confidence,
+               evidence=excluded.evidence""",
         (
             model_id,
             bank,
@@ -252,6 +285,8 @@ def set_position(
             path_depth,
             json.dumps(path_nodes) if path_nodes else None,
             ZERO_STATES.get(bank, ""),
+            confidence,
+            evidence,
         ),
     )
 

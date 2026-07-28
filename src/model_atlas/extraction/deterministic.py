@@ -40,22 +40,45 @@ class BankPosition:
     sign: int = 0
     depth: int = 0
     nodes: list[str] = field(default_factory=list)
-    known: bool = True
-    """False when the underlying fact is missing.
+    confidence: float = 1.0
+    """How much the underlying fact supports this position, in [0, 1].
 
-    An unknown position must NOT be written. The zero state is a claim — "we
-    know this sits at the corpus mode" — while absence is the admission that
-    we do not know. Writing `(0, 0)` for both makes every unmeasured model
-    impersonate the single most-requested value on that bank.
+    A bank emits a SIGNAL, not a bare coordinate — the same shape as
+    TriageGeist's `BankSignal(esi_estimate, confidence, floor, ceiling,
+    evidence)`. See docs/architecture-upgrade.md.
 
-    Measured on the v0.4.0 corpus: 32,697 models sat at EFFICIENCY `(0,0)`,
-    and 23,352 of them — 71% — were there only because no parameter count was
-    extracted. GLM-4.6 (~355B) is one of them, which is why it satisfies
-    `efficiency=0` perfectly and survives every `max_depth` ceiling.
+    `0.0` means the fact is missing and the position must not be written; see
+    `known`. Values between are for extractors that place a position on weaker
+    evidence than a measured number — a name pattern, a tag convention — so
+    that a coherence layer can later tell a confident source from a guess
+    without re-deriving where each came from."""
+    evidence: str = ""
+    """Which fact produced this position, e.g. `parameter_count_b=7.0`.
 
-    An absent position is not silently favourable: `_nav_bank_alignment`
-    applies `NAVIGATE_MISSING_BANK_PENALTY` to it. Unknown should cost
-    something; it should not masquerade as a match."""
+    Provenance is the half that makes over-attachment detectable: an anchor
+    scraped from model-card boilerplate and one derived from `pipeline_tag`
+    are indistinguishable once both are just a position."""
+
+    @property
+    def known(self) -> bool:
+        """Whether the underlying fact was available at all.
+
+        An unknown position must NOT be written. The zero state is a claim —
+        "we know this sits at the corpus mode" — while absence is the
+        admission that we do not know. Writing `(0, 0)` for both makes every
+        unmeasured model impersonate the single most-requested value.
+
+        Measured on the v0.4.0 corpus: 32,697 models sat at EFFICIENCY
+        `(0,0)`, and 23,352 of them — 71% — were there only because no
+        parameter count was extracted. GLM-4.6 (~355B) is one, which is why it
+        satisfies `efficiency=0` perfectly and survives every `max_depth`
+        ceiling.
+
+        An absent position is not silently favourable: `_nav_bank_alignment`
+        applies `NAVIGATE_MISSING_BANK_PENALTY`. Unknown should cost
+        something; it should not masquerade as a match.
+        """
+        return self.confidence > 0.0
 
 
 class AnchorTag(NamedTuple):
@@ -307,7 +330,7 @@ def _extract_efficiency(param_b: float | None) -> tuple[BankPosition, list[str]]
     if param_b is None:
         # No size fact — leave the bank UNPOSITIONED rather than asserting the
         # zero state. See BankPosition.known.
-        return BankPosition(known=False), anchors
+        return BankPosition(confidence=0.0, evidence="parameter_count_b=None"), anchors
 
     for min_b, max_b, sign, depth, anchor in _PARAM_RANGES:
         if min_b <= param_b < max_b:
@@ -316,10 +339,16 @@ def _extract_efficiency(param_b: float | None) -> tuple[BankPosition, list[str]]
                 anchors.append("consumer-GPU-viable")
             if param_b < 1:
                 anchors.append("edge-deployable")
-            return BankPosition(sign=sign, depth=depth), anchors
+            return BankPosition(
+                sign=sign,
+                depth=depth,
+                evidence=f"parameter_count_b={param_b:g}",
+            ), anchors
     # A count we could not place on the bank is still a position we do not
     # know, even though we know the number.
-    return BankPosition(known=False), anchors
+    return BankPosition(
+        confidence=0.0, evidence=f"parameter_count_b={param_b:g} unbucketed"
+    ), anchors
 
 
 def _extract_quality(
