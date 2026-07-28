@@ -129,6 +129,17 @@ class StructuredQuery:
     # Ignored for a bank whose direction is 0 — the zero state has no depth.
     min_depth: dict[str, int] | None = None
 
+    # {BANK: maximum depth}. The ceiling to `min_depth`'s floor. Unlike
+    # min_depth this DOES apply at direction 0, where it reads as a band
+    # around the zero state: `efficiency=0, max_depth={"EFFICIENCY": 1}` is
+    # "the ~7B sweet spot, give or take one class", admitting (0,0), (+1,1)
+    # and (-1,1) but not a 400B model that happens to sit at the zero state
+    # because nobody recorded its size.
+    #
+    # Same discipline as min_depth: a filter over the candidate set, never a
+    # scoring term.
+    max_depth: dict[str, int] | None = None
+
     # Result control
     limit: int = 20
 

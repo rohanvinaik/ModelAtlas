@@ -90,11 +90,38 @@ def _depth_constrained_ids(
     return {r["model_id"] for r in rows}
 
 
+def _depth_bounded_ids(
+    conn: sqlite3.Connection,
+    bank: str,
+    direction: int,
+    max_depth: int,
+) -> set[str]:
+    """Models no further than `max_depth` from the zero state on `bank`.
+
+    At direction 0 this is a BAND around the zero state — either sign, within
+    `max_depth` steps — which is the only reading that makes sense there:
+    "near the middle" has no side. At ±1 it bounds travel along that side.
+    """
+    if direction == 0:
+        rows = conn.execute(
+            "SELECT model_id FROM model_positions WHERE bank = ? AND path_depth <= ?",
+            (bank, max_depth),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT model_id FROM model_positions
+                WHERE bank = ? AND path_sign = ? AND path_depth <= ?""",
+            (bank, direction, max_depth),
+        ).fetchall()
+    return {r["model_id"] for r in rows}
+
+
 def _nav_candidates(
     conn: sqlite3.Connection,
     require_set: set[str],
     directions: dict[str, int] | None = None,
     min_depth: dict[str, int] | None = None,
+    max_depth: dict[str, int] | None = None,
 ) -> list[str] | None:
     """Resolve candidate model IDs by intersecting the query's hard filters.
 
@@ -133,17 +160,25 @@ def _nav_candidates(
     if base is None:
         return None
 
-    # Depth legs of the intersection. A bank at direction 0 is skipped: the
-    # zero state IS depth 0, so "at least N steps from it" is meaningless.
-    if not min_depth:
+    # Depth legs of the intersection.
+    if not min_depth and not max_depth:
         return base
     directions = directions or {}
     admissible = set(base)
-    for bank, depth in min_depth.items():
+    # Floor: a bank at direction 0 is skipped, because the zero state IS
+    # depth 0 and "at least N steps from it" is meaningless there.
+    for bank, depth in (min_depth or {}).items():
         direction = directions.get(bank)
         if not direction:  # unspecified or 0 — nothing to be N steps along
             continue
         admissible &= _depth_constrained_ids(conn, bank, direction, depth)
+        if not admissible:
+            return None
+    # Ceiling: applies at direction 0 too, as a band around the zero state.
+    for bank, depth in (max_depth or {}).items():
+        if bank not in directions:
+            continue
+        admissible &= _depth_bounded_ids(conn, bank, directions[bank], depth)
         if not admissible:
             return None
     # Preserve the base ordering so the candidate list stays deterministic.
@@ -1048,7 +1083,9 @@ def navigate(
     prefer_idf_total = sum(idf.get(a, 0.0) for a in prefer_set) if prefer_set else 0.0
 
     # Step 1: Determine candidate set
-    candidate_ids = _nav_candidates(conn, require_set, directions, query.min_depth)
+    candidate_ids = _nav_candidates(
+        conn, require_set, directions, query.min_depth, query.max_depth
+    )
     if not candidate_ids:
         return []
 

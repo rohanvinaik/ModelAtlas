@@ -100,6 +100,28 @@ correct: depth selected the shape, the scalar ordered it.
 Rough EFFICIENCY guide: depth 1 ≈ one class out (3B / 13B), 2 ≈ two
 (1B / 30B), 3+ ≈ the far end (sub-1B / 70B+).
 
+### The ceiling
+
+`max_depth` is the floor's mirror, with one asymmetry: it **does** apply at
+direction 0, where it reads as a *band* around the zero state — "near the
+middle" has no side, so it admits both signs within the bound.
+
+```python
+StructuredQuery(efficiency=0, max_depth={"EFFICIENCY": 1})   # ~7B +/- one class
+```
+
+Floor and ceiling compose into a shell: `min_depth=2, max_depth=2` is exactly
+the models two steps out.
+
+**What the ceiling cannot do**, and it is worth stating because it looks like
+it should: a model recorded at `(0,0)` has depth 0, so *no* ceiling excludes
+it. `zai-org/GLM-4.6` and `deepseek-ai/DeepSeek-V3` survive
+`efficiency=0, max_depth=0` — not because they are ~7B, but because their
+parameter count is unknown and `_extract_efficiency(None)` returns
+`BankPosition()`, whose defaults are `sign=0, depth=0`. Unknown and
+genuinely-mainstream are written identically. That is a corpus defect, not a
+navigation one, and no query-side filter can reach it.
+
 ### Where it does not apply
 
 - **Direction `0`** — the zero state *is* depth 0, so "at least N steps from

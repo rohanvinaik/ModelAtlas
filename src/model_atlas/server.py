@@ -182,6 +182,7 @@ def navigate_models(
     mode: str = "auto",
     bank_weights: dict[str, float] | None = None,
     min_depth: dict[str, int] | None = None,
+    max_depth: dict[str, int] | None = None,
     limit: int = 20,
 ) -> str:
     """Navigate the semantic model network with structured scoring.
@@ -294,6 +295,13 @@ def navigate_models(
         Ignored for a bank whose direction is 0 or unset — the zero state
         is depth 0, so "at least N steps from it" means nothing there.
 
+      max_depth: the ceiling to min_depth's floor, e.g.
+        {"EFFICIENCY": 1}. Unlike min_depth this DOES apply at direction 0,
+        where it reads as a band around the zero state:
+        `efficiency=0, max_depth={"EFFICIENCY": 1}` is "the ~7B sweet spot,
+        give or take one class" and excludes a 400B model that happens to sit
+        at the zero state because nobody recorded its size.
+
         Rough EFFICIENCY guide: 1 ~ one class out (3B / 13B), 2 ~ two
         (1B / 30B), 3+ ~ the far end (sub-1B / 70B+).
 
@@ -369,6 +377,8 @@ def navigate_models(
         bank_weights: Optional {bank: exponent} per-bank weight overrides
         min_depth: Optional {bank: minimum depth} hard filter, e.g.
             {"EFFICIENCY": 3}. Needs that bank's direction set to +1/-1.
+        max_depth: Optional {bank: maximum depth} hard filter. Applies at
+            direction 0 as a band around the zero state.
         similar_to: Model ID for anchor-similarity seed
         limit: Max results to return (default 20)
     """
@@ -400,6 +410,7 @@ def navigate_models(
             mode=mode,
             bank_weights=bank_weights,
             min_depth=min_depth,
+            max_depth=max_depth,
             limit=limit,
         )
         results = navigate(conn, sq)
@@ -437,6 +448,7 @@ def navigate_models(
                     "mode": sq.mode,
                     "bank_weights": sq.bank_weights,
                     "min_depth": sq.min_depth,
+                    "max_depth": sq.max_depth,
                 },
                 "network_models": stats["total_models"],
                 "result_count": len(results),

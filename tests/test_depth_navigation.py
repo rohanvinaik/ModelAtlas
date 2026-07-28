@@ -137,3 +137,54 @@ def test_candidate_order_is_preserved_under_filtering(banked):
 
 def test_candidates_are_none_when_depth_admits_nothing(banked):
     assert _nav_candidates(banked, set(), {"EFFICIENCY": 1}, {"EFFICIENCY": 99}) is None
+
+
+# ── The ceiling ───────────────────────────────────────────────────────
+
+
+def test_max_depth_excludes_the_deep_end(banked):
+    assert _ids(banked, efficiency=1, max_depth={"EFFICIENCY": 2}) == {
+        "t/pos1", "t/pos2"
+    }
+
+
+def test_max_depth_at_zero_direction_is_a_band_around_the_zero_state(banked):
+    """Unlike the floor, the ceiling DOES apply at direction 0 — "near the
+    middle" has no side, so it admits both signs within the bound."""
+    assert _ids(banked, efficiency=0, max_depth={"EFFICIENCY": 1}) == {
+        "t/zero", "t/pos1", "t/neg1"
+    }
+
+
+def test_zero_direction_band_tightens(banked):
+    assert _ids(banked, efficiency=0, max_depth={"EFFICIENCY": 0}) == {"t/zero"}
+
+
+def test_floor_and_ceiling_compose_into_a_shell(banked):
+    got = _ids(banked, efficiency=1,
+               min_depth={"EFFICIENCY": 2}, max_depth={"EFFICIENCY": 2})
+    assert got == {"t/pos2"}
+
+
+def test_contradictory_bounds_return_nothing(banked):
+    assert _ids(banked, efficiency=1,
+                min_depth={"EFFICIENCY": 3}, max_depth={"EFFICIENCY": 1}) == set()
+
+
+def test_max_depth_needs_a_specified_bank(banked):
+    """No direction on the bank means the query never asked about it."""
+    assert _ids(banked, max_depth={"EFFICIENCY": 0}) >= {"t/pos3"}
+
+
+def test_no_max_depth_behaves_exactly_as_before(banked):
+    assert _ids(banked, efficiency=1) == _ids(banked, efficiency=1, max_depth=None)
+    assert _ids(banked, efficiency=1) == _ids(banked, efficiency=1, max_depth={})
+
+
+def test_a_model_at_the_zero_state_survives_every_ceiling(banked):
+    """Why max_depth cannot rescue the code-review case: a model recorded at
+    (0,0) has depth 0, so no ceiling excludes it. GLM-4.6 and DeepSeek-V3 sit
+    there because their parameter count is UNKNOWN, not because they are ~7B.
+    That is a corpus defect, not a navigation one."""
+    for bound in (0, 1, 2, 99):
+        assert "t/zero" in _ids(banked, efficiency=0, max_depth={"EFFICIENCY": bound})
