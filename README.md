@@ -285,7 +285,7 @@ git clone https://github.com/rohanvinaik/ModelAtlas.git && cd ModelAtlas && uv s
 #    error, not an error page silently saved as your database.
 mkdir -p ~/.cache/model-atlas
 curl -L --fail -o ~/.cache/model-atlas/network.db \
-  https://github.com/rohanvinaik/ModelAtlas/releases/download/v0.4.2/network.db
+  https://github.com/rohanvinaik/ModelAtlas/releases/download/v0.4.3/network.db
 ```
 
 ```json

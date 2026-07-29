@@ -1,0 +1,180 @@
+{
+  "score": 0.972,
+  "passed_checks": 139,
+  "total_checks": 143,
+  "corpus_models": 50973,
+  "cases": {
+    "audio_transcription": {
+      "score": 1.0,
+      "returned": [
+        "ResembleAI/chatterbox",
+        "canopylabs/orpheus-3b-0.1-pretrained",
+        "openai/whisper-large-v3"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "mac_on_device_summarization": {
+      "score": 1.0,
+      "returned": [
+        "Falconsai/medical_summarization",
+        "lmstudio-community/Llama-3.2-1B-Instruct-GGUF",
+        "Falconsai/text_summarization"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rag_embeddings": {
+      "score": 1.0,
+      "returned": [
+        "BAAI/bge-m3",
+        "BAAI/bge-reranker-v2-m3",
+        "google-bert/bert-base-uncased"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "code_review_bot_consumer_gpu": {
+      "score": 0.8,
+      "returned": [
+        "mlabonne/Daredevil-8B-abliterated",
+        "Shekswess/trlm-stage-2-sft-final-2",
+        "unsloth/GLM-4.7-Flash"
+      ],
+      "failures": [
+        "Shekswess/trlm-stage-2-sft-final-2:size<=34.0B",
+        "Shekswess/trlm-stage-2-sft-final-2:downloads>=1000",
+        "unsloth/GLM-4.7-Flash:size<=34.0B"
+      ],
+      "expected_misses": []
+    },
+    "medical_text_classification": {
+      "score": 1.0,
+      "returned": [
+        "cross-encoder/ms-marco-MiniLM-L6-v2",
+        "urchade/gliner_large-v2.1",
+        "thomas-sounack/BioClinical-ModernBERT-base"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "small_local_chat_model": {
+      "score": 1.0,
+      "returned": [
+        "Qwen/Qwen3-0.6B",
+        "LiquidAI/LFM2-2.6B-Exp",
+        "Qwen/Qwen2.5-0.5B-Instruct"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "rust_systems_code": {
+      "score": 1.0,
+      "returned": [
+        "openai-community/gpt2",
+        "Tesslate/Tessa-Rust-T1-7B",
+        "QuantFactory/gpt2-GGUF"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "large_frontier_reasoning": {
+      "score": 1.0,
+      "returned": [
+        "google/gemma-4-26B-A4B-it",
+        "Qwen/Qwen2.5-32B-Instruct",
+        "Qwen/Qwen3-32B",
+        "google/gemma-4-31B-it",
+        "google/gemma-4-26B-A4B-it-qat-q4_0-unquantized",
+        "coder3101/gemma-4-26B-A4B-it-heretic"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "tiny_edge_deployment": {
+      "score": 1.0,
+      "returned": [
+        "OpenGVLab/InternViT-300M-448px",
+        "HuggingFaceTB/SmolLM2-135M-Instruct",
+        "OpenGVLab/InternViT-300M-448px-V2_5",
+        "HuggingFaceTB/SmolLM2-135M",
+        "FacebookAI/roberta-base",
+        "HuggingFaceTB/SmolLM2-360M"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "similar_to_a_known_model": {
+      "score": 1.0,
+      "returned": [
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "sh2orc/Llama-3.1-Korean-8B-Instruct",
+        "Skywork/Skywork-o1-Open-Llama-3.1-8B"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "chat_but_not_a_vision_model": {
+      "score": 1.0,
+      "returned": [
+        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "zai-org/glm-4-9b-chat",
+        "microsoft/Phi-3.5-mini-instruct"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "go_specialist_over_generalist": {
+      "score": 1.0,
+      "returned": [
+        "smcleod/llama-3-1-8b-smcleod-golang-coder-v3",
+        "lukealonso/MiniMax-M2.5-REAP-139B-A10B-NVFP4",
+        "Backup-bdg/Xoron-Dev-MultiMoe"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "translation": {
+      "score": 0.8333,
+      "returned": [
+        "google/gemma-3n-E4B",
+        "espnet/owsm_ctc_v3.2_ft_1B",
+        "Qwen/Qwen3-ASR-1.7B"
+      ],
+      "failures": [
+        "google/gemma-3n-E4B:lacks_all:image-understanding|image-generation"
+      ],
+      "expected_misses": []
+    },
+    "named_entity_recognition": {
+      "score": 1.0,
+      "returned": [
+        "microsoft/deberta-v3-base",
+        "flair/ner-english-ontonotes",
+        "google-bert/bert-base-uncased"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "image_generation": {
+      "score": 1.0,
+      "returned": [
+        "microsoft/TRELLIS-image-large",
+        "stabilityai/stable-diffusion-xl-base-1.0",
+        "Tongyi-MAI/Z-Image-Turbo"
+      ],
+      "failures": [],
+      "expected_misses": []
+    },
+    "structured_output_extraction": {
+      "score": 1.0,
+      "returned": [
+        "NousResearch/Hermes-2-Pro-Llama-3-8B",
+        "NousResearch/Hermes-3-Llama-3.1-8B",
+        "nbeerbower/llama-3-stella-truthy-dpo-8B"
+      ],
+      "failures": [],
+      "expected_misses": []
+    }
+  }
+}
